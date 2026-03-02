@@ -15,6 +15,20 @@ import {
   Note,
   OurCompanyInfo,
   OurEntity,
+  OpsAssignedRole,
+  OpsAuditLogEntry,
+  OpsCase,
+  OpsCaseCategory,
+  OpsCaseStatus,
+  OpsMonitoringModuleOrigin,
+  OpsMonitoringSignal,
+  OpsRequest,
+  OpsRequestStatus,
+  OpsRequestType,
+  OpsSeverity,
+  OpsShift,
+  OpsSlaProfileId,
+  OpsTrack,
   Project,
   ProjectRiskLevel,
   ProjectWeeklyReport,
@@ -117,6 +131,23 @@ const taskTitles = [
   "Confirm NDA signature status",
   "Schedule follow-up call",
   "Share interconnection questionnaire",
+];
+const opsCountries = ["United Kingdom", "Spain", "Germany", "Turkey", "UAE", "France", "Italy", "Saudi Arabia"];
+const opsOperators = ["Vodafone", "Orange", "Telefonica", "Turkcell", "Etisalat", "TIM", "STC", "DT"];
+const opsRequestTypes: OpsRequestType[] = [
+  "RoutingRequest",
+  "TroubleTicketRequest",
+  "TestRequest",
+  "LossAccepted",
+  "InterconnectionRequest",
+];
+const opsModuleOrigins: OpsMonitoringModuleOrigin[] = [
+  "ProviderIssues",
+  "Losses",
+  "NewAndLostTraffics",
+  "TrafficComparison",
+  "ScheduleTestResults",
+  "FailedSmsOrCallAnalysis",
 ];
 
 const workscopes: Workscope[] = ["SMS", "Voice", "Data", "Software", "RCS"];
@@ -1210,6 +1241,327 @@ function createOurCompanyInfo(): OurCompanyInfo[] {
   ];
 }
 
+function opsCategoryFromModule(moduleOrigin: OpsMonitoringModuleOrigin): OpsCaseCategory {
+  if (moduleOrigin === "Losses") return "Loss";
+  if (moduleOrigin === "ProviderIssues") return "Provider";
+  if (moduleOrigin === "TrafficComparison" || moduleOrigin === "NewAndLostTraffics") return "Traffic";
+  if (moduleOrigin === "ScheduleTestResults") return "Test";
+  if (moduleOrigin === "FailedSmsOrCallAnalysis") return "KPI";
+  return "Other";
+}
+
+function opsSlaProfileForCategory(category: OpsCaseCategory): OpsSlaProfileId {
+  return category === "Loss" ? "LOSS_ALERT" : "KPI_ALERT";
+}
+
+function createOpsMonitoringSignals(companies: Company[]): OpsMonitoringSignal[] {
+  const base = new Date("2026-03-20T08:00:00Z");
+  return Array.from({ length: 30 }).map((_, idx) => {
+    const moduleOrigin = pick(opsModuleOrigins, idx);
+    const category = opsCategoryFromModule(moduleOrigin);
+    const relatedTrack: OpsTrack = idx % 2 === 0 ? "SMS" : "Voice";
+    const severity: OpsSeverity = idx % 9 === 0 ? "Urgent" : idx % 3 === 0 ? "High" : "Medium";
+    const company = idx % 5 === 0 ? undefined : pick(companies, idx * 3 + 1);
+    const detectedAt = new Date(base.getTime() - idx * 37 * 60 * 1000).toISOString();
+    const destinationCountry = pick(opsCountries, idx + 3);
+    const destinationOperator = pick(opsOperators, idx + 5);
+    return {
+      id: `ops-signal-${idx + 1}`,
+      moduleOrigin,
+      relatedTrack,
+      severity,
+      category,
+      detectedAt,
+      fingerprint: `${moduleOrigin}__${relatedTrack}__${destinationCountry}__${destinationOperator}__${idx % 6}`,
+      relatedCompanyId: company?.id,
+      relatedProvider: destinationOperator,
+      relatedDestination: destinationCountry,
+      description: `${moduleOrigin} alert detected for ${destinationCountry}/${destinationOperator}.`,
+      rawPayload: {
+        source: "demo-traffic-adapter",
+        sampleId: idx + 1,
+        deltaPercent: ((idx % 7) + 1) * 3,
+      },
+      createdCaseId: undefined,
+      createdAt: detectedAt,
+    };
+  });
+}
+
+function createOpsCases(signals: OpsMonitoringSignal[], users: User[]): OpsCase[] {
+  const assignees = users.filter((user) =>
+    ["NOC", "Interconnection Manager", "Head of SMS", "Head of Voice"].includes(user.role),
+  );
+  const statuses: OpsCaseStatus[] = ["New", "InProgress", "Resolved", "Ignored", "Cancelled"];
+  return signals.slice(0, 22).map((signal, idx) => {
+    const status = pick(statuses, idx);
+    const createdAt = signal.createdAt;
+    const updatedAt = new Date(new Date(createdAt).getTime() + (idx % 5 + 1) * 45 * 60 * 1000).toISOString();
+    const assignedToUserId = assignees[idx % assignees.length]?.id;
+    const resolvedAt =
+      status === "Resolved" ? new Date(new Date(createdAt).getTime() + (idx % 4 + 1) * 70 * 60 * 1000).toISOString() : undefined;
+    const ignoredAt =
+      status === "Ignored" ? new Date(new Date(createdAt).getTime() + (idx % 3 + 1) * 50 * 60 * 1000).toISOString() : undefined;
+    const cancelledAt =
+      status === "Cancelled" ? new Date(new Date(createdAt).getTime() + (idx % 4 + 1) * 35 * 60 * 1000).toISOString() : undefined;
+    return {
+      id: `ops-case-${idx + 1}`,
+      moduleOrigin: signal.moduleOrigin,
+      relatedTrack: signal.relatedTrack,
+      severity: signal.severity,
+      category: signal.category,
+      detectedAt: signal.detectedAt,
+      relatedCompanyId: signal.relatedCompanyId,
+      relatedProvider: signal.relatedProvider,
+      relatedDestination: signal.relatedDestination,
+      description: signal.description,
+      status,
+      slaProfileId: opsSlaProfileForCategory(signal.category),
+      resolvedAt,
+      ignoredAt,
+      cancelledAt,
+      resolutionType: status === "Resolved" ? (idx % 2 === 0 ? "Fixed" : "PartnerIssue") : undefined,
+      assignedToUserId,
+      createdAt,
+      updatedAt,
+    };
+  });
+}
+
+function requestAssignedRoleForType(requestType: OpsRequestType): OpsAssignedRole {
+  if (requestType === "RoutingRequest") return "Routing";
+  if (requestType === "TroubleTicketRequest") return "NOC";
+  if (requestType === "TestRequest") return "NOC";
+  if (requestType === "LossAccepted") return "AM";
+  return "Supervisor";
+}
+
+function requestDoneActionForType(requestType: OpsRequestType): "ROUTING_DONE" | "TT_SENT" | "TEST_DONE" | "LOSS_ACCEPTED" {
+  if (requestType === "TroubleTicketRequest") return "TT_SENT";
+  if (requestType === "TestRequest") return "TEST_DONE";
+  if (requestType === "LossAccepted") return "LOSS_ACCEPTED";
+  return "ROUTING_DONE";
+}
+
+function createOpsRequests(cases: OpsCase[], companies: Company[], users: User[]): OpsRequest[] {
+  const requestStatuses: OpsRequestStatus[] = ["Draft", "Sent", "InProgress", "Done", "Cancelled", "Failed"];
+  return Array.from({ length: 24 }).map((_, idx) => {
+    const requestType = pick(opsRequestTypes, idx);
+    const linkedCase = idx % 2 === 0 ? pick(cases, idx) : undefined;
+    const linkedCompany = linkedCase?.relatedCompanyId
+      ? companies.find((company) => company.id === linkedCase.relatedCompanyId)
+      : pick(companies, idx + 4);
+    const createdByUserId = users[idx % users.length]?.id ?? users[0].id;
+    const status = pick(requestStatuses, idx);
+    const createdAt = new Date("2026-03-18T09:00:00Z");
+    createdAt.setUTCHours(createdAt.getUTCHours() + idx * 2);
+    const updatedAt = new Date(createdAt.getTime() + (idx % 6 + 1) * 55 * 60 * 1000).toISOString();
+    return {
+      id: `ops-req-${idx + 1}`,
+      requestType,
+      createdByUserId,
+      assignedToRole: requestAssignedRoleForType(requestType),
+      priority: linkedCase?.severity ?? (idx % 7 === 0 ? "Urgent" : idx % 3 === 0 ? "High" : "Medium"),
+      relatedCompanyId: linkedCompany?.id,
+      relatedTrack: linkedCase?.relatedTrack ?? (idx % 2 === 0 ? "SMS" : "Voice"),
+      destination: {
+        country: linkedCase?.relatedDestination ?? pick(opsCountries, idx),
+        operator: linkedCase?.relatedProvider ?? pick(opsOperators, idx),
+      },
+      comment: `${requestType} created for destination validation and follow-up.`,
+      status,
+      relatedCaseId: requestType === "TroubleTicketRequest" ? linkedCase?.id : undefined,
+      createdAt: createdAt.toISOString(),
+      updatedAt,
+    };
+  });
+}
+
+function createOpsAuditLogs(requests: OpsRequest[], cases: OpsCase[], users: User[]): OpsAuditLogEntry[] {
+  const rows: OpsAuditLogEntry[] = [];
+  let auditIdx = 1;
+  const pushAudit = (entry: Omit<OpsAuditLogEntry, "id">) => {
+    rows.push({ id: `ops-audit-${auditIdx}`, ...entry });
+    auditIdx += 1;
+  };
+
+  requests.forEach((request, idx) => {
+    const actor = users.find((user) => user.id === request.createdByUserId)?.id ?? users[0].id;
+    const createdAt = new Date(request.createdAt);
+    pushAudit({
+      parentType: "Request",
+      parentId: request.id,
+      actionType: "CREATED_MANUAL",
+      performedByUserId: actor,
+      comment: "Request created.",
+      timestamp: createdAt.toISOString(),
+    });
+    if (request.status !== "Draft") {
+      pushAudit({
+        parentType: "Request",
+        parentId: request.id,
+        actionType: "SEND",
+        performedByUserId: actor,
+        timestamp: new Date(createdAt.getTime() + 2 * 60 * 1000).toISOString(),
+      });
+    }
+    if (request.status === "InProgress" || request.status === "Done" || request.status === "Cancelled" || request.status === "Failed") {
+      pushAudit({
+        parentType: "Request",
+        parentId: request.id,
+        actionType: "START",
+        performedByUserId: actor,
+        timestamp: new Date(createdAt.getTime() + 9 * 60 * 1000).toISOString(),
+      });
+    }
+    if (request.status === "Done") {
+      pushAudit({
+        parentType: "Request",
+        parentId: request.id,
+        actionType: requestDoneActionForType(request.requestType),
+        performedByUserId: actor,
+        timestamp: request.updatedAt,
+      });
+    }
+    if (request.status === "Cancelled") {
+      pushAudit({
+        parentType: "Request",
+        parentId: request.id,
+        actionType: "CANCELLED",
+        performedByUserId: actor,
+        comment: "Cancelled by requester due to scope change.",
+        timestamp: request.updatedAt,
+      });
+    }
+    if (request.status === "Failed") {
+      pushAudit({
+        parentType: "Request",
+        parentId: request.id,
+        actionType: "MARK_FAILED",
+        performedByUserId: actor,
+        comment: "Failed due to partner rejection.",
+        timestamp: request.updatedAt,
+      });
+    }
+    if (idx % 4 === 0) {
+      pushAudit({
+        parentType: "Request",
+        parentId: request.id,
+        actionType: "COMMENT",
+        performedByUserId: actor,
+        comment: "Follow-up requested by AM.",
+        timestamp: new Date(new Date(request.updatedAt).getTime() - 7 * 60 * 1000).toISOString(),
+      });
+    }
+  });
+
+  cases.forEach((opsCase, idx) => {
+    const actor = opsCase.assignedToUserId ?? users[idx % users.length]?.id ?? users[0].id;
+    pushAudit({
+      parentType: "Case",
+      parentId: opsCase.id,
+      actionType: "CREATED_AUTO",
+      performedByUserId: actor,
+      comment: "Created from monitoring signal.",
+      timestamp: opsCase.createdAt,
+    });
+    if (opsCase.assignedToUserId) {
+      pushAudit({
+        parentType: "Case",
+        parentId: opsCase.id,
+        actionType: "ASSIGN",
+        performedByUserId: actor,
+        comment: `Assigned to ${opsCase.assignedToUserId}.`,
+        timestamp: new Date(new Date(opsCase.createdAt).getTime() + 60 * 1000).toISOString(),
+      });
+    }
+    if (opsCase.status === "InProgress" || opsCase.status === "Resolved" || opsCase.status === "Ignored" || opsCase.status === "Cancelled") {
+      pushAudit({
+        parentType: "Case",
+        parentId: opsCase.id,
+        actionType: "START",
+        performedByUserId: actor,
+        timestamp: new Date(new Date(opsCase.createdAt).getTime() + 5 * 60 * 1000).toISOString(),
+      });
+    }
+    if (opsCase.status === "Resolved") {
+      pushAudit({
+        parentType: "Case",
+        parentId: opsCase.id,
+        actionType: "RESOLVE",
+        performedByUserId: actor,
+        comment: "Issue resolved and verified.",
+        timestamp: opsCase.resolvedAt ?? opsCase.updatedAt,
+      });
+    }
+    if (opsCase.status === "Ignored") {
+      pushAudit({
+        parentType: "Case",
+        parentId: opsCase.id,
+        actionType: "IGNORE",
+        performedByUserId: actor,
+        comment: "Ignored after investigation (false positive).",
+        timestamp: opsCase.ignoredAt ?? opsCase.updatedAt,
+      });
+    }
+    if (opsCase.status === "Cancelled") {
+      pushAudit({
+        parentType: "Case",
+        parentId: opsCase.id,
+        actionType: "CANCEL",
+        performedByUserId: actor,
+        comment: "Cancelled because alert source was decommissioned.",
+        timestamp: opsCase.cancelledAt ?? opsCase.updatedAt,
+      });
+    }
+    if (idx % 6 === 0) {
+      pushAudit({
+        parentType: "Case",
+        parentId: opsCase.id,
+        actionType: "ESCALATED",
+        performedByUserId: actor,
+        comment: "Escalated due to nearing SLA breach.",
+        timestamp: new Date(new Date(opsCase.updatedAt).getTime() - 3 * 60 * 1000).toISOString(),
+      });
+    }
+  });
+
+  return rows.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+}
+
+function createOpsShifts(users: User[]): OpsShift[] {
+  const nocUsers = users.filter((user) =>
+    ["NOC", "Interconnection Manager", "Head of SMS", "Head of Voice"].includes(user.role),
+  );
+  const base = new Date("2026-03-20T00:00:00Z");
+  const templates: Array<{ hourStart: number; hourEnd: number; track: OpsShift["track"] }> = [
+    { hourStart: 0, hourEnd: 8, track: "Both" },
+    { hourStart: 8, hourEnd: 16, track: "SMS" },
+    { hourStart: 16, hourEnd: 24, track: "Voice" },
+  ];
+  const rows: OpsShift[] = [];
+  for (let day = 0; day < 3; day += 1) {
+    templates.forEach((template, idx) => {
+      const startsAt = new Date(base);
+      startsAt.setUTCDate(startsAt.getUTCDate() + day);
+      startsAt.setUTCHours(template.hourStart, 0, 0, 0);
+      const endsAt = new Date(base);
+      endsAt.setUTCDate(endsAt.getUTCDate() + day);
+      endsAt.setUTCHours(template.hourEnd === 24 ? 23 : template.hourEnd, template.hourEnd === 24 ? 59 : 0, 0, 0);
+      rows.push({
+        id: `ops-shift-${day + 1}-${idx + 1}`,
+        track: template.track,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        userIds: [pick(nocUsers, day + idx).id, pick(nocUsers, day + idx + 1).id],
+        createdAt: startsAt.toISOString(),
+        updatedAt: startsAt.toISOString(),
+      });
+    });
+  }
+  return rows;
+}
+
 export function createSeedDb(): DbState {
   const users = seedUsers;
   const events = createEvents();
@@ -1225,6 +1577,11 @@ export function createSeedDb(): DbState {
   const taskComments = createTaskComments(tasks, users);
   const contracts = createContracts(companies, interconnectionProcesses, users);
   const ourCompanyInfo = createOurCompanyInfo();
+  const opsMonitoringSignals = createOpsMonitoringSignals(companies);
+  const opsCases = createOpsCases(opsMonitoringSignals, users);
+  const opsRequests = createOpsRequests(opsCases, companies, users);
+  const opsAuditLogs = createOpsAuditLogs(opsRequests, opsCases, users);
+  const opsShifts = createOpsShifts(users);
 
   return {
     version: 1,
@@ -1243,6 +1600,11 @@ export function createSeedDb(): DbState {
     projectWeeklyReports,
     contracts,
     ourCompanyInfo,
+    opsRequests,
+    opsCases,
+    opsMonitoringSignals,
+    opsAuditLogs,
+    opsShifts,
     outbox: [],
   };
 }

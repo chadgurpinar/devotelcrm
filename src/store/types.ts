@@ -377,6 +377,157 @@ export interface OurCompanyInfo {
   lastUpdatedAt: string;
 }
 
+export type OpsTrack = "SMS" | "Voice";
+export type OpsSeverity = "Urgent" | "High" | "Medium";
+export type OpsRequestType =
+  | "RoutingRequest"
+  | "TroubleTicketRequest"
+  | "TestRequest"
+  | "LossAccepted"
+  | "InterconnectionRequest";
+export type OpsRequestStatus = "Draft" | "Sent" | "InProgress" | "Done" | "Cancelled" | "Failed";
+export type OpsAssignedRole = "AM" | "NOC" | "Routing" | "Supervisor";
+export type OpsRequestActionType =
+  | "SEND"
+  | "START"
+  | "MARK_FAILED"
+  | "ROUTING_DONE"
+  | "TT_SENT"
+  | "TEST_DONE"
+  | "LOSS_ACCEPTED"
+  | "CANCELLED";
+export type OpsMonitoringModuleOrigin =
+  | "ProviderIssues"
+  | "Losses"
+  | "NewAndLostTraffics"
+  | "TrafficComparison"
+  | "ScheduleTestResults"
+  | "FailedSmsOrCallAnalysis";
+export type OpsCaseStatus = "New" | "InProgress" | "Resolved" | "Ignored" | "Cancelled";
+export type OpsCaseCategory = "Loss" | "KPI" | "Traffic" | "Provider" | "Test" | "Other";
+export type OpsSlaProfileId = "KPI_ALERT" | "LOSS_ALERT";
+export type OpsResolutionType = "Fixed" | "FalsePositive" | "PartnerIssue" | "PlannedWork" | "Unknown";
+export type OpsCaseActionType =
+  | "ASSIGN"
+  | "START"
+  | "RESOLVE"
+  | "IGNORE"
+  | "CANCEL"
+  | "COMMENT"
+  | "SIGNAL_REFRESHED"
+  | "CREATED_MANUAL"
+  | "CREATED_AUTO"
+  | "ESCALATED";
+export type OpsAuditActionType = OpsRequestActionType | OpsCaseActionType;
+
+export interface OpsRequest {
+  id: string;
+  requestType: OpsRequestType;
+  createdByUserId: string;
+  assignedToRole: OpsAssignedRole;
+  priority: OpsSeverity;
+  relatedCompanyId?: string;
+  relatedTrack: OpsTrack;
+  destination: {
+    country: string;
+    operator?: string;
+  };
+  comment: string;
+  status: OpsRequestStatus;
+  relatedCaseId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OpsCase {
+  id: string;
+  moduleOrigin: OpsMonitoringModuleOrigin;
+  relatedTrack: OpsTrack;
+  severity: OpsSeverity;
+  category: OpsCaseCategory;
+  detectedAt: string;
+  relatedCompanyId?: string;
+  relatedProvider?: string;
+  relatedDestination?: string;
+  description: string;
+  status: OpsCaseStatus;
+  slaProfileId: OpsSlaProfileId;
+  resolvedAt?: string;
+  ignoredAt?: string;
+  cancelledAt?: string;
+  resolutionType?: OpsResolutionType;
+  assignedToUserId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OpsMonitoringSignal {
+  id: string;
+  moduleOrigin: OpsMonitoringModuleOrigin;
+  relatedTrack: OpsTrack;
+  severity: OpsSeverity;
+  category: OpsCaseCategory;
+  detectedAt: string;
+  fingerprint: string;
+  relatedCompanyId?: string;
+  relatedProvider?: string;
+  relatedDestination?: string;
+  description: string;
+  rawPayload: unknown;
+  createdCaseId?: string;
+  createdAt: string;
+}
+
+export interface OpsMonitoringSignalInput {
+  moduleOrigin: OpsMonitoringModuleOrigin;
+  relatedTrack: OpsTrack;
+  severity: OpsSeverity;
+  category: OpsCaseCategory;
+  detectedAt: string;
+  fingerprint: string;
+  relatedCompanyId?: string;
+  relatedProvider?: string;
+  relatedDestination?: string;
+  description: string;
+  rawPayload: unknown;
+}
+
+export interface OpsAuditLogEntry {
+  id: string;
+  parentType: "Request" | "Case";
+  parentId: string;
+  actionType: OpsAuditActionType;
+  performedByUserId: string;
+  comment?: string;
+  timestamp: string;
+}
+
+export interface OpsShift {
+  id: string;
+  track: OpsTrack | "Both";
+  startsAt: string;
+  endsAt: string;
+  userIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OpsPerformanceSnapshot {
+  startsAt: string;
+  endsAt: string;
+  averageTtCreationTimeMs: number;
+  averageCaseResolutionTimeMs: number;
+  slaCompliancePercent: number;
+  casesPerShift: number;
+}
+
+export interface TrafficAdapter {
+  fetchProviderIssues: () => Promise<OpsMonitoringSignalInput[]>;
+  fetchLossAlerts: () => Promise<OpsMonitoringSignalInput[]>;
+  fetchTrafficComparison: () => Promise<OpsMonitoringSignalInput[]>;
+  fetchTestResults: () => Promise<OpsMonitoringSignalInput[]>;
+}
+
 export interface DbState {
   version: number;
   activeUserId: string;
@@ -394,6 +545,11 @@ export interface DbState {
   projectWeeklyReports: ProjectWeeklyReport[];
   contracts: Contract[];
   ourCompanyInfo: OurCompanyInfo[];
+  opsRequests: OpsRequest[];
+  opsCases: OpsCase[];
+  opsMonitoringSignals: OpsMonitoringSignal[];
+  opsAuditLogs: OpsAuditLogEntry[];
+  opsShifts: OpsShift[];
   outbox: string[];
 }
 

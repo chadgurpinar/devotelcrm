@@ -4,18 +4,39 @@ import { useAppStore } from "../../store/db";
 import { Button } from "../../components/ui";
 import { CompanyType, InterconnectionType, OurEntity, Workscope } from "../../store/types";
 
-const items = [
-  { to: "/", label: "Dashboard", icon: "D" },
-  { to: "/events", label: "Events", icon: "E" },
-  { to: "/leads", label: "Leads", icon: "L" },
-  { to: "/interconnection", label: "Interconnection", icon: "I" },
-  { to: "/accounts", label: "Clients", icon: "C" },
-  { to: "/contracts", label: "Contracts", icon: "K" },
-  { to: "/tasks", label: "Tasks", icon: "T" },
-  { to: "/notes", label: "Notes", icon: "N" },
-  { to: "/reports", label: "Projects", icon: "P" },
-  { to: "/finance", label: "Finance", icon: "F" },
-  { to: "/settings", label: "Settings", icon: "S" },
+const navGroups = [
+  {
+    title: "CRM",
+    items: [
+      { to: "/events", label: "Events", icon: "E" },
+      { to: "/leads", label: "Leads", icon: "L" },
+      { to: "/interconnection", label: "Interconnection", icon: "I" },
+      { to: "/accounts", label: "Clients", icon: "C" },
+      { to: "/contracts", label: "Contracts", icon: "K" },
+      { to: "/notes", label: "Notes", icon: "N" },
+      { to: "/tasks", label: "Tasks", icon: "T" },
+      { to: "/reports", label: "Projects", icon: "P" },
+    ],
+  },
+  {
+    title: "Operations Command Center",
+    items: [
+      { to: "/ops/sms-noc", label: "SMS NOC Portal", icon: "S" },
+      { to: "/ops/voice-noc", label: "Voice NOC Portal", icon: "V" },
+      { to: "/ops/routing-noc", label: "Routing & NOC Portal", icon: "R" },
+      { to: "/ops/am-noc-routing", label: "AM & NOC & Routing Portal", icon: "A" },
+      { to: "/ops/account-managers", label: "Account Managers Portal", icon: "M" },
+      { to: "/ops/performance-audit", label: "NOC Performance / Audit", icon: "P" },
+    ],
+  },
+  {
+    title: "Other",
+    items: [
+      { to: "/", label: "Dashboard", icon: "D" },
+      { to: "/finance", label: "Finance", icon: "F" },
+      { to: "/settings", label: "Settings", icon: "S" },
+    ],
+  },
 ];
 
 export function AppShell() {
@@ -31,6 +52,9 @@ export function AppShell() {
   );
   const interconnectionCount = useAppStore((s) => s.companies.filter((c) => c.companyStatus === "INTERCONNECTION").length);
   const tasksOpenCount = useAppStore((s) => s.tasks.filter((t) => t.status !== "Done").length);
+  const opsUrgentCount = useAppStore(
+    (s) => s.opsCases.filter((entry) => (entry.status === "New" || entry.status === "InProgress") && entry.severity === "Urgent").length,
+  );
   const [openNotifications, setOpenNotifications] = useState(false);
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [newLeadForm, setNewLeadForm] = useState({
@@ -117,37 +141,47 @@ export function AppShell() {
           <p className="text-[11px] uppercase tracking-wide text-slate-200">TelecomCRM</p>
           <h1 className="text-sm font-semibold">Event-Driven</h1>
         </div>
-        <nav className="space-y-0.5">
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-medium transition ${
-                  isActive ? "bg-white/20 text-white" : "text-slate-200 hover:bg-white/10"
-                }`
-              }
-            >
-              <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-white/15 text-[10px]">
-                {item.icon}
-              </span>
-              <span className="flex-1">{item.label}</span>
-              {item.to === "/leads" && (
-                <span className="rounded-full bg-brand-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  {leadsCount}
-                </span>
-              )}
-              {item.to === "/tasks" && (
-                <span className="rounded-full bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  {tasksOpenCount}
-                </span>
-              )}
-              {item.to === "/interconnection" && (
-                <span className="rounded-full bg-cyan-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                  {interconnectionCount}
-                </span>
-              )}
-            </NavLink>
+        <nav className="space-y-2">
+          {navGroups.map((group) => (
+            <section key={group.title} className="space-y-0.5">
+              <p className="px-2 text-[10px] font-semibold uppercase tracking-wide text-slate-300">{group.title}</p>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 rounded-md px-2.5 py-2 text-xs font-medium transition ${
+                      isActive ? "bg-white/20 text-white" : "text-slate-200 hover:bg-white/10"
+                    }`
+                  }
+                >
+                  <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-white/15 text-[10px]">
+                    {item.icon}
+                  </span>
+                  <span className="flex-1">{item.label}</span>
+                  {item.to === "/leads" && (
+                    <span className="rounded-full bg-brand-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {leadsCount}
+                    </span>
+                  )}
+                  {item.to === "/tasks" && (
+                    <span className="rounded-full bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {tasksOpenCount}
+                    </span>
+                  )}
+                  {item.to === "/interconnection" && (
+                    <span className="rounded-full bg-cyan-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {interconnectionCount}
+                    </span>
+                  )}
+                  {item.to === "/ops/sms-noc" && opsUrgentCount > 0 && (
+                    <span className="rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      {opsUrgentCount}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </section>
           ))}
         </nav>
         <div className="mt-auto rounded-lg border border-white/15 bg-[#1a3b78] p-2">

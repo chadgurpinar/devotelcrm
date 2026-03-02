@@ -10,6 +10,17 @@ type DueFilter = "Any" | "DueSoon" | "Overdue" | "NoDueDate";
 type LinkedFilter = "Any" | "Company" | "Event" | "Interconnection" | "Project";
 type SortBy = "DueDateAsc" | "CreatedDateDesc" | "PriorityDesc" | "LastActivityDesc";
 type LinkTarget = { label: string; href: string } | null;
+type CreateTaskForm = {
+  title: string;
+  description: string;
+  assigneeUserId: string;
+  priority: TaskPriority;
+  dueAt: string;
+  visibility: TaskVisibility;
+  linkedType: "None" | "Company" | "Event" | "Interconnection" | "Project";
+  linkedId: string;
+  initialComment: string;
+};
 
 const priorityWeight: Record<TaskPriority, number> = {
   Critical: 4,
@@ -31,6 +42,20 @@ function isOverdue(task: Task): boolean {
   return new Date(task.dueAt).getTime() < Date.now();
 }
 
+function emptyCreateTaskForm(activeUserId: string): CreateTaskForm {
+  return {
+    title: "",
+    description: "",
+    assigneeUserId: activeUserId,
+    priority: "Medium",
+    dueAt: "",
+    visibility: "Private",
+    linkedType: "None",
+    linkedId: "",
+    initialComment: "",
+  };
+}
+
 export function TasksPage() {
   const state = useAppStore();
   const [section, setSection] = useState<TaskSection>("MyPersonalTasks");
@@ -43,17 +68,8 @@ export function TasksPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [newCommentText, setNewCommentText] = useState("");
   const [newCommentKind, setNewCommentKind] = useState<"Comment" | "Blocker">("Comment");
-  const [form, setForm] = useState({
-    title: "",
-    description: "",
-    assigneeUserId: state.activeUserId,
-    priority: "Medium" as TaskPriority,
-    dueAt: "",
-    visibility: "Private" as TaskVisibility,
-    linkedType: "None" as "None" | "Company" | "Event" | "Interconnection" | "Project",
-    linkedId: "",
-    initialComment: "",
-  });
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [form, setForm] = useState<CreateTaskForm>(() => emptyCreateTaskForm(state.activeUserId));
   const [detailDraft, setDetailDraft] = useState<{
     title: string;
     description: string;
@@ -210,18 +226,8 @@ export function TasksPage() {
       ...linkedFields,
       initialComment: form.initialComment.trim() || undefined,
     });
-    setForm((prev) => ({
-      ...prev,
-      title: "",
-      description: "",
-      assigneeUserId: state.activeUserId,
-      priority: "Medium",
-      dueAt: "",
-      visibility: "Private",
-      linkedType: "None",
-      linkedId: "",
-      initialComment: "",
-    }));
+    setForm(emptyCreateTaskForm(state.activeUserId));
+    setCreateModalOpen(false);
   }
 
   function saveTaskDetail() {
@@ -253,7 +259,20 @@ export function TasksPage() {
 
   return (
     <div className="space-y-4">
-      <Card title="Operational Tasks">
+      <Card
+        title="Operational Tasks"
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              setForm(emptyCreateTaskForm(state.activeUserId));
+              setCreateModalOpen(true);
+            }}
+          >
+            Create task
+          </Button>
+        }
+      >
         <div className="mb-3 flex flex-wrap gap-2">
           <Button variant={section === "MyPersonalTasks" ? "primary" : "secondary"} onClick={() => setSection("MyPersonalTasks")}>
             My Personal Tasks
@@ -317,89 +336,6 @@ export function TasksPage() {
               <option value="PriorityDesc">Priority</option>
               <option value="CreatedDateDesc">Created date</option>
             </select>
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-2 rounded-md border border-slate-200 p-3 md:grid-cols-6">
-          <div className="md:col-span-2">
-            <FieldLabel>Title</FieldLabel>
-            <input value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
-          </div>
-          <div>
-            <FieldLabel>Assignee</FieldLabel>
-            <select value={form.assigneeUserId} onChange={(e) => setForm((prev) => ({ ...prev, assigneeUserId: e.target.value }))}>
-              {state.users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Priority</FieldLabel>
-            <select value={form.priority} onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value as TaskPriority }))}>
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-              <option value="Critical">Critical</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Due date</FieldLabel>
-            <input type="date" value={form.dueAt} onChange={(e) => setForm((prev) => ({ ...prev, dueAt: e.target.value }))} />
-          </div>
-          <div>
-            <FieldLabel>Visibility</FieldLabel>
-            <select value={form.visibility} onChange={(e) => setForm((prev) => ({ ...prev, visibility: e.target.value as TaskVisibility }))}>
-              <option value="Private">Private</option>
-              <option value="Shared">Shared</option>
-            </select>
-          </div>
-          <div className="md:col-span-3">
-            <FieldLabel>Description</FieldLabel>
-            <input value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} />
-          </div>
-          <div>
-            <FieldLabel>Link type</FieldLabel>
-            <select
-              value={form.linkedType}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  linkedType: e.target.value as "None" | "Company" | "Event" | "Interconnection" | "Project",
-                }))
-              }
-            >
-              <option value="None">None</option>
-              <option value="Company">Company</option>
-              <option value="Event">Event</option>
-              <option value="Interconnection">Interconnection</option>
-              <option value="Project">Project</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Linked entity</FieldLabel>
-            <select
-              value={form.linkedId}
-              onChange={(e) => setForm((prev) => ({ ...prev, linkedId: e.target.value }))}
-              disabled={form.linkedType === "None"}
-            >
-              {form.linkedType === "None" && <option value="">None</option>}
-              {linkedOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <FieldLabel>Initial comment</FieldLabel>
-            <input value={form.initialComment} onChange={(e) => setForm((prev) => ({ ...prev, initialComment: e.target.value }))} />
-          </div>
-          <div className="md:col-span-6">
-            <Button onClick={handleCreateTask} disabled={!form.title.trim()}>
-              Create task
-            </Button>
           </div>
         </div>
 
@@ -475,6 +411,107 @@ export function TasksPage() {
           </table>
         </div>
       </Card>
+
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCreateModalOpen(false)}>
+          <div
+            className="w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-800">Create task</h3>
+              <Button size="sm" variant="secondary" onClick={() => setCreateModalOpen(false)}>
+                Close
+              </Button>
+            </div>
+            <div className="grid gap-2 md:grid-cols-6">
+              <div className="md:col-span-2">
+                <FieldLabel>Title</FieldLabel>
+                <input value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Assignee</FieldLabel>
+                <select value={form.assigneeUserId} onChange={(e) => setForm((prev) => ({ ...prev, assigneeUserId: e.target.value }))}>
+                  {state.users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Priority</FieldLabel>
+                <select value={form.priority} onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value as TaskPriority }))}>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Due date</FieldLabel>
+                <input type="date" value={form.dueAt} onChange={(e) => setForm((prev) => ({ ...prev, dueAt: e.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Visibility</FieldLabel>
+                <select value={form.visibility} onChange={(e) => setForm((prev) => ({ ...prev, visibility: e.target.value as TaskVisibility }))}>
+                  <option value="Private">Private</option>
+                  <option value="Shared">Shared</option>
+                </select>
+              </div>
+              <div className="md:col-span-3">
+                <FieldLabel>Description</FieldLabel>
+                <input value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Link type</FieldLabel>
+                <select
+                  value={form.linkedType}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      linkedType: e.target.value as "None" | "Company" | "Event" | "Interconnection" | "Project",
+                    }))
+                  }
+                >
+                  <option value="None">None</option>
+                  <option value="Company">Company</option>
+                  <option value="Event">Event</option>
+                  <option value="Interconnection">Interconnection</option>
+                  <option value="Project">Project</option>
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Linked entity</FieldLabel>
+                <select
+                  value={form.linkedId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, linkedId: e.target.value }))}
+                  disabled={form.linkedType === "None"}
+                >
+                  {form.linkedType === "None" && <option value="">None</option>}
+                  {linkedOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <FieldLabel>Initial comment</FieldLabel>
+                <input value={form.initialComment} onChange={(e) => setForm((prev) => ({ ...prev, initialComment: e.target.value }))} />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setCreateModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleCreateTask} disabled={!form.title.trim()}>
+                Create task
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedTask && detailDraft && (
         <Card

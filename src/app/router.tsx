@@ -13,6 +13,12 @@ import { ReportsPage } from "../features/reports/ReportsPage";
 import { FinancePage } from "../features/finance/FinancePage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { ContractsPage } from "../features/contracts/ContractsPage";
+import { SmsNocPortalPage } from "../features/ops/SmsNocPortalPage";
+import { VoiceNocPortalPage } from "../features/ops/VoiceNocPortalPage";
+import { RoutingNocPortalPage } from "../features/ops/RoutingNocPortalPage";
+import { AmNocRoutingPortalPage } from "../features/ops/AmNocRoutingPortalPage";
+import { AccountManagersPortalPage } from "../features/ops/AccountManagersPortalPage";
+import { NocPerformanceAuditPage } from "../features/ops/NocPerformanceAuditPage";
 
 export const router = createBrowserRouter([
   {
@@ -32,6 +38,12 @@ export const router = createBrowserRouter([
       { path: "/reports", element: <ReportsPage /> },
       { path: "/finance", element: <FinancePage /> },
       { path: "/settings", element: <SettingsPage /> },
+      { path: "/ops/sms-noc", element: <SmsNocPortalPage /> },
+      { path: "/ops/voice-noc", element: <VoiceNocPortalPage /> },
+      { path: "/ops/routing-noc", element: <RoutingNocPortalPage /> },
+      { path: "/ops/am-noc-routing", element: <AmNocRoutingPortalPage /> },
+      { path: "/ops/account-managers", element: <AccountManagersPortalPage /> },
+      { path: "/ops/performance-audit", element: <NocPerformanceAuditPage /> },
     ],
   },
 ]);

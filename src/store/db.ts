@@ -17,6 +17,14 @@ import {
   Note,
   OurCompanyInfo,
   OurEntity,
+  OpsAuditLogEntry,
+  OpsCase,
+  OpsCaseActionType,
+  OpsMonitoringSignal,
+  OpsMonitoringSignalInput,
+  OpsRequest,
+  OpsRequestActionType,
+  OpsShift,
   Project,
   ProjectAiSummary,
   ProjectAttachmentLink,
@@ -73,6 +81,30 @@ interface DbActions {
   updateOurCompanyInfo: (payload: OurCompanyInfo) => void;
   startInterconnectionProcess: (companyId: string, track: InterconnectionTrack) => void;
   setInterconnectionStage: (processId: string, stage: InterconnectionStage) => void;
+  createOpsRequest: (payload: Omit<OpsRequest, "id" | "createdAt" | "updatedAt"> & Partial<Pick<OpsRequest, "status">>) => string;
+  updateOpsRequest: (request: OpsRequest) => void;
+  applyOpsRequestAction: (
+    requestId: string,
+    actionType: OpsRequestActionType,
+    options?: { comment?: string; doneByUserId?: string },
+  ) => { ok: boolean; message?: string };
+  createOpsCase: (payload: Omit<OpsCase, "id" | "createdAt" | "updatedAt">) => string;
+  updateOpsCase: (opsCase: OpsCase) => void;
+  applyOpsCaseAction: (
+    caseId: string,
+    actionType: OpsCaseActionType,
+    options?: {
+      comment?: string;
+      assignedToUserId?: string;
+      resolutionType?: OpsCase["resolutionType"];
+      doneByUserId?: string;
+    },
+  ) => { ok: boolean; message?: string };
+  createOpsMonitoringSignal: (payload: OpsMonitoringSignalInput) => string;
+  ingestOpsMonitoringSignals: (signals: OpsMonitoringSignalInput[], options?: { autoCreate?: boolean }) => number;
+  createOpsShift: (payload: Omit<OpsShift, "id" | "createdAt" | "updatedAt">) => string;
+  updateOpsShift: (shift: OpsShift) => void;
+  deleteOpsShift: (shiftId: string) => void;
   resetDemoData: () => void;
   exportData: () => string;
   importData: (raw: string) => { ok: boolean; message: string };
@@ -382,6 +414,58 @@ function getStageRequirements(
     }
   }
   return missing;
+}
+
+function isOpsRequestTerminal(status: OpsRequest["status"]): boolean {
+  return status === "Done" || status === "Cancelled" || status === "Failed";
+}
+
+function isOpsCaseTerminal(status: OpsCase["status"]): boolean {
+  return status === "Resolved" || status === "Ignored" || status === "Cancelled";
+}
+
+function requestDoneActionForType(requestType: OpsRequest["requestType"]): OpsRequestActionType {
+  if (requestType === "TroubleTicketRequest") return "TT_SENT";
+  if (requestType === "TestRequest") return "TEST_DONE";
+  if (requestType === "LossAccepted") return "LOSS_ACCEPTED";
+  return "ROUTING_DONE";
+}
+
+function nextRequestStatusForAction(
+  currentStatus: OpsRequest["status"],
+  actionType: OpsRequestActionType,
+): OpsRequest["status"] | undefined {
+  if (actionType === "SEND") return currentStatus === "Draft" ? "Sent" : undefined;
+  if (actionType === "START") return currentStatus === "Sent" ? "InProgress" : undefined;
+  if (actionType === "MARK_FAILED") return currentStatus === "Sent" || currentStatus === "InProgress" ? "Failed" : undefined;
+  if (actionType === "CANCELLED") return isOpsRequestTerminal(currentStatus) ? undefined : "Cancelled";
+  if (actionType === "ROUTING_DONE" || actionType === "TT_SENT" || actionType === "TEST_DONE" || actionType === "LOSS_ACCEPTED") {
+    return currentStatus === "Sent" || currentStatus === "InProgress" ? "Done" : undefined;
+  }
+  return undefined;
+}
+
+function nextCaseStatusForAction(
+  currentStatus: OpsCase["status"],
+  actionType: OpsCaseActionType,
+): OpsCase["status"] | undefined {
+  if (actionType === "START") return currentStatus === "New" ? "InProgress" : undefined;
+  if (actionType === "RESOLVE") return currentStatus === "InProgress" ? "Resolved" : undefined;
+  if (actionType === "IGNORE") return currentStatus === "New" || currentStatus === "InProgress" ? "Ignored" : undefined;
+  if (actionType === "CANCEL") return currentStatus === "New" || currentStatus === "InProgress" ? "Cancelled" : undefined;
+  return undefined;
+}
+
+function requiresRequestComment(actionType: OpsRequestActionType): boolean {
+  return actionType === "CANCELLED";
+}
+
+function requiresCaseComment(actionType: OpsCaseActionType): boolean {
+  return actionType === "IGNORE" || actionType === "CANCEL" || actionType === "COMMENT";
+}
+
+function buildOpsSlaProfileId(category: OpsCase["category"]): OpsCase["slaProfileId"] {
+  return category === "Loss" ? "LOSS_ALERT" : "KPI_ALERT";
 }
 
 function mapCompanyAddress(company: Record<string, unknown>): Company["address"] {
@@ -1155,6 +1239,454 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           interconnectionProcesses,
         };
       }),
+    createOpsRequest: (payload) => {
+      const id = uid("opr");
+      const now = new Date().toISOString();
+      let createdId = id;
+      set((state) => {
+        const status = payload.status ?? "Draft";
+        const request: OpsRequest = {
+          ...payload,
+          id,
+          status,
+          createdAt: now,
+          updatedAt: now,
+        };
+        const nextAuditLogs: OpsAuditLogEntry[] = [
+          ...state.opsAuditLogs,
+          {
+            id: uid("opsa"),
+            parentType: "Request",
+            parentId: id,
+            actionType: "CREATED_MANUAL",
+            performedByUserId: state.activeUserId,
+            comment: "Request created.",
+            timestamp: now,
+          },
+        ];
+        if (status !== "Draft") {
+          nextAuditLogs.push({
+            id: uid("opsa"),
+            parentType: "Request",
+            parentId: id,
+            actionType: "SEND",
+            performedByUserId: state.activeUserId,
+            timestamp: new Date(new Date(now).getTime() + 60 * 1000).toISOString(),
+          });
+        }
+        if (status === "InProgress" || status === "Done" || status === "Cancelled" || status === "Failed") {
+          nextAuditLogs.push({
+            id: uid("opsa"),
+            parentType: "Request",
+            parentId: id,
+            actionType: "START",
+            performedByUserId: state.activeUserId,
+            timestamp: new Date(new Date(now).getTime() + 120 * 1000).toISOString(),
+          });
+        }
+        if (status === "Done") {
+          nextAuditLogs.push({
+            id: uid("opsa"),
+            parentType: "Request",
+            parentId: id,
+            actionType: requestDoneActionForType(request.requestType),
+            performedByUserId: state.activeUserId,
+            timestamp: new Date(new Date(now).getTime() + 180 * 1000).toISOString(),
+          });
+        }
+        if (status === "Cancelled") {
+          nextAuditLogs.push({
+            id: uid("opsa"),
+            parentType: "Request",
+            parentId: id,
+            actionType: "CANCELLED",
+            performedByUserId: state.activeUserId,
+            comment: "Cancelled during creation workflow.",
+            timestamp: new Date(new Date(now).getTime() + 180 * 1000).toISOString(),
+          });
+        }
+        if (status === "Failed") {
+          nextAuditLogs.push({
+            id: uid("opsa"),
+            parentType: "Request",
+            parentId: id,
+            actionType: "MARK_FAILED",
+            performedByUserId: state.activeUserId,
+            comment: "Marked as failed during creation workflow.",
+            timestamp: new Date(new Date(now).getTime() + 180 * 1000).toISOString(),
+          });
+        }
+        createdId = request.id;
+        return {
+          ...state,
+          opsRequests: [...state.opsRequests, request],
+          opsAuditLogs: nextAuditLogs,
+        };
+      });
+      return createdId;
+    },
+    updateOpsRequest: (request) =>
+      set((state) => {
+        const existing = state.opsRequests.find((entry) => entry.id === request.id);
+        if (!existing) return state;
+        if (request.status !== existing.status) {
+          return {
+            ...state,
+            outbox: [...state.outbox, "Ops request status changes must go through actions."],
+          };
+        }
+        return {
+          ...state,
+          opsRequests: state.opsRequests.map((entry) =>
+            entry.id === request.id
+              ? {
+                  ...request,
+                  updatedAt: new Date().toISOString(),
+                }
+              : entry,
+          ),
+        };
+      }),
+    applyOpsRequestAction: (requestId, actionType, options) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Request not found." };
+      set((state) => {
+        const request = state.opsRequests.find((entry) => entry.id === requestId);
+        if (!request) {
+          result = { ok: false, message: "Request not found." };
+          return state;
+        }
+        const comment = options?.comment?.trim();
+        if (requiresRequestComment(actionType) && !comment) {
+          result = { ok: false, message: "Comment is mandatory for this action." };
+          return state;
+        }
+        const isDoneAction =
+          actionType === "ROUTING_DONE" ||
+          actionType === "TT_SENT" ||
+          actionType === "TEST_DONE" ||
+          actionType === "LOSS_ACCEPTED";
+        if (isDoneAction && actionType !== requestDoneActionForType(request.requestType)) {
+          result = { ok: false, message: "This action does not match request type." };
+          return state;
+        }
+        const nextStatus = nextRequestStatusForAction(request.status, actionType);
+        if (!nextStatus) {
+          result = { ok: false, message: "Action is not valid for current status." };
+          return state;
+        }
+        const doneByUserId = options?.doneByUserId ?? state.activeUserId;
+        const now = new Date().toISOString();
+        const nextRequest: OpsRequest = {
+          ...request,
+          status: nextStatus,
+          updatedAt: now,
+        };
+        result = { ok: true };
+        return {
+          ...state,
+          opsRequests: state.opsRequests.map((entry) => (entry.id === requestId ? nextRequest : entry)),
+          opsAuditLogs: [
+            ...state.opsAuditLogs,
+            {
+              id: uid("opsa"),
+              parentType: "Request",
+              parentId: requestId,
+              actionType,
+              performedByUserId: doneByUserId,
+              comment,
+              timestamp: now,
+            },
+          ],
+        };
+      });
+      return result;
+    },
+    createOpsCase: (payload) => {
+      const id = uid("opc");
+      const now = new Date().toISOString();
+      let createdId = id;
+      set((state) => {
+        const row: OpsCase = {
+          ...payload,
+          id,
+          createdAt: now,
+          updatedAt: now,
+        };
+        createdId = id;
+        return {
+          ...state,
+          opsCases: [...state.opsCases, row],
+          opsAuditLogs: [
+            ...state.opsAuditLogs,
+            {
+              id: uid("opsa"),
+              parentType: "Case",
+              parentId: id,
+              actionType: "CREATED_MANUAL",
+              performedByUserId: state.activeUserId,
+              comment: "Case created manually.",
+              timestamp: now,
+            },
+          ],
+        };
+      });
+      return createdId;
+    },
+    updateOpsCase: (opsCase) =>
+      set((state) => {
+        const existing = state.opsCases.find((entry) => entry.id === opsCase.id);
+        if (!existing) return state;
+        if (opsCase.status !== existing.status) {
+          return {
+            ...state,
+            outbox: [...state.outbox, "Ops case status changes must go through actions."],
+          };
+        }
+        return {
+          ...state,
+          opsCases: state.opsCases.map((entry) =>
+            entry.id === opsCase.id
+              ? {
+                  ...opsCase,
+                  updatedAt: new Date().toISOString(),
+                }
+              : entry,
+          ),
+        };
+      }),
+    applyOpsCaseAction: (caseId, actionType, options) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Case not found." };
+      set((state) => {
+        const target = state.opsCases.find((entry) => entry.id === caseId);
+        if (!target) {
+          result = { ok: false, message: "Case not found." };
+          return state;
+        }
+        const comment = options?.comment?.trim();
+        if (requiresCaseComment(actionType) && !comment) {
+          result = { ok: false, message: "Comment is mandatory for this action." };
+          return state;
+        }
+        const doneByUserId = options?.doneByUserId ?? state.activeUserId;
+        const now = new Date().toISOString();
+        if (actionType === "ASSIGN") {
+          if (!options?.assignedToUserId) {
+            result = { ok: false, message: "Select assignee first." };
+            return state;
+          }
+          const nextCase: OpsCase = {
+            ...target,
+            assignedToUserId: options.assignedToUserId,
+            updatedAt: now,
+          };
+          result = { ok: true };
+          return {
+            ...state,
+            opsCases: state.opsCases.map((entry) => (entry.id === caseId ? nextCase : entry)),
+            opsAuditLogs: [
+              ...state.opsAuditLogs,
+              {
+                id: uid("opsa"),
+                parentType: "Case",
+                parentId: caseId,
+                actionType,
+                performedByUserId: doneByUserId,
+                comment: comment ?? `Assigned to ${options.assignedToUserId}.`,
+                timestamp: now,
+              },
+            ],
+          };
+        }
+        if (actionType === "COMMENT") {
+          result = { ok: true };
+          return {
+            ...state,
+            opsAuditLogs: [
+              ...state.opsAuditLogs,
+              {
+                id: uid("opsa"),
+                parentType: "Case",
+                parentId: caseId,
+                actionType,
+                performedByUserId: doneByUserId,
+                comment,
+                timestamp: now,
+              },
+            ],
+          };
+        }
+        const nextStatus = nextCaseStatusForAction(target.status, actionType);
+        if (!nextStatus) {
+          result = { ok: false, message: "Action is not valid for current status." };
+          return state;
+        }
+        const nextCase: OpsCase = {
+          ...target,
+          status: nextStatus,
+          resolvedAt: actionType === "RESOLVE" ? now : target.resolvedAt,
+          ignoredAt: actionType === "IGNORE" ? now : target.ignoredAt,
+          cancelledAt: actionType === "CANCEL" ? now : target.cancelledAt,
+          resolutionType: actionType === "RESOLVE" ? options?.resolutionType ?? "Unknown" : target.resolutionType,
+          updatedAt: now,
+        };
+        result = { ok: true };
+        return {
+          ...state,
+          opsCases: state.opsCases.map((entry) => (entry.id === caseId ? nextCase : entry)),
+          opsAuditLogs: [
+            ...state.opsAuditLogs,
+            {
+              id: uid("opsa"),
+              parentType: "Case",
+              parentId: caseId,
+              actionType,
+              performedByUserId: doneByUserId,
+              comment,
+              timestamp: now,
+            },
+          ],
+        };
+      });
+      return result;
+    },
+    createOpsMonitoringSignal: (payload) => {
+      const id = uid("opsg");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        opsMonitoringSignals: [
+          ...state.opsMonitoringSignals,
+          {
+            ...payload,
+            id,
+            createdAt: now,
+          },
+        ],
+      }));
+      return id;
+    },
+    ingestOpsMonitoringSignals: (signals, options) => {
+      let createdCount = 0;
+      set((state) => {
+        const autoCreate = options?.autoCreate ?? true;
+        const now = new Date().toISOString();
+        const nextSignals = [...state.opsMonitoringSignals];
+        const nextCases = [...state.opsCases];
+        const nextAudit = [...state.opsAuditLogs];
+        signals.forEach((signal) => {
+          const alreadyExists = nextSignals.some(
+            (entry) => entry.fingerprint === signal.fingerprint && entry.moduleOrigin === signal.moduleOrigin,
+          );
+          if (alreadyExists) {
+            return;
+          }
+          const signalId = uid("opsg");
+          createdCount += 1;
+          let createdCaseId: string | undefined;
+          if (autoCreate) {
+            const openCase = nextCases.find(
+              (entry) =>
+                !isOpsCaseTerminal(entry.status) &&
+                entry.moduleOrigin === signal.moduleOrigin &&
+                entry.relatedTrack === signal.relatedTrack &&
+                entry.category === signal.category &&
+                entry.relatedProvider === signal.relatedProvider &&
+                entry.relatedDestination === signal.relatedDestination,
+            );
+            if (openCase) {
+              createdCaseId = openCase.id;
+              openCase.updatedAt = now;
+              nextAudit.push({
+                id: uid("opsa"),
+                parentType: "Case",
+                parentId: openCase.id,
+                actionType: "SIGNAL_REFRESHED",
+                performedByUserId: state.activeUserId,
+                comment: "Additional monitoring signal matched this open case.",
+                timestamp: now,
+              });
+            } else {
+              const caseId = uid("opc");
+              createdCaseId = caseId;
+              nextCases.push({
+                id: caseId,
+                moduleOrigin: signal.moduleOrigin,
+                relatedTrack: signal.relatedTrack,
+                severity: signal.severity,
+                category: signal.category,
+                detectedAt: signal.detectedAt,
+                relatedCompanyId: signal.relatedCompanyId,
+                relatedProvider: signal.relatedProvider,
+                relatedDestination: signal.relatedDestination,
+                description: signal.description,
+                status: "New",
+                slaProfileId: buildOpsSlaProfileId(signal.category),
+                createdAt: now,
+                updatedAt: now,
+              });
+              nextAudit.push({
+                id: uid("opsa"),
+                parentType: "Case",
+                parentId: caseId,
+                actionType: "CREATED_AUTO",
+                performedByUserId: state.activeUserId,
+                comment: "Case auto-created from monitoring signal.",
+                timestamp: now,
+              });
+            }
+          }
+          nextSignals.push({
+            ...signal,
+            id: signalId,
+            createdAt: now,
+            createdCaseId,
+          });
+        });
+        return {
+          ...state,
+          opsMonitoringSignals: nextSignals,
+          opsCases: nextCases,
+          opsAuditLogs: nextAudit,
+        };
+      });
+      return createdCount;
+    },
+    createOpsShift: (payload) => {
+      const id = uid("opsh");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        opsShifts: [
+          ...state.opsShifts,
+          {
+            ...payload,
+            id,
+            userIds: Array.from(new Set(payload.userIds)),
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      }));
+      return id;
+    },
+    updateOpsShift: (shift) =>
+      set((state) => ({
+        ...state,
+        opsShifts: state.opsShifts.map((entry) =>
+          entry.id === shift.id
+            ? {
+                ...shift,
+                userIds: Array.from(new Set(shift.userIds)),
+                updatedAt: new Date().toISOString(),
+              }
+            : entry,
+        ),
+      })),
+    deleteOpsShift: (shiftId) =>
+      set((state) => ({
+        ...state,
+        opsShifts: state.opsShifts.filter((entry) => entry.id !== shiftId),
+      })),
     resetDemoData: () =>
       set((state) => ({
         ...state,
@@ -1175,6 +1707,11 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           taskComments: Array.isArray(data.taskComments) ? data.taskComments : [],
           projects: Array.isArray(data.projects) ? data.projects : [],
           projectWeeklyReports: Array.isArray(data.projectWeeklyReports) ? data.projectWeeklyReports : [],
+          opsRequests: Array.isArray(data.opsRequests) ? data.opsRequests : state.opsRequests,
+          opsCases: Array.isArray(data.opsCases) ? data.opsCases : state.opsCases,
+          opsMonitoringSignals: Array.isArray(data.opsMonitoringSignals) ? data.opsMonitoringSignals : state.opsMonitoringSignals,
+          opsAuditLogs: Array.isArray(data.opsAuditLogs) ? data.opsAuditLogs : state.opsAuditLogs,
+          opsShifts: Array.isArray(data.opsShifts) ? data.opsShifts : state.opsShifts,
         }));
         return { ok: true, message: "Data imported successfully." };
       } catch {
@@ -1256,7 +1793,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 12,
+    version: 13,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -1268,6 +1805,11 @@ export const useAppStore = create<AppStore>()(
             taskComments?: Array<Record<string, unknown>>;
             projects?: Array<Record<string, unknown>>;
             projectWeeklyReports?: Array<Record<string, unknown>>;
+            opsRequests?: Array<Record<string, unknown>>;
+            opsCases?: Array<Record<string, unknown>>;
+            opsMonitoringSignals?: Array<Record<string, unknown>>;
+            opsAuditLogs?: Array<Record<string, unknown>>;
+            opsShifts?: Array<Record<string, unknown>>;
           })
         | undefined;
       if (!state || !Array.isArray(state.users) || !Array.isArray(state.events) || !Array.isArray(state.companies)) {
@@ -1917,6 +2459,228 @@ export const useAppStore = create<AppStore>()(
             .filter((entry): entry is OurCompanyInfo => Boolean(entry))
         : fallback.ourCompanyInfo;
 
+      const opsRequests = Array.isArray(state.opsRequests)
+        ? state.opsRequests
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const requestType =
+                raw.requestType === "RoutingRequest" ||
+                raw.requestType === "TroubleTicketRequest" ||
+                raw.requestType === "TestRequest" ||
+                raw.requestType === "LossAccepted" ||
+                raw.requestType === "InterconnectionRequest"
+                  ? raw.requestType
+                  : "RoutingRequest";
+              const status =
+                raw.status === "Draft" ||
+                raw.status === "Sent" ||
+                raw.status === "InProgress" ||
+                raw.status === "Done" ||
+                raw.status === "Cancelled" ||
+                raw.status === "Failed"
+                  ? raw.status
+                  : "Draft";
+              const priority = raw.priority === "Urgent" || raw.priority === "High" ? raw.priority : "Medium";
+              const assignedToRole =
+                raw.assignedToRole === "AM" ||
+                raw.assignedToRole === "NOC" ||
+                raw.assignedToRole === "Routing" ||
+                raw.assignedToRole === "Supervisor"
+                  ? raw.assignedToRole
+                  : "NOC";
+              const relatedTrack = raw.relatedTrack === "Voice" ? "Voice" : "SMS";
+              const destinationRaw =
+                raw.destination && typeof raw.destination === "object" ? (raw.destination as Record<string, unknown>) : {};
+              return {
+                id: typeof raw.id === "string" ? raw.id : `opr-migrated-${idx + 1}`,
+                requestType,
+                createdByUserId: typeof raw.createdByUserId === "string" ? raw.createdByUserId : activeUserId,
+                assignedToRole,
+                priority,
+                relatedCompanyId: typeof raw.relatedCompanyId === "string" ? raw.relatedCompanyId : undefined,
+                relatedTrack,
+                destination: {
+                  country:
+                    typeof destinationRaw.country === "string" && destinationRaw.country.trim()
+                      ? destinationRaw.country
+                      : "Unknown",
+                  operator: typeof destinationRaw.operator === "string" ? destinationRaw.operator : undefined,
+                },
+                comment: typeof raw.comment === "string" ? raw.comment : "",
+                status,
+                relatedCaseId: typeof raw.relatedCaseId === "string" ? raw.relatedCaseId : undefined,
+                createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+                updatedAt:
+                  typeof raw.updatedAt === "string"
+                    ? raw.updatedAt
+                    : typeof raw.createdAt === "string"
+                      ? raw.createdAt
+                      : new Date().toISOString(),
+              } as OpsRequest;
+            })
+            .filter((entry) => Boolean(entry.id))
+        : fallback.opsRequests;
+
+      const opsCases = Array.isArray(state.opsCases)
+        ? state.opsCases
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const moduleOrigin =
+                raw.moduleOrigin === "ProviderIssues" ||
+                raw.moduleOrigin === "Losses" ||
+                raw.moduleOrigin === "NewAndLostTraffics" ||
+                raw.moduleOrigin === "TrafficComparison" ||
+                raw.moduleOrigin === "ScheduleTestResults" ||
+                raw.moduleOrigin === "FailedSmsOrCallAnalysis"
+                  ? raw.moduleOrigin
+                  : "ProviderIssues";
+              const severity = raw.severity === "Urgent" || raw.severity === "High" ? raw.severity : "Medium";
+              const category =
+                raw.category === "Loss" ||
+                raw.category === "KPI" ||
+                raw.category === "Traffic" ||
+                raw.category === "Provider" ||
+                raw.category === "Test" ||
+                raw.category === "Other"
+                  ? raw.category
+                  : "Other";
+              const status =
+                raw.status === "New" ||
+                raw.status === "InProgress" ||
+                raw.status === "Resolved" ||
+                raw.status === "Ignored" ||
+                raw.status === "Cancelled"
+                  ? raw.status
+                  : "New";
+              const slaProfileId = raw.slaProfileId === "LOSS_ALERT" ? "LOSS_ALERT" : "KPI_ALERT";
+              return {
+                id: typeof raw.id === "string" ? raw.id : `opc-migrated-${idx + 1}`,
+                moduleOrigin,
+                relatedTrack: raw.relatedTrack === "Voice" ? "Voice" : "SMS",
+                severity,
+                category,
+                detectedAt: typeof raw.detectedAt === "string" ? raw.detectedAt : new Date().toISOString(),
+                relatedCompanyId: typeof raw.relatedCompanyId === "string" ? raw.relatedCompanyId : undefined,
+                relatedProvider: typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined,
+                relatedDestination: typeof raw.relatedDestination === "string" ? raw.relatedDestination : undefined,
+                description: typeof raw.description === "string" ? raw.description : "",
+                status,
+                slaProfileId,
+                resolvedAt: typeof raw.resolvedAt === "string" ? raw.resolvedAt : undefined,
+                ignoredAt: typeof raw.ignoredAt === "string" ? raw.ignoredAt : undefined,
+                cancelledAt: typeof raw.cancelledAt === "string" ? raw.cancelledAt : undefined,
+                resolutionType:
+                  raw.resolutionType === "Fixed" ||
+                  raw.resolutionType === "FalsePositive" ||
+                  raw.resolutionType === "PartnerIssue" ||
+                  raw.resolutionType === "PlannedWork" ||
+                  raw.resolutionType === "Unknown"
+                    ? raw.resolutionType
+                    : undefined,
+                assignedToUserId: typeof raw.assignedToUserId === "string" ? raw.assignedToUserId : undefined,
+                createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+                updatedAt:
+                  typeof raw.updatedAt === "string"
+                    ? raw.updatedAt
+                    : typeof raw.createdAt === "string"
+                      ? raw.createdAt
+                      : new Date().toISOString(),
+              } as OpsCase;
+            })
+            .filter((entry) => Boolean(entry.id))
+        : fallback.opsCases;
+
+      const opsMonitoringSignals = Array.isArray(state.opsMonitoringSignals)
+        ? state.opsMonitoringSignals
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const moduleOrigin =
+                raw.moduleOrigin === "ProviderIssues" ||
+                raw.moduleOrigin === "Losses" ||
+                raw.moduleOrigin === "NewAndLostTraffics" ||
+                raw.moduleOrigin === "TrafficComparison" ||
+                raw.moduleOrigin === "ScheduleTestResults" ||
+                raw.moduleOrigin === "FailedSmsOrCallAnalysis"
+                  ? raw.moduleOrigin
+                  : "ProviderIssues";
+              const category =
+                raw.category === "Loss" ||
+                raw.category === "KPI" ||
+                raw.category === "Traffic" ||
+                raw.category === "Provider" ||
+                raw.category === "Test" ||
+                raw.category === "Other"
+                  ? raw.category
+                  : "Other";
+              const severity = raw.severity === "Urgent" || raw.severity === "High" ? raw.severity : "Medium";
+              return {
+                id: typeof raw.id === "string" ? raw.id : `opsg-migrated-${idx + 1}`,
+                moduleOrigin,
+                relatedTrack: raw.relatedTrack === "Voice" ? "Voice" : "SMS",
+                severity,
+                category,
+                detectedAt: typeof raw.detectedAt === "string" ? raw.detectedAt : new Date().toISOString(),
+                fingerprint: typeof raw.fingerprint === "string" ? raw.fingerprint : `fingerprint-${idx + 1}`,
+                relatedCompanyId: typeof raw.relatedCompanyId === "string" ? raw.relatedCompanyId : undefined,
+                relatedProvider: typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined,
+                relatedDestination: typeof raw.relatedDestination === "string" ? raw.relatedDestination : undefined,
+                description: typeof raw.description === "string" ? raw.description : "",
+                rawPayload: raw.rawPayload,
+                createdCaseId: typeof raw.createdCaseId === "string" ? raw.createdCaseId : undefined,
+                createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+              } as OpsMonitoringSignal;
+            })
+            .filter((entry) => Boolean(entry.id))
+        : fallback.opsMonitoringSignals;
+
+      const opsAuditLogs = Array.isArray(state.opsAuditLogs)
+        ? state.opsAuditLogs
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const parentType = raw.parentType === "Case" ? "Case" : "Request";
+              const actionType =
+                typeof raw.actionType === "string"
+                  ? raw.actionType
+                  : parentType === "Case"
+                    ? "COMMENT"
+                    : "SEND";
+              return {
+                id: typeof raw.id === "string" ? raw.id : `opsa-migrated-${idx + 1}`,
+                parentType,
+                parentId: typeof raw.parentId === "string" ? raw.parentId : "",
+                actionType: actionType as OpsAuditLogEntry["actionType"],
+                performedByUserId:
+                  typeof raw.performedByUserId === "string" ? raw.performedByUserId : activeUserId,
+                comment: typeof raw.comment === "string" ? raw.comment : undefined,
+                timestamp: typeof raw.timestamp === "string" ? raw.timestamp : new Date().toISOString(),
+              } as OpsAuditLogEntry;
+            })
+            .filter((entry) => Boolean(entry.parentId))
+            .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+        : fallback.opsAuditLogs;
+
+      const opsShifts = Array.isArray(state.opsShifts)
+        ? state.opsShifts
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              return {
+                id: typeof raw.id === "string" ? raw.id : `opsh-migrated-${idx + 1}`,
+                track: raw.track === "SMS" || raw.track === "Voice" || raw.track === "Both" ? raw.track : "Both",
+                startsAt: typeof raw.startsAt === "string" ? raw.startsAt : new Date().toISOString(),
+                endsAt: typeof raw.endsAt === "string" ? raw.endsAt : new Date().toISOString(),
+                userIds: Array.isArray(raw.userIds) ? raw.userIds.filter((entry): entry is string => typeof entry === "string") : [],
+                createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+                updatedAt:
+                  typeof raw.updatedAt === "string"
+                    ? raw.updatedAt
+                    : typeof raw.createdAt === "string"
+                      ? raw.createdAt
+                      : new Date().toISOString(),
+              } as OpsShift;
+            })
+            .filter((entry) => Boolean(entry.id))
+        : fallback.opsShifts;
+
       return {
         ...fallback,
         ...state,
@@ -1938,6 +2702,13 @@ export const useAppStore = create<AppStore>()(
           ourCompanyInfo.length > 0
             ? ourCompanyInfo
             : fallback.ourCompanyInfo,
+        opsRequests: Array.isArray(state.opsRequests) ? opsRequests : fallback.opsRequests,
+        opsCases: Array.isArray(state.opsCases) ? opsCases : fallback.opsCases,
+        opsMonitoringSignals: Array.isArray(state.opsMonitoringSignals)
+          ? opsMonitoringSignals
+          : fallback.opsMonitoringSignals,
+        opsAuditLogs: Array.isArray(state.opsAuditLogs) ? opsAuditLogs : fallback.opsAuditLogs,
+        opsShifts: Array.isArray(state.opsShifts) ? opsShifts : fallback.opsShifts,
       } as unknown as AppStore;
     },
   }),
