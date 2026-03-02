@@ -13,7 +13,7 @@ const items = [
   { to: "/contracts", label: "Contracts", icon: "K" },
   { to: "/tasks", label: "Tasks", icon: "T" },
   { to: "/notes", label: "Notes", icon: "N" },
-  { to: "/reports", label: "Reports", icon: "R" },
+  { to: "/reports", label: "Projects", icon: "P" },
   { to: "/finance", label: "Finance", icon: "F" },
   { to: "/settings", label: "Settings", icon: "S" },
 ];

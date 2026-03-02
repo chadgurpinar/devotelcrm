@@ -11,3 +11,6 @@ export const getEventName = (s: AppStore, eventId?: string): string =>
 
 export const getContactName = (s: AppStore, contactId?: string): string =>
   s.contacts.find((c) => c.id === contactId)?.name ?? "-";
+
+export const getProjectName = (s: AppStore, projectId?: string): string =>
+  s.projects.find((project) => project.id === projectId)?.name ?? "-";

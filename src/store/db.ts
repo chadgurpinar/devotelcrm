@@ -17,7 +17,14 @@ import {
   Note,
   OurCompanyInfo,
   OurEntity,
+  Project,
+  ProjectAiSummary,
+  ProjectAttachmentLink,
+  ProjectManagerSummary,
+  ProjectRoleReport,
+  ProjectWeeklyReport,
   Task,
+  TaskComment,
 } from "./types";
 
 interface DbActions {
@@ -41,9 +48,19 @@ interface DbActions {
   createNote: (payload: Omit<Note, "id" | "createdAt" | "reminderTriggered">) => string;
   updateNote: (note: Note) => void;
   deleteNote: (noteId: string) => void;
-  createTask: (payload: Omit<Task, "id" | "updates"> & { initialUpdate?: string }) => string;
-  addTaskUpdate: (taskId: string, text: string) => void;
+  createTask: (
+    payload: Omit<Task, "id" | "createdAt" | "updatedAt" | "completedAt" | "watcherUserIds"> & {
+      watcherUserIds?: string[];
+      initialComment?: string;
+    },
+  ) => string;
+  addTaskComment: (taskId: string, text: string, kind?: TaskComment["kind"]) => void;
   updateTask: (task: Task) => void;
+  createProject: (payload: Omit<Project, "id" | "createdAt" | "updatedAt">) => string;
+  updateProject: (project: Project) => void;
+  createProjectWeeklyReport: (payload: Omit<ProjectWeeklyReport, "id" | "createdAt" | "updatedAt">) => string;
+  updateProjectWeeklyReport: (report: ProjectWeeklyReport) => void;
+  generateProjectAiSummary: (projectId: string, weekStartDate: string) => void;
   createContract: (
     payload: Omit<Contract, "id" | "createdAt" | "updatedAt" | "signedAt"> & Partial<Pick<Contract, "signedAt">>,
   ) => string;
@@ -154,6 +171,176 @@ function mapLegacyContractStatus(value: unknown): ContractStatus {
     default:
       return "Draft";
   }
+}
+
+function mapLegacyTaskStatus(value: unknown): Task["status"] {
+  if (value === "Done") return "Done";
+  if (value === "InProgress" || value === "Doing") return "InProgress";
+  return "Open";
+}
+
+function mapLegacyTaskPriority(value: unknown): Task["priority"] {
+  if (value === "Critical") return "Critical";
+  if (value === "High") return "High";
+  if (value === "Low") return "Low";
+  return "Medium";
+}
+
+function mapLegacyProjectStatus(value: unknown): Project["status"] {
+  if (value === "Active") return "InProgress";
+  if (value === "Paused") return "Paused";
+  if (value === "Completed") return "Completed";
+  return "InProgress";
+}
+
+function toProjectTextList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return [];
+}
+
+function toProjectAttachmentLinks(value: unknown): ProjectAttachmentLink[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry, idx) => {
+      if (typeof entry === "string") {
+        return { label: `Attachment ${idx + 1}`, url: entry };
+      }
+      if (!entry || typeof entry !== "object") return undefined;
+      const raw = entry as Record<string, unknown>;
+      const url = typeof raw.url === "string" ? raw.url.trim() : "";
+      if (!url) return undefined;
+      return {
+        label: typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : `Attachment ${idx + 1}`,
+        url,
+      };
+    })
+    .filter((entry): entry is ProjectAttachmentLink => Boolean(entry));
+}
+
+function normalizeProjectRoleReport(raw: unknown, fallbackUserId: string): ProjectRoleReport | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const entry = raw as Record<string, unknown>;
+  const authorUserId =
+    typeof entry.authorUserId === "string"
+      ? entry.authorUserId
+      : typeof entry.submittedByUserId === "string"
+        ? entry.submittedByUserId
+        : fallbackUserId;
+  const updatedAt = typeof entry.updatedAt === "string" ? entry.updatedAt : new Date().toISOString();
+  return {
+    authorUserId,
+    achievements: toProjectTextList(entry.achievements),
+    inProgress: toProjectTextList(entry.inProgress),
+    blockers: toProjectTextList(entry.blockers),
+    decisionsRequired: toProjectTextList(entry.decisionsRequired),
+    nextWeekFocus: toProjectTextList(entry.nextWeekFocus),
+    attachments: toProjectAttachmentLinks(entry.attachments),
+    submittedAt: typeof entry.submittedAt === "string" ? entry.submittedAt : undefined,
+    updatedAt,
+  };
+}
+
+function normalizeProjectManagerSummary(raw: unknown, fallbackUserId: string): ProjectManagerSummary | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const entry = raw as Record<string, unknown>;
+  const executiveSummaryText =
+    typeof entry.executiveSummaryText === "string"
+      ? entry.executiveSummaryText
+      : typeof entry.text === "string"
+        ? entry.text
+        : "";
+  const riskLevel = entry.riskLevel === "Low" || entry.riskLevel === "High" ? entry.riskLevel : "Medium";
+  const updatedAt = typeof entry.updatedAt === "string" ? entry.updatedAt : new Date().toISOString();
+  return {
+    authorUserId:
+      typeof entry.authorUserId === "string"
+        ? entry.authorUserId
+        : typeof entry.submittedByUserId === "string"
+          ? entry.submittedByUserId
+          : fallbackUserId,
+    executiveSummaryText: executiveSummaryText.trim(),
+    riskLevel,
+    blockers: toProjectTextList(entry.blockers),
+    decisionsRequired: toProjectTextList(entry.decisionsRequired),
+    deckLinks: toProjectAttachmentLinks(entry.deckLinks ?? entry.attachments),
+    submittedAt: typeof entry.submittedAt === "string" ? entry.submittedAt : undefined,
+    updatedAt,
+  };
+}
+
+function createProjectAiSummary(report: ProjectWeeklyReport, generatedByUserId: string, generatedAt: string): ProjectAiSummary {
+  const technical = report.roleReports.technical;
+  const sales = report.roleReports.sales;
+  const product = report.roleReports.product;
+  const manager = report.managerSummary;
+  const missingRoles: ProjectAiSummary["missingRoles"] = [];
+  if (!technical?.submittedAt) missingRoles.push("technical");
+  if (!sales?.submittedAt) missingRoles.push("sales");
+  if (!product?.submittedAt) missingRoles.push("product");
+  if (!manager?.submittedAt) missingRoles.push("manager");
+
+  const concatLines = (...groups: Array<string[] | undefined>): string[] =>
+    Array.from(new Set(groups.flatMap((group) => group ?? []).map((line) => line.trim()).filter(Boolean)));
+
+  const keyBlockers = concatLines(technical?.blockers, sales?.blockers, product?.blockers, manager?.blockers).slice(0, 6);
+  const decisionsRequired = concatLines(
+    technical?.decisionsRequired,
+    sales?.decisionsRequired,
+    product?.decisionsRequired,
+    manager?.decisionsRequired,
+  ).slice(0, 6);
+
+  const coreSummaryLine =
+    manager?.executiveSummaryText ||
+    technical?.inProgress[0] ||
+    sales?.inProgress[0] ||
+    product?.inProgress[0] ||
+    technical?.achievements[0] ||
+    sales?.achievements[0] ||
+    product?.achievements[0] ||
+    report.legacyCombinedReport?.inProgress[0] ||
+    report.legacyCombinedReport?.achievements[0] ||
+    "No submitted updates yet.";
+
+  const missingSentence =
+    missingRoles.length > 0
+      ? `Missing updates: ${missingRoles
+          .map((role) => {
+            if (role === "technical") return "Technical";
+            if (role === "sales") return "Sales";
+            if (role === "product") return "Product";
+            return "Manager";
+          })
+          .join(", ")}.`
+      : "All required sections submitted.";
+
+  const shortText = `${coreSummaryLine} ${missingSentence}`.trim().slice(0, 220);
+  const riskText = manager?.riskLevel ? `Risk: ${manager.riskLevel}.` : "Risk: Medium (default).";
+  const blockerText = keyBlockers.length > 0 ? `Key blockers: ${keyBlockers.join(" | ")}.` : "Key blockers: None.";
+  const decisionsText =
+    decisionsRequired.length > 0 ? `Decisions required: ${decisionsRequired.join(" | ")}.` : "Decisions required: None.";
+
+  return {
+    shortText,
+    fullText: [coreSummaryLine, riskText, blockerText, decisionsText, missingSentence].join("\n"),
+    keyRisks: [riskText],
+    keyBlockers,
+    decisionsRequired,
+    missingRoles,
+    generatedAt,
+    generatedByUserId,
+    coverage: {
+      technicalSubmittedAt: technical?.submittedAt,
+      salesSubmittedAt: sales?.submittedAt,
+      productSubmittedAt: product?.submittedAt,
+      managerSubmittedAt: manager?.submittedAt,
+    },
+  };
 }
 
 function hasSignedContract(
@@ -509,53 +696,234 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       })),
     createTask: (payload) => {
       const taskId = uid("t");
+      const now = new Date().toISOString();
+      const { initialComment, watcherUserIds, ...taskPayload } = payload;
       set((state) => ({
         ...state,
         tasks: [
           ...state.tasks,
           {
-            ...payload,
+            ...taskPayload,
             id: taskId,
-            updates: payload.initialUpdate
-              ? [
-                  {
-                    id: uid("tu"),
-                    text: payload.initialUpdate,
-                    createdAt: new Date().toISOString(),
-                    createdByUserId: state.activeUserId,
-                  },
-                ]
-              : [],
+            createdAt: now,
+            updatedAt: now,
+            completedAt: taskPayload.status === "Done" ? now : undefined,
+            watcherUserIds: Array.from(
+              new Set([...(watcherUserIds ?? []), state.activeUserId, taskPayload.assigneeUserId].filter(Boolean)),
+            ),
           },
         ],
+        taskComments: initialComment
+          ? [
+              ...state.taskComments,
+              {
+                id: uid("tc"),
+                taskId,
+                authorUserId: state.activeUserId,
+                content: initialComment,
+                kind: "Comment",
+                createdAt: now,
+              },
+            ]
+          : state.taskComments,
       }));
       return taskId;
     },
-    addTaskUpdate: (taskId, text) =>
+    addTaskComment: (taskId, text, kind = "Comment") =>
       set((state) => ({
         ...state,
+        taskComments: [
+          ...state.taskComments,
+          {
+            id: uid("tc"),
+            taskId,
+            authorUserId: state.activeUserId,
+            content: text,
+            kind,
+            createdAt: new Date().toISOString(),
+          },
+        ],
         tasks: state.tasks.map((task) =>
           task.id === taskId
             ? {
                 ...task,
-                updates: [
-                  ...task.updates,
-                  {
-                    id: uid("tu"),
-                    text,
-                    createdAt: new Date().toISOString(),
-                    createdByUserId: state.activeUserId,
-                  },
-                ],
+                updatedAt: new Date().toISOString(),
               }
             : task,
         ),
       })),
     updateTask: (task) =>
+      set((state) => {
+        const existing = state.tasks.find((row) => row.id === task.id);
+        const now = new Date().toISOString();
+        return {
+          ...state,
+          tasks: state.tasks.map((row) =>
+            row.id === task.id
+              ? {
+                  ...task,
+                  updatedAt: now,
+                  completedAt:
+                    task.status === "Done"
+                      ? task.completedAt ?? existing?.completedAt ?? now
+                      : undefined,
+                  watcherUserIds: Array.from(
+                    new Set([...(task.watcherUserIds ?? []), task.createdByUserId, task.assigneeUserId].filter(Boolean)),
+                  ),
+                }
+              : row,
+          ),
+        };
+      }),
+    createProject: (payload) => {
+      const id = uid("pr");
+      const now = new Date().toISOString();
       set((state) => ({
         ...state,
-        tasks: state.tasks.map((row) => (row.id === task.id ? task : row)),
+        projects: [
+          ...state.projects,
+          {
+            ...payload,
+            id,
+            managerUserIds: Array.from(new Set([...(payload.managerUserIds ?? []), payload.ownerUserId].filter(Boolean))),
+            technicalResponsibleUserId: payload.technicalResponsibleUserId ?? payload.ownerUserId,
+            salesResponsibleUserId: payload.salesResponsibleUserId ?? payload.ownerUserId,
+            productResponsibleUserId: payload.productResponsibleUserId ?? payload.ownerUserId,
+            watcherUserIds: Array.from(
+              new Set(
+                [
+                  ...(payload.watcherUserIds ?? []),
+                  payload.ownerUserId,
+                  payload.technicalResponsibleUserId ?? payload.ownerUserId,
+                  payload.salesResponsibleUserId ?? payload.ownerUserId,
+                  payload.productResponsibleUserId ?? payload.ownerUserId,
+                  ...(payload.managerUserIds ?? []),
+                ].filter(Boolean),
+              ),
+            ),
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      }));
+      return id;
+    },
+    updateProject: (project) =>
+      set((state) => ({
+        ...state,
+        projects: state.projects.map((row) =>
+          row.id === project.id
+            ? {
+                ...project,
+                managerUserIds: Array.from(new Set([...(project.managerUserIds ?? []), project.ownerUserId].filter(Boolean))),
+                technicalResponsibleUserId: project.technicalResponsibleUserId ?? project.ownerUserId,
+                salesResponsibleUserId: project.salesResponsibleUserId ?? project.ownerUserId,
+                productResponsibleUserId: project.productResponsibleUserId ?? project.ownerUserId,
+                watcherUserIds: Array.from(
+                  new Set(
+                    [
+                      ...(project.watcherUserIds ?? []),
+                      project.ownerUserId,
+                      project.technicalResponsibleUserId ?? project.ownerUserId,
+                      project.salesResponsibleUserId ?? project.ownerUserId,
+                      project.productResponsibleUserId ?? project.ownerUserId,
+                      ...(project.managerUserIds ?? []),
+                    ].filter(Boolean),
+                  ),
+                ),
+                updatedAt: new Date().toISOString(),
+              }
+            : row,
+        ),
       })),
+    createProjectWeeklyReport: (payload) => {
+      const existing = get().projectWeeklyReports.find(
+        (report) => report.projectId === payload.projectId && report.weekStartDate === payload.weekStartDate,
+      );
+      if (existing) return existing.id;
+      const id = uid("pwr");
+      const now = new Date().toISOString();
+      set((state) => {
+        const technical = normalizeProjectRoleReport(payload.roleReports?.technical, state.activeUserId);
+        const sales = normalizeProjectRoleReport(payload.roleReports?.sales, state.activeUserId);
+        const product = normalizeProjectRoleReport(payload.roleReports?.product, state.activeUserId);
+        const managerSummary = normalizeProjectManagerSummary(payload.managerSummary, state.activeUserId);
+        return {
+          ...state,
+          projectWeeklyReports: [
+            ...state.projectWeeklyReports,
+            {
+              ...payload,
+              id,
+              roleReports: {
+                technical,
+                sales,
+                product,
+              },
+              managerSummary,
+              createdAt: now,
+              updatedAt: now,
+            },
+          ],
+        };
+      });
+      return id;
+    },
+    updateProjectWeeklyReport: (report) =>
+      set((state) => {
+        const now = new Date().toISOString();
+        const exists = state.projectWeeklyReports.some((row) => row.id === report.id);
+        if (exists) {
+          return {
+            ...state,
+            projectWeeklyReports: state.projectWeeklyReports.map((row) =>
+              row.id === report.id
+                ? {
+                    ...report,
+                    updatedAt: now,
+                  }
+                : row,
+            ),
+          };
+        }
+        return {
+          ...state,
+          projectWeeklyReports: [
+            ...state.projectWeeklyReports,
+            {
+              ...report,
+              createdAt: report.createdAt ?? now,
+              updatedAt: now,
+            },
+          ],
+        };
+      }),
+    generateProjectAiSummary: (projectId, weekStartDate) =>
+      set((state) => {
+        const target = state.projectWeeklyReports.find(
+          (report) => report.projectId === projectId && report.weekStartDate === weekStartDate,
+        );
+        if (!target) {
+          return {
+            ...state,
+            outbox: [...state.outbox, `No weekly report found for ${projectId} (${weekStartDate})`],
+          };
+        }
+        const generatedAt = new Date().toISOString();
+        const aiSummary = createProjectAiSummary(target, state.activeUserId, generatedAt);
+        return {
+          ...state,
+          projectWeeklyReports: state.projectWeeklyReports.map((report) =>
+            report.id === target.id
+              ? {
+                  ...report,
+                  aiSummary,
+                  updatedAt: generatedAt,
+                }
+              : report,
+          ),
+        };
+      }),
     createContract: (payload) => {
       const id = uid("ct");
       const now = new Date().toISOString();
@@ -799,7 +1167,15 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         if (!validateImportShape(parsed)) {
           return { ok: false, message: "Invalid data structure." };
         }
-        set((state) => ({ ...state, ...parsed }));
+        const data = parsed as Partial<AppStore>;
+        set((state) => ({
+          ...state,
+          ...data,
+          tasks: Array.isArray(data.tasks) ? data.tasks : state.tasks,
+          taskComments: Array.isArray(data.taskComments) ? data.taskComments : [],
+          projects: Array.isArray(data.projects) ? data.projects : [],
+          projectWeeklyReports: Array.isArray(data.projectWeeklyReports) ? data.projectWeeklyReports : [],
+        }));
         return { ok: true, message: "Data imported successfully." };
       } catch {
         return { ok: false, message: "Invalid JSON." };
@@ -837,30 +1213,39 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         if (!note) {
           return state;
         }
+        const now = new Date().toISOString();
+        const taskId = uid("t");
         return {
           ...state,
           tasks: [
             ...state.tasks,
             {
-              id: uid("t"),
+              id: taskId,
               title: "Follow-up from note",
               description: note.text,
               status: "Open",
               priority: "Medium",
               createdByUserId: state.activeUserId,
               assigneeUserId,
-              relatedCompanyId: note.companyId,
-              relatedEventId: note.relatedEventId,
-              relatedMeetingId: note.relatedMeetingId,
-              relatedNoteId: note.id,
-              updates: [
-                {
-                  id: uid("tu"),
-                  text: "Task created from meeting note.",
-                  createdAt: new Date().toISOString(),
-                  createdByUserId: state.activeUserId,
-                },
-              ],
+              watcherUserIds: Array.from(new Set([state.activeUserId, assigneeUserId])),
+              visibility: state.activeUserId === assigneeUserId ? "Private" : "Shared",
+              companyId: note.companyId,
+              eventId: note.relatedEventId,
+              meetingId: note.relatedMeetingId,
+              noteId: note.id,
+              createdAt: now,
+              updatedAt: now,
+            },
+          ],
+          taskComments: [
+            ...state.taskComments,
+            {
+              id: uid("tc"),
+              taskId,
+              authorUserId: state.activeUserId,
+              content: "Task created from meeting note.",
+              kind: "Comment",
+              createdAt: now,
             },
           ],
         };
@@ -871,7 +1256,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 10,
+    version: 12,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -879,6 +1264,10 @@ export const useAppStore = create<AppStore>()(
             companies?: Array<Record<string, unknown>>;
             contracts?: Array<Record<string, unknown>>;
             ourCompanyInfo?: Array<Record<string, unknown>>;
+            tasks?: Array<Record<string, unknown>>;
+            taskComments?: Array<Record<string, unknown>>;
+            projects?: Array<Record<string, unknown>>;
+            projectWeeklyReports?: Array<Record<string, unknown>>;
           })
         | undefined;
       if (!state || !Array.isArray(state.users) || !Array.isArray(state.events) || !Array.isArray(state.companies)) {
@@ -1054,6 +1443,323 @@ export const useAppStore = create<AppStore>()(
           }))
         : fallback.meetings;
 
+      const hasTasksArray = Array.isArray(state.tasks);
+      const rawTasks = hasTasksArray ? (state.tasks as unknown as Array<Record<string, unknown>>) : [];
+      const tasks = hasTasksArray
+        ? rawTasks.map((row, idx) => {
+            const raw = row as unknown as Record<string, unknown>;
+            const status = mapLegacyTaskStatus(raw.status);
+            const createdByUserId = typeof raw.createdByUserId === "string" ? raw.createdByUserId : activeUserId;
+            const assigneeUserId = typeof raw.assigneeUserId === "string" ? raw.assigneeUserId : createdByUserId;
+            const updates = Array.isArray(raw.updates) ? raw.updates : [];
+            const updateTimes = updates
+              .map((update) => {
+                const entry = update as Record<string, unknown>;
+                return typeof entry.createdAt === "string" ? entry.createdAt : undefined;
+              })
+              .filter((value): value is string => Boolean(value));
+            const createdAt = typeof raw.createdAt === "string" ? raw.createdAt : updateTimes[0] ?? new Date().toISOString();
+            const updatedAt =
+              typeof raw.updatedAt === "string" ? raw.updatedAt : updateTimes[updateTimes.length - 1] ?? createdAt;
+            const explicitWatchers = Array.isArray(raw.watcherUserIds)
+              ? raw.watcherUserIds.filter((entry): entry is string => typeof entry === "string")
+              : [];
+            const visibility =
+              raw.visibility === "Private" || raw.visibility === "Shared"
+                ? raw.visibility
+                : createdByUserId === assigneeUserId
+                  ? "Private"
+                  : "Shared";
+            return {
+              id: typeof raw.id === "string" ? raw.id : `t-migrated-${idx + 1}`,
+              title: typeof raw.title === "string" ? raw.title : `Task ${idx + 1}`,
+              description: typeof raw.description === "string" ? raw.description : "",
+              status,
+              priority: mapLegacyTaskPriority(raw.priority),
+              dueAt: typeof raw.dueAt === "string" ? raw.dueAt : undefined,
+              createdByUserId,
+              assigneeUserId,
+              watcherUserIds: Array.from(new Set([...explicitWatchers, createdByUserId, assigneeUserId].filter(Boolean))),
+              visibility,
+              companyId:
+                typeof raw.companyId === "string"
+                  ? raw.companyId
+                  : typeof raw.relatedCompanyId === "string"
+                    ? raw.relatedCompanyId
+                    : undefined,
+              eventId:
+                typeof raw.eventId === "string"
+                  ? raw.eventId
+                  : typeof raw.relatedEventId === "string"
+                    ? raw.relatedEventId
+                    : undefined,
+              interconnectionProcessId:
+                typeof raw.interconnectionProcessId === "string" ? raw.interconnectionProcessId : undefined,
+              projectId: typeof raw.projectId === "string" ? raw.projectId : undefined,
+              meetingId:
+                typeof raw.meetingId === "string"
+                  ? raw.meetingId
+                  : typeof raw.relatedMeetingId === "string"
+                    ? raw.relatedMeetingId
+                    : undefined,
+              noteId:
+                typeof raw.noteId === "string"
+                  ? raw.noteId
+                  : typeof raw.relatedNoteId === "string"
+                    ? raw.relatedNoteId
+                    : undefined,
+              createdAt,
+              updatedAt,
+              completedAt:
+                status === "Done"
+                  ? typeof raw.completedAt === "string"
+                    ? raw.completedAt
+                    : updatedAt
+                  : undefined,
+            } as Task;
+          })
+        : fallback.tasks;
+
+      const taskCommentsFromState = Array.isArray(state.taskComments)
+        ? state.taskComments
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const taskId = typeof raw.taskId === "string" ? raw.taskId : "";
+              const content =
+                typeof raw.content === "string" ? raw.content : typeof raw.text === "string" ? raw.text : "";
+              if (!taskId || !content.trim()) return undefined;
+              return {
+                id: typeof raw.id === "string" ? raw.id : `tc-migrated-${idx + 1}`,
+                taskId,
+                authorUserId:
+                  typeof raw.authorUserId === "string"
+                    ? raw.authorUserId
+                    : typeof raw.createdByUserId === "string"
+                      ? raw.createdByUserId
+                      : activeUserId,
+                content,
+                kind: raw.kind === "Blocker" ? "Blocker" : "Comment",
+                createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+              } as TaskComment;
+            })
+            .filter((entry): entry is TaskComment => Boolean(entry))
+        : [];
+
+      const legacyTaskComments = rawTasks.flatMap((row, taskIdx) => {
+        const raw = row as unknown as Record<string, unknown>;
+        const taskId = typeof raw.id === "string" ? raw.id : `t-migrated-${taskIdx + 1}`;
+        if (!Array.isArray(raw.updates)) return [] as TaskComment[];
+        return raw.updates
+          .map((update, updateIdx) => {
+            const entry = update as Record<string, unknown>;
+            const content = typeof entry.text === "string" ? entry.text : typeof entry.content === "string" ? entry.content : "";
+            if (!content.trim()) return undefined;
+            return {
+              id: typeof entry.id === "string" ? entry.id : `tc-legacy-${taskIdx + 1}-${updateIdx + 1}`,
+              taskId,
+              authorUserId:
+                typeof entry.createdByUserId === "string"
+                  ? entry.createdByUserId
+                  : typeof entry.authorUserId === "string"
+                    ? entry.authorUserId
+                    : activeUserId,
+              content,
+              kind: "Comment",
+              createdAt: typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString(),
+            } as TaskComment;
+          })
+          .filter((entry): entry is TaskComment => Boolean(entry));
+      });
+
+      const taskIds = new Set(tasks.map((task) => task.id));
+      const taskCommentMap = new Map<string, TaskComment>();
+      [...taskCommentsFromState, ...legacyTaskComments].forEach((comment) => {
+        if (!taskIds.has(comment.taskId)) return;
+        taskCommentMap.set(comment.id, comment);
+      });
+      const mergedTaskComments = Array.from(taskCommentMap.values()).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const taskComments =
+        hasTasksArray || Array.isArray(state.taskComments) ? mergedTaskComments : fallback.taskComments;
+
+      const projects = Array.isArray(state.projects)
+        ? state.projects
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const ownerUserId = typeof raw.ownerUserId === "string" ? raw.ownerUserId : activeUserId;
+              const managerUserIds = Array.isArray(raw.managerUserIds)
+                ? raw.managerUserIds.filter((entry): entry is string => typeof entry === "string")
+                : [];
+              const technicalResponsibleUserId =
+                typeof raw.technicalResponsibleUserId === "string"
+                  ? raw.technicalResponsibleUserId
+                  : Array.isArray(raw.technicalResponsibleIds) &&
+                      typeof raw.technicalResponsibleIds[0] === "string"
+                    ? (raw.technicalResponsibleIds[0] as string)
+                    : ownerUserId;
+              const salesResponsibleUserId =
+                typeof raw.salesResponsibleUserId === "string"
+                  ? raw.salesResponsibleUserId
+                  : Array.isArray(raw.salesResponsibleIds) && typeof raw.salesResponsibleIds[0] === "string"
+                    ? (raw.salesResponsibleIds[0] as string)
+                    : ownerUserId;
+              const productResponsibleUserId =
+                typeof raw.productResponsibleUserId === "string"
+                  ? raw.productResponsibleUserId
+                  : Array.isArray(raw.productResponsibleIds) && typeof raw.productResponsibleIds[0] === "string"
+                    ? (raw.productResponsibleIds[0] as string)
+                    : ownerUserId;
+              const watcherUserIds = Array.isArray(raw.watcherUserIds)
+                ? raw.watcherUserIds.filter((entry): entry is string => typeof entry === "string")
+                : [];
+              const normalizedManagers = Array.from(new Set([...managerUserIds, ownerUserId].filter(Boolean)));
+              return {
+                id: typeof raw.id === "string" ? raw.id : `pr-migrated-${idx + 1}`,
+                name: typeof raw.name === "string" ? raw.name : `Project ${idx + 1}`,
+                description: typeof raw.description === "string" ? raw.description : "",
+                ownerUserId,
+                managerUserIds: normalizedManagers,
+                technicalResponsibleUserId,
+                salesResponsibleUserId,
+                productResponsibleUserId,
+                watcherUserIds: Array.from(
+                  new Set(
+                    [
+                      ...watcherUserIds,
+                      ownerUserId,
+                      technicalResponsibleUserId,
+                      salesResponsibleUserId,
+                      productResponsibleUserId,
+                      ...normalizedManagers,
+                    ].filter(Boolean),
+                  ),
+                ),
+                status: mapLegacyProjectStatus(raw.status),
+                strategicPriority:
+                  raw.strategicPriority === "Low" || raw.strategicPriority === "High" ? raw.strategicPriority : "Medium",
+                tags: Array.isArray(raw.tags) ? raw.tags.filter((entry): entry is string => typeof entry === "string") : undefined,
+                createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+                updatedAt:
+                  typeof raw.updatedAt === "string"
+                    ? raw.updatedAt
+                    : typeof raw.createdAt === "string"
+                      ? raw.createdAt
+                      : new Date().toISOString(),
+              } as Project;
+            })
+            .filter((project) => Boolean(project.name.trim()))
+        : fallback.projects;
+
+      const projectIds = new Set(projects.map((project) => project.id));
+      const projectWeeklyReports = Array.isArray(state.projectWeeklyReports)
+        ? state.projectWeeklyReports
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const projectId = typeof raw.projectId === "string" ? raw.projectId : "";
+              if (!projectId || !projectIds.has(projectId)) return undefined;
+              const roleReportsRaw =
+                raw.roleReports && typeof raw.roleReports === "object"
+                  ? (raw.roleReports as Record<string, unknown>)
+                  : {};
+              const technical = normalizeProjectRoleReport(roleReportsRaw.technical, activeUserId);
+              const sales = normalizeProjectRoleReport(roleReportsRaw.sales, activeUserId);
+              const product = normalizeProjectRoleReport(roleReportsRaw.product, activeUserId);
+              const managerSummary = normalizeProjectManagerSummary(raw.managerSummary, activeUserId);
+
+              const legacyAchievements = toProjectTextList(raw.achievements);
+              const legacyInProgress = toProjectTextList(raw.inProgress ?? raw.progressSummary);
+              const legacyBlockers = toProjectTextList(raw.blockers);
+              const legacyDecisionsRequired = toProjectTextList(raw.decisionsRequired);
+              const legacyNextWeekFocus = toProjectTextList(raw.nextWeekFocus);
+              const legacyAttachments = toProjectAttachmentLinks(raw.attachments);
+              const legacyRisk = raw.riskLevel === "Low" || raw.riskLevel === "High" ? raw.riskLevel : "Medium";
+              const hasLegacyContent =
+                legacyAchievements.length > 0 ||
+                legacyInProgress.length > 0 ||
+                legacyBlockers.length > 0 ||
+                legacyDecisionsRequired.length > 0 ||
+                legacyNextWeekFocus.length > 0 ||
+                legacyAttachments.length > 0 ||
+                typeof raw.teamStatusSummary === "string" ||
+                typeof raw.submittedByUserId === "string" ||
+                typeof raw.submittedById === "string";
+              const legacyCombinedReport = hasLegacyContent
+                ? {
+                    submittedByUserId:
+                      typeof raw.submittedByUserId === "string"
+                        ? raw.submittedByUserId
+                        : typeof raw.submittedById === "string"
+                          ? raw.submittedById
+                          : undefined,
+                    achievements: legacyAchievements,
+                    inProgress: legacyInProgress,
+                    blockers: legacyBlockers,
+                    decisionsRequired: legacyDecisionsRequired,
+                    nextWeekFocus: legacyNextWeekFocus,
+                    riskLevel: legacyRisk,
+                    teamStatusSummary: typeof raw.teamStatusSummary === "string" ? raw.teamStatusSummary : undefined,
+                    attachments: legacyAttachments,
+                    submittedAt: typeof raw.submittedAt === "string" ? raw.submittedAt : undefined,
+                  }
+                : undefined;
+
+              let aiSummary: ProjectWeeklyReport["aiSummary"];
+              if (raw.aiSummary && typeof raw.aiSummary === "object") {
+                const aiRaw = raw.aiSummary as Record<string, unknown>;
+                const coverageRaw =
+                  aiRaw.coverage && typeof aiRaw.coverage === "object"
+                    ? (aiRaw.coverage as Record<string, unknown>)
+                    : {};
+                const missingRoles = Array.isArray(aiRaw.missingRoles)
+                  ? aiRaw.missingRoles.filter(
+                      (entry): entry is "technical" | "sales" | "product" | "manager" =>
+                        entry === "technical" || entry === "sales" || entry === "product" || entry === "manager",
+                    )
+                  : [];
+                aiSummary = {
+                  shortText: typeof aiRaw.shortText === "string" ? aiRaw.shortText : "",
+                  fullText: typeof aiRaw.fullText === "string" ? aiRaw.fullText : "",
+                  keyRisks: toProjectTextList(aiRaw.keyRisks),
+                  keyBlockers: toProjectTextList(aiRaw.keyBlockers),
+                  decisionsRequired: toProjectTextList(aiRaw.decisionsRequired),
+                  missingRoles,
+                  generatedAt: typeof aiRaw.generatedAt === "string" ? aiRaw.generatedAt : new Date().toISOString(),
+                  generatedByUserId:
+                    typeof aiRaw.generatedByUserId === "string" ? aiRaw.generatedByUserId : activeUserId,
+                  coverage: {
+                    technicalSubmittedAt:
+                      typeof coverageRaw.technicalSubmittedAt === "string" ? coverageRaw.technicalSubmittedAt : undefined,
+                    salesSubmittedAt:
+                      typeof coverageRaw.salesSubmittedAt === "string" ? coverageRaw.salesSubmittedAt : undefined,
+                    productSubmittedAt:
+                      typeof coverageRaw.productSubmittedAt === "string" ? coverageRaw.productSubmittedAt : undefined,
+                    managerSubmittedAt:
+                      typeof coverageRaw.managerSubmittedAt === "string" ? coverageRaw.managerSubmittedAt : undefined,
+                  },
+                };
+              }
+
+              const createdAt = typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString();
+              return {
+                id: typeof raw.id === "string" ? raw.id : `pwr-migrated-${idx + 1}`,
+                projectId,
+                weekStartDate:
+                  typeof raw.weekStartDate === "string" ? raw.weekStartDate : new Date().toISOString().slice(0, 10),
+                roleReports: {
+                  technical,
+                  sales,
+                  product,
+                },
+                managerSummary,
+                aiSummary,
+                legacyCombinedReport,
+                createdAt,
+                updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : createdAt,
+                amendsReportId: typeof raw.amendsReportId === "string" ? raw.amendsReportId : undefined,
+              } as ProjectWeeklyReport;
+            })
+            .filter((entry): entry is ProjectWeeklyReport => Boolean(entry))
+        : fallback.projectWeeklyReports;
+
       const contracts = Array.isArray(state.contracts)
         ? state.contracts.map((row, idx) => {
             const contract = row as Record<string, unknown> & Partial<Contract>;
@@ -1221,6 +1927,12 @@ export const useAppStore = create<AppStore>()(
         interconnectionProcesses,
         meetings,
         eventStaff,
+        tasks,
+        taskComments,
+        projects: Array.isArray(state.projects) ? projects : fallback.projects,
+        projectWeeklyReports: Array.isArray(state.projectWeeklyReports)
+          ? projectWeeklyReports
+          : fallback.projectWeeklyReports,
         contracts,
         ourCompanyInfo:
           ourCompanyInfo.length > 0

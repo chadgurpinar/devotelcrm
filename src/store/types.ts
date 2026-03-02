@@ -28,8 +28,16 @@ export type InterconnectionType = "One-way" | "Two-way";
 export type Workscope = "SMS" | "Voice" | "Data" | "Software" | "RCS";
 export type ContactRoleTag = "Commercial" | "Technical" | "Finance";
 
-export type TaskStatus = "Open" | "Doing" | "Done";
-export type TaskPriority = "Low" | "Medium" | "High";
+export type TaskStatus = "Open" | "InProgress" | "Done";
+export type TaskPriority = "Low" | "Medium" | "High" | "Critical";
+export type TaskVisibility = "Private" | "Shared";
+export type TaskCommentKind = "Comment" | "Blocker";
+
+export type ProjectStatus = "InProgress" | "Paused" | "Completed";
+export type StrategicPriority = "Low" | "Medium" | "High";
+export type ProjectRiskLevel = "Low" | "Medium" | "High";
+export type ProjectRoleKey = "technical" | "sales" | "product";
+export type ProjectSubmissionKey = ProjectRoleKey | "manager";
 
 export interface User {
   id: string;
@@ -167,11 +175,13 @@ export interface Note {
   reminderTriggered?: boolean;
 }
 
-export interface TaskUpdate {
+export interface TaskComment {
   id: string;
-  text: string;
+  taskId: string;
+  authorUserId: string;
+  content: string;
+  kind: TaskCommentKind;
   createdAt: string;
-  createdByUserId: string;
 }
 
 export interface Task {
@@ -183,11 +193,109 @@ export interface Task {
   dueAt?: string;
   createdByUserId: string;
   assigneeUserId: string;
-  relatedCompanyId?: string;
-  relatedEventId?: string;
-  relatedMeetingId?: string;
-  relatedNoteId?: string;
-  updates: TaskUpdate[];
+  watcherUserIds: string[];
+  visibility: TaskVisibility;
+  companyId?: string;
+  eventId?: string;
+  interconnectionProcessId?: string;
+  projectId?: string;
+  meetingId?: string;
+  noteId?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  ownerUserId: string;
+  managerUserIds: string[];
+  technicalResponsibleUserId: string;
+  salesResponsibleUserId: string;
+  productResponsibleUserId: string;
+  watcherUserIds: string[];
+  status: ProjectStatus;
+  strategicPriority: StrategicPriority;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectAttachmentLink {
+  label: string;
+  url: string;
+}
+
+export interface ProjectRoleReport {
+  authorUserId: string;
+  achievements: string[];
+  inProgress: string[];
+  blockers: string[];
+  decisionsRequired: string[];
+  nextWeekFocus: string[];
+  attachments: ProjectAttachmentLink[];
+  submittedAt?: string;
+  updatedAt: string;
+}
+
+export interface ProjectManagerSummary {
+  authorUserId: string;
+  executiveSummaryText: string;
+  riskLevel: ProjectRiskLevel;
+  blockers: string[];
+  decisionsRequired: string[];
+  deckLinks: ProjectAttachmentLink[];
+  submittedAt?: string;
+  updatedAt: string;
+}
+
+export interface ProjectAiSummary {
+  shortText: string;
+  fullText: string;
+  keyRisks: string[];
+  keyBlockers: string[];
+  decisionsRequired: string[];
+  missingRoles: ProjectSubmissionKey[];
+  generatedAt: string;
+  generatedByUserId: string;
+  coverage: {
+    technicalSubmittedAt?: string;
+    salesSubmittedAt?: string;
+    productSubmittedAt?: string;
+    managerSubmittedAt?: string;
+  };
+}
+
+export interface ProjectLegacyCombinedReport {
+  submittedByUserId?: string;
+  achievements: string[];
+  inProgress: string[];
+  blockers: string[];
+  decisionsRequired: string[];
+  nextWeekFocus: string[];
+  riskLevel: ProjectRiskLevel;
+  teamStatusSummary?: string;
+  attachments: ProjectAttachmentLink[];
+  submittedAt?: string;
+}
+
+export interface ProjectWeeklyReport {
+  id: string;
+  projectId: string;
+  weekStartDate: string;
+  roleReports: {
+    technical?: ProjectRoleReport;
+    sales?: ProjectRoleReport;
+    product?: ProjectRoleReport;
+  };
+  managerSummary?: ProjectManagerSummary;
+  aiSummary?: ProjectAiSummary;
+  legacyCombinedReport?: ProjectLegacyCombinedReport;
+  createdAt: string;
+  updatedAt: string;
+  amendsReportId?: string;
 }
 
 export interface InterconnectionProcessHistory {
@@ -280,7 +388,10 @@ export interface DbState {
   meetings: Meeting[];
   notes: Note[];
   tasks: Task[];
+  taskComments: TaskComment[];
   interconnectionProcesses: InterconnectionProcess[];
+  projects: Project[];
+  projectWeeklyReports: ProjectWeeklyReport[];
   contracts: Contract[];
   ourCompanyInfo: OurCompanyInfo[];
   outbox: string[];

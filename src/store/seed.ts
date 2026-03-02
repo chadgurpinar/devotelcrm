@@ -15,7 +15,11 @@ import {
   Note,
   OurCompanyInfo,
   OurEntity,
+  Project,
+  ProjectRiskLevel,
+  ProjectWeeklyReport,
   Task,
+  TaskComment,
   User,
   Workscope,
 } from "./types";
@@ -657,32 +661,313 @@ function createNotes(meetings: Meeting[], users: User[]): Note[] {
   return notes;
 }
 
-function createTasks(notes: Note[], users: User[]): Task[] {
-  return Array.from({ length: 45 }).map((_, idx) => {
-    const note = notes[idx];
+function createProjects(users: User[]): Project[] {
+  const ownerPool = users.filter((user) => user.role === "Sales" || user.role === "Interconnection Manager");
+  const managerPool = users.filter((user) =>
+    ["Sales", "Interconnection Manager", "Head of SMS", "Head of Voice", "NOC"].includes(user.role),
+  );
+  const technicalPool = users.filter((user) =>
+    ["NOC", "Head of SMS", "Head of Voice", "Interconnection Manager"].includes(user.role),
+  );
+  const salesPool = users.filter((user) => user.role === "Sales" || user.role === "Interconnection Manager");
+  const productPool = users.filter((user) => user.role === "Interconnection Manager" || user.role === "Head of SMS");
+  const names = ["Mobile Identity", "Lucibook", "Deytu", "Esimora", "CPaaS"];
+  const descriptions = [
+    "Identity and trust layer for enterprise messaging channels.",
+    "Cloud-native booking and lifecycle automation for telecom partners.",
+    "Market intelligence and route quality optimization initiative.",
+    "eSIM ecosystem partnerships and managed activation rollout.",
+    "Unified communications platform strategy for API products.",
+  ];
+  const statuses: Project["status"][] = ["InProgress", "InProgress", "Paused", "InProgress", "Completed"];
+  const priorities: Project["strategicPriority"][] = ["High", "Medium", "High", "High", "Medium"];
+  const createdAtBase = new Date("2025-11-01T09:00:00Z");
+
+  return names.map((name, idx) => {
+    const createdAt = new Date(createdAtBase);
+    createdAt.setDate(createdAt.getDate() + idx * 14);
+    const owner = ownerPool[idx % ownerPool.length] ?? users[0];
+    const managerOne = managerPool[(idx + 1) % managerPool.length] ?? owner;
+    const managerTwo = managerPool[(idx + 3) % managerPool.length] ?? owner;
+    const technicalResponsible = technicalPool[(idx + 2) % technicalPool.length] ?? managerOne;
+    const salesResponsible = salesPool[(idx + 4) % salesPool.length] ?? owner;
+    const productResponsible = productPool[(idx + 5) % productPool.length] ?? managerTwo;
+    const watcher = managerPool[(idx + 6) % managerPool.length] ?? owner;
+    const updatedAt = new Date(createdAt);
+    updatedAt.setDate(updatedAt.getDate() + 4 + idx);
+    return {
+      id: `pr-${idx + 1}`,
+      name,
+      description: descriptions[idx],
+      ownerUserId: owner.id,
+      managerUserIds: Array.from(new Set([owner.id, managerOne.id, managerTwo.id])),
+      technicalResponsibleUserId: technicalResponsible.id,
+      salesResponsibleUserId: salesResponsible.id,
+      productResponsibleUserId: productResponsible.id,
+      watcherUserIds: Array.from(
+        new Set([owner.id, managerOne.id, managerTwo.id, technicalResponsible.id, salesResponsible.id, productResponsible.id, watcher.id]),
+      ),
+      status: statuses[idx],
+      strategicPriority: priorities[idx],
+      tags: idx % 2 === 0 ? ["Strategic"] : ["Growth"],
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+    };
+  });
+}
+
+function weekStartMonday(date: Date): Date {
+  const result = new Date(date);
+  const day = result.getUTCDay();
+  const delta = day === 0 ? -6 : 1 - day;
+  result.setUTCDate(result.getUTCDate() + delta);
+  result.setUTCHours(0, 0, 0, 0);
+  return result;
+}
+
+function createProjectWeeklyReports(projects: Project[]): ProjectWeeklyReport[] {
+  const now = new Date("2026-03-20T12:00:00Z");
+  const weeksBack = [0, 1, 2, 3, 4, 5, 6];
+  const reports: ProjectWeeklyReport[] = [];
+
+  projects.forEach((project, projectIdx) => {
+    weeksBack.forEach((weekOffset) => {
+      if (project.status === "Completed" && weekOffset < 2) {
+        return;
+      }
+      if (project.status === "Paused" && weekOffset === 0) {
+        return;
+      }
+      if (projectIdx === 1 && weekOffset === 0) {
+        // Keep one project intentionally missing current week report.
+        return;
+      }
+
+      const weekDate = new Date(now);
+      weekDate.setUTCDate(now.getUTCDate() - weekOffset * 7);
+      const weekStart = weekStartMonday(weekDate);
+      const reportCreatedAt = new Date(weekStart);
+      reportCreatedAt.setUTCDate(reportCreatedAt.getUTCDate() + 4);
+      reportCreatedAt.setUTCHours(16, 30, 0, 0);
+      const technicalSubmitted = !(projectIdx === 0 && weekOffset === 0);
+      const salesSubmitted = !(projectIdx === 1 && weekOffset === 0);
+      const productSubmitted = !(projectIdx === 3 && weekOffset === 0);
+      const managerSubmitted = !(projectIdx === 4 && weekOffset === 0);
+      const riskScale: ProjectRiskLevel[] = ["Low", "Medium", "High"];
+      const riskLevel = riskScale[(projectIdx + weekOffset) % riskScale.length];
+      const blockers = weekOffset % 3 === 0 ? [`Dependency approval pending from partner (${project.name}).`] : [];
+      const technicalUpdatedAt = new Date(reportCreatedAt);
+      technicalUpdatedAt.setUTCHours(technicalUpdatedAt.getUTCHours() - 6);
+      const salesUpdatedAt = new Date(reportCreatedAt);
+      salesUpdatedAt.setUTCHours(salesUpdatedAt.getUTCHours() - 4);
+      const productUpdatedAt = new Date(reportCreatedAt);
+      productUpdatedAt.setUTCHours(productUpdatedAt.getUTCHours() - 2);
+      const managerUpdatedAt = new Date(reportCreatedAt);
+      managerUpdatedAt.setUTCHours(managerUpdatedAt.getUTCHours() - 1);
+      const missingRoles: Array<"technical" | "sales" | "product" | "manager"> = [];
+      if (!technicalSubmitted) missingRoles.push("technical");
+      if (!salesSubmitted) missingRoles.push("sales");
+      if (!productSubmitted) missingRoles.push("product");
+      if (!managerSubmitted) missingRoles.push("manager");
+      const aiGeneratedAt = new Date(reportCreatedAt);
+      const withAiSummary = weekOffset % 2 === 0;
+      const staleAiScenario = withAiSummary && projectIdx === 0 && weekOffset === 2;
+      if (staleAiScenario) {
+        aiGeneratedAt.setTime(managerUpdatedAt.getTime() - 30 * 60 * 1000);
+      } else {
+        aiGeneratedAt.setUTCHours(aiGeneratedAt.getUTCHours() + 1);
+      }
+
+      reports.push({
+        id: `pwr-${project.id}-${weekStart.toISOString().slice(0, 10)}`,
+        projectId: project.id,
+        weekStartDate: weekStart.toISOString().slice(0, 10),
+        roleReports: {
+          technical: technicalSubmitted
+            ? {
+                authorUserId: project.technicalResponsibleUserId,
+                achievements: [`${project.name}: technical readiness tests progressed.`],
+                inProgress: ["Environment hardening and routing validation continue."],
+                blockers,
+                decisionsRequired: riskLevel === "High" ? ["Need infra budget approval for technical scaling."] : [],
+                nextWeekFocus: ["Finish interop test matrix.", "Close security review checklist."],
+                attachments: [
+                  { label: "Technical runbook", url: `https://docs.devotel.example/${project.id}/${weekStart.toISOString().slice(0, 10)}/tech` },
+                ],
+                submittedAt: technicalUpdatedAt.toISOString(),
+                updatedAt: technicalUpdatedAt.toISOString(),
+              }
+            : undefined,
+          sales: salesSubmitted
+            ? {
+                authorUserId: project.salesResponsibleUserId,
+                achievements: ["Commercial alignment call completed with target partners."],
+                inProgress: ["Pipeline conversion and partner term alignment in progress."],
+                blockers: weekOffset % 4 === 0 ? ["Pending partner commercial sign-off."] : [],
+                decisionsRequired: riskLevel === "High" ? ["Need pricing exception decision from leadership."] : [],
+                nextWeekFocus: ["Close outstanding commercial approvals."],
+                attachments: [
+                  { label: "Sales notes", url: `https://docs.devotel.example/${project.id}/${weekStart.toISOString().slice(0, 10)}/sales` },
+                ],
+                submittedAt: salesUpdatedAt.toISOString(),
+                updatedAt: salesUpdatedAt.toISOString(),
+              }
+            : undefined,
+          product: productSubmitted
+            ? {
+                authorUserId: project.productResponsibleUserId,
+                achievements: ["Roadmap trade-offs reviewed with delivery stakeholders."],
+                inProgress: ["Specification updates and release sequencing continue."],
+                blockers: weekOffset % 5 === 0 ? ["Dependency on external API stability."] : [],
+                decisionsRequired: ["Confirm priority order for next milestone scope."],
+                nextWeekFocus: ["Finalize sprint goal alignment across squads."],
+                attachments: [
+                  { label: "Product brief", url: `https://docs.devotel.example/${project.id}/${weekStart.toISOString().slice(0, 10)}/product` },
+                ],
+                submittedAt: productUpdatedAt.toISOString(),
+                updatedAt: productUpdatedAt.toISOString(),
+              }
+            : undefined,
+        },
+        managerSummary: managerSubmitted
+          ? {
+              authorUserId: project.ownerUserId,
+              executiveSummaryText:
+                weekOffset % 2 === 0
+                  ? "Delivery is mostly on track with manageable cross-team dependencies."
+                  : "Execution is stable but capacity is tight; close monitoring required.",
+              riskLevel,
+              blockers,
+              decisionsRequired: riskLevel === "High" ? ["Leadership decision needed on external vendor contract terms."] : [],
+              deckLinks: [
+                {
+                  label: "Weekly deck",
+                  url: `https://docs.devotel.example/${project.id}/${weekStart.toISOString().slice(0, 10)}`,
+                },
+              ],
+              submittedAt: managerUpdatedAt.toISOString(),
+              updatedAt: managerUpdatedAt.toISOString(),
+            }
+          : undefined,
+        aiSummary: withAiSummary
+          ? {
+              shortText:
+                missingRoles.length === 0
+                  ? staleAiScenario
+                    ? "Cross-functional updates submitted; AI refresh recommended (new edits detected)."
+                    : "Cross-functional updates submitted; leadership actions are clear."
+                  : `Missing updates: ${missingRoles.join(", ")}.`,
+              fullText:
+                missingRoles.length === 0
+                  ? staleAiScenario
+                    ? "Consolidated view indicates progress, but one or more sections changed after summary generation."
+                    : "Consolidated view indicates steady weekly progress with visible next actions."
+                  : `Consolidated summary generated with missing sections: ${missingRoles.join(", ")}.`,
+              keyRisks: [riskLevel === "High" ? "Execution risk elevated this week." : "No major risk escalation."],
+              keyBlockers: blockers,
+              decisionsRequired: riskLevel === "High" ? ["Leadership decision needed on vendor contract terms."] : [],
+              missingRoles,
+              generatedAt: aiGeneratedAt.toISOString(),
+              generatedByUserId: project.ownerUserId,
+              coverage: {
+                technicalSubmittedAt: technicalSubmitted ? technicalUpdatedAt.toISOString() : undefined,
+                salesSubmittedAt: salesSubmitted ? salesUpdatedAt.toISOString() : undefined,
+                productSubmittedAt: productSubmitted ? productUpdatedAt.toISOString() : undefined,
+                managerSubmittedAt: managerSubmitted ? managerUpdatedAt.toISOString() : undefined,
+              },
+            }
+          : undefined,
+        createdAt: reportCreatedAt.toISOString(),
+        updatedAt: reportCreatedAt.toISOString(),
+      });
+    });
+  });
+
+  return reports;
+}
+
+function createTasks(
+  notes: Note[],
+  users: User[],
+  projects: Project[],
+  interconnectionProcesses: InterconnectionProcess[],
+): Task[] {
+  const now = new Date("2026-03-20T12:00:00Z");
+  return Array.from({ length: 54 }).map((_, idx) => {
+    const note = notes[idx % notes.length];
+    const creator = pick(users, idx);
+    const assignee = idx % 6 === 0 ? creator : pick(users, idx + 2);
+    const status: Task["status"] = idx % 3 === 0 ? "Open" : idx % 3 === 1 ? "InProgress" : "Done";
+    const createdAt = new Date(now);
+    createdAt.setUTCDate(createdAt.getUTCDate() - (idx + 2));
+    const updatedAt = new Date(createdAt);
+    updatedAt.setUTCHours(updatedAt.getUTCHours() + 8 + (idx % 17));
+    const dueAt = idx % 5 === 0 ? new Date(createdAt.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString() : undefined;
+    const completedAt =
+      status === "Done" ? new Date(updatedAt.getTime() + 6 * 60 * 60 * 1000).toISOString() : undefined;
+    const linkedProcess = idx % 4 === 0 ? pick(interconnectionProcesses, idx) : undefined;
+    const linkedProject = idx % 3 === 0 ? pick(projects, idx).id : undefined;
+    const visibility: Task["visibility"] = creator.id === assignee.id ? "Private" : "Shared";
+    const thirdWatcher = idx % 4 === 0 ? pick(users, idx + 5).id : undefined;
+
     return {
       id: `t-${idx + 1}`,
       title: pick(taskTitles, idx),
       description: `${pick(noteSamples, idx + 2)} Action owner should provide update in 48 hours.`,
-      status: idx % 3 === 0 ? "Open" : idx % 3 === 1 ? "Doing" : "Done",
-      priority: idx % 3 === 0 ? "High" : "Medium",
-      dueAt: idx % 4 === 0 ? new Date("2026-03-10").toISOString() : undefined,
-      createdByUserId: pick(users, idx).id,
-      assigneeUserId: pick(users, idx + 2).id,
-      relatedCompanyId: note?.companyId,
-      relatedEventId: note?.relatedEventId,
-      relatedMeetingId: note?.relatedMeetingId,
-      relatedNoteId: note?.id,
-      updates: [
-        {
-          id: `tu-${idx + 1}`,
-          text: "Initial task created from meeting note.",
-          createdAt: new Date("2026-02-01").toISOString(),
-          createdByUserId: pick(users, idx).id,
-        },
-      ],
+      status,
+      priority: idx % 8 === 0 ? "Critical" : idx % 3 === 0 ? "High" : idx % 3 === 1 ? "Medium" : "Low",
+      dueAt,
+      createdByUserId: creator.id,
+      assigneeUserId: assignee.id,
+      watcherUserIds: Array.from(new Set([creator.id, assignee.id, thirdWatcher].filter(Boolean) as string[])),
+      visibility,
+      companyId: note?.companyId,
+      eventId: note?.relatedEventId,
+      interconnectionProcessId: linkedProcess?.id,
+      projectId: linkedProject,
+      meetingId: note?.relatedMeetingId,
+      noteId: note?.id,
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+      completedAt,
     };
   });
+}
+
+function createTaskComments(tasks: Task[], users: User[]): TaskComment[] {
+  const comments: TaskComment[] = [];
+  tasks.forEach((task, idx) => {
+    const primaryAuthor = users.find((user) => user.id === task.createdByUserId) ?? users[0];
+    comments.push({
+      id: `tc-${idx + 1}-1`,
+      taskId: task.id,
+      authorUserId: primaryAuthor.id,
+      content: "Initial task created from meeting note.",
+      kind: "Comment",
+      createdAt: task.createdAt,
+    });
+    if (idx % 2 === 0) {
+      comments.push({
+        id: `tc-${idx + 1}-2`,
+        taskId: task.id,
+        authorUserId: task.assigneeUserId,
+        content: idx % 5 === 0 ? "Waiting for partner response before next step." : "Progress updated by assignee.",
+        kind: idx % 9 === 0 && task.status !== "Done" ? "Blocker" : "Comment",
+        createdAt: task.updatedAt,
+      });
+    }
+    if (task.status === "Done") {
+      comments.push({
+        id: `tc-${idx + 1}-3`,
+        taskId: task.id,
+        authorUserId: task.assigneeUserId,
+        content: "Execution completed and validated.",
+        kind: "Comment",
+        createdAt: task.completedAt ?? task.updatedAt,
+      });
+    }
+  });
+  return comments;
 }
 
 function createInterconnectionProcesses(companies: Company[], users: User[]): InterconnectionProcess[] {
@@ -933,8 +1218,11 @@ export function createSeedDb(): DbState {
   const eventStaff = createEventStaff(events, users);
   const meetings = createMeetings(events, companies, contacts, users);
   const notes = createNotes(meetings, users);
-  const tasks = createTasks(notes, users);
   const interconnectionProcesses = createInterconnectionProcesses(companies, users);
+  const projects = createProjects(users);
+  const projectWeeklyReports = createProjectWeeklyReports(projects);
+  const tasks = createTasks(notes, users, projects, interconnectionProcesses);
+  const taskComments = createTaskComments(tasks, users);
   const contracts = createContracts(companies, interconnectionProcesses, users);
   const ourCompanyInfo = createOurCompanyInfo();
 
@@ -949,7 +1237,10 @@ export function createSeedDb(): DbState {
     meetings,
     notes,
     tasks,
+    taskComments,
     interconnectionProcesses,
+    projects,
+    projectWeeklyReports,
     contracts,
     ourCompanyInfo,
     outbox: [],
