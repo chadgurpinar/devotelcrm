@@ -294,20 +294,16 @@ export function computePayrollPreview(args: {
   >();
   lines.forEach((line) => {
     line.distributionBreakdown.forEach((entry) => {
-      const existing =
-        byLegalEntityMap.get(entry.legalEntityId) ??
-        ({
-          legalEntityId: entry.legalEntityId,
-          netEur: 0,
-          employerCostEur: 0,
-          bonusesEur: 0,
-          headcountEmployees: new Set<string>(),
-        } as const);
-      existing.netEur += entry.netEur;
-      existing.employerCostEur += entry.employerCostEur;
-      existing.bonusesEur += entry.bonusEur;
-      existing.headcountEmployees.add(line.employeeId);
-      byLegalEntityMap.set(entry.legalEntityId, existing);
+      const existing = byLegalEntityMap.get(entry.legalEntityId);
+      const headcountEmployees = new Set(existing?.headcountEmployees ?? []);
+      headcountEmployees.add(line.employeeId);
+      byLegalEntityMap.set(entry.legalEntityId, {
+        legalEntityId: entry.legalEntityId,
+        netEur: (existing?.netEur ?? 0) + entry.netEur,
+        employerCostEur: (existing?.employerCostEur ?? 0) + entry.employerCostEur,
+        bonusesEur: (existing?.bonusesEur ?? 0) + entry.bonusEur,
+        headcountEmployees,
+      });
     });
   });
 

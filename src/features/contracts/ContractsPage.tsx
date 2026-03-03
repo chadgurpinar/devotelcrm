@@ -2,7 +2,7 @@ import { ChangeEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
-import { Contract, ContractStatus, ContractType, InterconnectionTrack, OurEntity } from "../../store/types";
+import { Contract, ContractFile, ContractStatus, ContractType, InterconnectionTrack, OurEntity } from "../../store/types";
 
 const statuses: Array<ContractStatus | "all"> = [
   "all",
@@ -39,6 +39,11 @@ function readFileAsDataUrl(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function normalizeKind(value: string): ContractFile["kind"] {
+  if (value === "Signed" || value === "Other") return value;
+  return "Draft";
 }
 
 export function ContractsPage() {
@@ -160,10 +165,11 @@ export function ContractsPage() {
     return { contract, file };
   }, [fileActionModal, state.contracts]);
 
-  async function createFilePayload(contractId: string, file: File, status: ContractStatus) {
+  async function createFilePayload(contractId: string, file: File, status: ContractStatus): Promise<Omit<ContractFile, "id">> {
     const contentDataUrl = await readFileAsDataUrl(file);
+    const rawKind = status === "FullySigned" ? "Signed" : "Draft";
     return {
-      kind: status === "FullySigned" ? "Signed" : ("Draft" as const),
+      kind: normalizeKind(rawKind),
       filename: file.name,
       mimeType: file.type || "application/octet-stream",
       size: file.size,
