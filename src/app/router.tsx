@@ -19,6 +19,14 @@ import { RoutingNocPortalPage } from "../features/ops/RoutingNocPortalPage";
 import { AmNocRoutingPortalPage } from "../features/ops/AmNocRoutingPortalPage";
 import { AccountManagersPortalPage } from "../features/ops/AccountManagersPortalPage";
 import { NocPerformanceAuditPage } from "../features/ops/NocPerformanceAuditPage";
+import { HrDashboardPage } from "../features/hr/HrDashboardPage";
+import { HrPeoplePage } from "../features/hr/HrPeoplePage";
+import { HrOrganizationPage } from "../features/hr/HrOrganizationPage";
+import { HrPayrollPage } from "../features/hr/HrPayrollPage";
+import { HrLeavePage } from "../features/hr/HrLeavePage";
+import { HrAssetsPage } from "../features/hr/HrAssetsPage";
+import { HrExpensesPage } from "../features/hr/HrExpensesPage";
+import { HrSettingsPage } from "../features/hr/HrSettingsPage";
 
 export const router = createBrowserRouter([
   {
@@ -44,6 +52,14 @@ export const router = createBrowserRouter([
       { path: "/ops/am-noc-routing", element: <AmNocRoutingPortalPage /> },
       { path: "/ops/account-managers", element: <AccountManagersPortalPage /> },
       { path: "/ops/performance-audit", element: <NocPerformanceAuditPage /> },
+      { path: "/hr/dashboard", element: <HrDashboardPage /> },
+      { path: "/hr/people", element: <HrPeoplePage /> },
+      { path: "/hr/organization", element: <HrOrganizationPage /> },
+      { path: "/hr/payroll", element: <HrPayrollPage /> },
+      { path: "/hr/leave", element: <HrLeavePage /> },
+      { path: "/hr/assets", element: <HrAssetsPage /> },
+      { path: "/hr/expenses", element: <HrExpensesPage /> },
+      { path: "/hr/settings", element: <HrSettingsPage /> },
     ],
   },
 ]);

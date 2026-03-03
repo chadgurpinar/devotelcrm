@@ -5,7 +5,7 @@ import { useAppStore } from "../../store/db";
 import { getCompanyName, getEventName, getProjectName, getUserName } from "../../store/selectors";
 import { Task, TaskPriority, TaskStatus, TaskVisibility } from "../../store/types";
 
-type TaskSection = "MyPersonalTasks" | "AssignedToMe" | "AssignedByMe";
+type TaskSection = "MyPersonalTasks" | "AssignedToMe" | "AssignedByMe" | "Completed" | "Archive";
 type DueFilter = "Any" | "DueSoon" | "Overdue" | "NoDueDate";
 type LinkedFilter = "Any" | "Company" | "Event" | "Interconnection" | "Project";
 type SortBy = "DueDateAsc" | "CreatedDateDesc" | "PriorityDesc" | "LastActivityDesc";
@@ -145,14 +145,49 @@ export function TasksPage() {
     setForm((prev) => ({ ...prev, linkedId: linkedOptions[0]?.id ?? "" }));
   }, [form.linkedId, linkedOptions]);
 
+  const isDoneSection = section === "Completed" || section === "Archive";
+
+  useEffect(() => {
+    if (isDoneSection) {
+      if (statusFilter === "Open" || statusFilter === "InProgress") {
+        setStatusFilter("Done");
+      }
+      return;
+    }
+    if (statusFilter === "Done") {
+      setStatusFilter("Any");
+    }
+  }, [isDoneSection, statusFilter]);
+
   const sectionTasks = useMemo(() => {
+    if (section === "Completed") {
+      return state.tasks.filter((task) => task.status === "Done" && !task.archivedAt);
+    }
+    if (section === "Archive") {
+      return state.tasks.filter((task) => task.status === "Done" && Boolean(task.archivedAt));
+    }
     if (section === "AssignedToMe") {
-      return state.tasks.filter((task) => task.assigneeUserId === state.activeUserId && task.createdByUserId !== state.activeUserId);
+      return state.tasks.filter(
+        (task) =>
+          task.status !== "Done" &&
+          task.assigneeUserId === state.activeUserId &&
+          task.createdByUserId !== state.activeUserId,
+      );
     }
     if (section === "AssignedByMe") {
-      return state.tasks.filter((task) => task.createdByUserId === state.activeUserId && task.assigneeUserId !== state.activeUserId);
+      return state.tasks.filter(
+        (task) =>
+          task.status !== "Done" &&
+          task.createdByUserId === state.activeUserId &&
+          task.assigneeUserId !== state.activeUserId,
+      );
     }
-    return state.tasks.filter((task) => task.createdByUserId === state.activeUserId && task.assigneeUserId === state.activeUserId);
+    return state.tasks.filter(
+      (task) =>
+        task.status !== "Done" &&
+        task.createdByUserId === state.activeUserId &&
+        task.assigneeUserId === state.activeUserId,
+    );
   }, [section, state.activeUserId, state.tasks]);
 
   const rows = useMemo(() => {
@@ -245,6 +280,14 @@ export function TasksPage() {
     });
   }
 
+  function archiveTaskDirectly(task: Task) {
+    state.updateTask({
+      ...task,
+      status: "Done",
+      archivedAt: new Date().toISOString(),
+    });
+  }
+
   function toggleWatcher(userId: string) {
     if (!detailDraft || !selectedTask) return;
     const mustKeep = userId === selectedTask.createdByUserId || userId === detailDraft.assigneeUserId;
@@ -283,6 +326,12 @@ export function TasksPage() {
           <Button variant={section === "AssignedByMe" ? "primary" : "secondary"} onClick={() => setSection("AssignedByMe")}>
             Assigned By Me
           </Button>
+          <Button variant={section === "Completed" ? "primary" : "secondary"} onClick={() => setSection("Completed")}>
+            Completed
+          </Button>
+          <Button variant={section === "Archive" ? "primary" : "secondary"} onClick={() => setSection("Archive")}>
+            Archive
+          </Button>
         </div>
 
         <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-6">
@@ -294,9 +343,9 @@ export function TasksPage() {
             <FieldLabel>Status</FieldLabel>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "Any")}>
               <option value="Any">Any</option>
-              <option value="Open">Open</option>
-              <option value="InProgress">InProgress</option>
-              <option value="Done">Done</option>
+              {!isDoneSection && <option value="Open">Open</option>}
+              {!isDoneSection && <option value="InProgress">InProgress</option>}
+              {isDoneSection && <option value="Done">Done</option>}
             </select>
           </div>
           <div>
@@ -367,6 +416,7 @@ export function TasksPage() {
                       <div className="mt-1 flex flex-wrap gap-1">
                         <Badge className="bg-slate-100 text-slate-700">{task.visibility}</Badge>
                         <Badge className="bg-slate-100 text-slate-700">{task.watcherUserIds.length} watchers</Badge>
+                        {task.archivedAt && <Badge className="bg-violet-100 text-violet-700">Archived</Badge>}
                         {overdue && <Badge className="bg-rose-100 text-rose-700">Overdue</Badge>}
                       </div>
                     </td>
@@ -400,6 +450,39 @@ export function TasksPage() {
                         {task.status !== "Done" && (
                           <Button size="sm" onClick={() => state.updateTask({ ...task, status: "Done" })}>
                             Mark done
+                          </Button>
+                        )}
+                        {task.status !== "Done" && (
+                          <Button size="sm" variant="secondary" onClick={() => archiveTaskDirectly(task)}>
+                            Direct archive
+                          </Button>
+                        )}
+                        {task.status === "Done" && !task.archivedAt && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              state.updateTask({
+                                ...task,
+                                archivedAt: new Date().toISOString(),
+                              })
+                            }
+                          >
+                            Archive
+                          </Button>
+                        )}
+                        {task.status === "Done" && task.archivedAt && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() =>
+                              state.updateTask({
+                                ...task,
+                                archivedAt: undefined,
+                              })
+                            }
+                          >
+                            Unarchive
                           </Button>
                         )}
                       </div>
@@ -614,6 +697,24 @@ export function TasksPage() {
           </div>
           <div className="mt-3 flex gap-2">
             <Button onClick={saveTaskDetail}>Save task</Button>
+            {selectedTask.status !== "Done" && (
+              <Button variant="secondary" onClick={() => archiveTaskDirectly(selectedTask)}>
+                Complete and archive
+              </Button>
+            )}
+            {selectedTask.status === "Done" && !selectedTask.archivedAt && (
+              <Button
+                variant="secondary"
+                onClick={() => state.updateTask({ ...selectedTask, archivedAt: new Date().toISOString() })}
+              >
+                Move to archive
+              </Button>
+            )}
+            {selectedTask.status === "Done" && selectedTask.archivedAt && (
+              <Button variant="secondary" onClick={() => state.updateTask({ ...selectedTask, archivedAt: undefined })}>
+                Remove from archive
+              </Button>
+            )}
           </div>
 
           <div className="mt-4 rounded-md border border-slate-200 p-3">

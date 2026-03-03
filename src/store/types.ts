@@ -204,6 +204,7 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  archivedAt?: string;
 }
 
 export interface Project {
@@ -335,6 +336,8 @@ export interface Contract {
   track: InterconnectionTrack;
   ourEntity: OurEntity;
   contractType: ContractType;
+  customTypeName?: string;
+  note?: string;
   status: ContractStatus;
   files: ContractFile[];
   requestedByUserId: string;
@@ -375,6 +378,250 @@ export interface OurCompanyInfo {
     currency?: string;
   };
   lastUpdatedAt: string;
+}
+
+export type HrCurrencyCode = "EUR" | "USD" | "GBP" | "TRY";
+export type HrEmploymentType = "Full-time" | "Part-time" | "Contractor";
+export type HrSalaryDistributionMode = "Percent" | "Fixed";
+export type HrLeaveType = "Annual" | "Sick" | "Other";
+export type HrLeaveStatus = "PendingManager" | "PendingHR" | "Approved" | "Rejected";
+export type HrExpenseStatus = "PendingManager" | "PendingFinance" | "Approved" | "Rejected" | "Paid";
+export type HrAssetCategory = "Laptop" | "Phone" | "Accessory" | "Software";
+export type HrLeaveActionType = "MANAGER_APPROVE" | "MANAGER_REJECT" | "HR_APPROVE" | "HR_REJECT";
+export type HrExpenseActionType =
+  | "MANAGER_APPROVE"
+  | "MANAGER_REJECT"
+  | "FINANCE_APPROVE"
+  | "FINANCE_REJECT"
+  | "MARK_PAID";
+export type HrAuditActionType =
+  | HrLeaveActionType
+  | HrExpenseActionType
+  | "ASSET_ASSIGNED"
+  | "ASSET_ACCEPTED"
+  | "ASSET_RETURNED"
+  | "COMPENSATION_UPDATED"
+  | "PAYROLL_SNAPSHOT_GENERATED";
+
+export interface HrLegalEntity {
+  id: OurEntity;
+  name: string;
+  country: string;
+  currency: HrCurrencyCode;
+  bankDetailsRef: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrFxRate {
+  id: string;
+  from: HrCurrencyCode;
+  to: "EUR";
+  rate: number;
+  effectiveAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrDepartment {
+  id: string;
+  name: string;
+  parentDepartmentId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrEmployee {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  nationality: string;
+  countryOfEmployment: string;
+  departmentId: string;
+  title: string;
+  managerId?: string;
+  employmentStartDate: string;
+  employmentType: HrEmploymentType;
+  baseCurrency: HrCurrencyCode;
+  masterContractSignedAt: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  systemUserId?: string;
+  terminationDate?: string;
+}
+
+export interface HrBonusEntry {
+  id: string;
+  employeeId: string;
+  date: string;
+  amount: number;
+  currency: HrCurrencyCode;
+  description: string;
+}
+
+export interface HrSalaryDistributionLine {
+  id: string;
+  legalEntityId: OurEntity;
+  mode: HrSalaryDistributionMode;
+  percent?: number;
+  fixedAmount?: number;
+  currency: HrCurrencyCode;
+}
+
+export interface HrEmployeeCompensation {
+  id: string;
+  employeeId: string;
+  baseSalaryNet: number;
+  baseSalaryGross: number;
+  employerCost: number;
+  currency: HrCurrencyCode;
+  bonusEntries: HrBonusEntry[];
+  salaryDistribution: HrSalaryDistributionLine[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrPayrollFilters {
+  legalEntityId?: OurEntity | "";
+  departmentId?: string | "";
+  country?: string | "";
+  employmentType?: HrEmploymentType | "";
+}
+
+export interface HrPayrollDistributionBreakdown {
+  legalEntityId: OurEntity;
+  weightPct: number;
+  netAmount: number;
+  employerCostAmount: number;
+  bonusAmount: number;
+  currency: HrCurrencyCode;
+  netEur: number;
+  employerCostEur: number;
+  bonusEur: number;
+}
+
+export interface HrPayrollEmployeeLine {
+  id: string;
+  snapshotId: string;
+  employeeId: string;
+  net: number;
+  gross: number;
+  employerCost: number;
+  currency: HrCurrencyCode;
+  bonusesTotal: number;
+  netEur: number;
+  employerCostEur: number;
+  bonusesEur: number;
+  distributionBreakdown: HrPayrollDistributionBreakdown[];
+}
+
+export interface HrPayrollMonthSnapshot {
+  id: string;
+  month: string;
+  createdAt: string;
+  createdByUserId: string;
+  notes?: string;
+  filtersUsed: HrPayrollFilters;
+  fxRateSetRef?: string;
+  lines: HrPayrollEmployeeLine[];
+  totals: {
+    netEur: number;
+    employerCostEur: number;
+    bonusesEur: number;
+    headcount: number;
+    byLegalEntity: Array<{
+      legalEntityId: OurEntity;
+      netEur: number;
+      employerCostEur: number;
+      bonusesEur: number;
+      headcount: number;
+    }>;
+  };
+}
+
+export interface HrCountryLeaveProfile {
+  id: string;
+  country: string;
+  annualLeaveDays: number;
+  sickLeaveDays: number;
+  carryOverPolicy: string;
+  resetPolicy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrLeaveRequest {
+  id: string;
+  employeeId: string;
+  leaveType: HrLeaveType;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  status: HrLeaveStatus;
+  managerApprovedAt?: string;
+  hrApprovedAt?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrAsset {
+  id: string;
+  name: string;
+  category: HrAssetCategory;
+  assignedToEmployeeId?: string;
+  assignedAt?: string;
+  returnedAt?: string;
+  digitalAcceptance: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrSoftwareLicense {
+  id: string;
+  name: string;
+  vendor: string;
+  licenseType: string;
+  assignedToEmployeeId?: string;
+  startDate: string;
+  endDate?: string;
+  cost?: number;
+  currency?: HrCurrencyCode;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrExpense {
+  id: string;
+  employeeId: string;
+  category: string;
+  amount: number;
+  currency: HrCurrencyCode;
+  convertedAmountEUR: number;
+  description: string;
+  receiptUrl?: string;
+  status: HrExpenseStatus;
+  managerApprovedAt?: string;
+  financeApprovedAt?: string;
+  paidAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrAuditLogEntry {
+  id: string;
+  parentType: "Leave" | "Expense" | "Asset" | "Compensation" | "PayrollSnapshot";
+  parentId: string;
+  actionType: HrAuditActionType;
+  performedByUserId: string;
+  comment?: string;
+  timestamp: string;
 }
 
 export type OpsTrack = "SMS" | "Voice";
@@ -545,6 +792,18 @@ export interface DbState {
   projectWeeklyReports: ProjectWeeklyReport[];
   contracts: Contract[];
   ourCompanyInfo: OurCompanyInfo[];
+  hrLegalEntities: HrLegalEntity[];
+  hrFxRates: HrFxRate[];
+  hrDepartments: HrDepartment[];
+  hrEmployees: HrEmployee[];
+  hrCompensations: HrEmployeeCompensation[];
+  hrPayrollSnapshots: HrPayrollMonthSnapshot[];
+  hrLeaveProfiles: HrCountryLeaveProfile[];
+  hrLeaveRequests: HrLeaveRequest[];
+  hrAssets: HrAsset[];
+  hrSoftwareLicenses: HrSoftwareLicense[];
+  hrExpenses: HrExpense[];
+  hrAuditLogs: HrAuditLogEntry[];
   opsRequests: OpsRequest[];
   opsCases: OpsCase[];
   opsMonitoringSignals: OpsMonitoringSignal[];

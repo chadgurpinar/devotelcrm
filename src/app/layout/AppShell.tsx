@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAppStore } from "../../store/db";
 import { Button } from "../../components/ui";
@@ -30,6 +30,19 @@ const navGroups = [
     ],
   },
   {
+    title: "Human Resources",
+    items: [
+      { to: "/hr/dashboard", label: "HR Dashboard", icon: "H" },
+      { to: "/hr/people", label: "People", icon: "P" },
+      { to: "/hr/organization", label: "Organization", icon: "O" },
+      { to: "/hr/payroll", label: "Payroll & Compensation", icon: "Y" },
+      { to: "/hr/leave", label: "Leave Management", icon: "L" },
+      { to: "/hr/assets", label: "Assets & Software", icon: "A" },
+      { to: "/hr/expenses", label: "Expenses", icon: "E" },
+      { to: "/hr/settings", label: "HR Settings", icon: "S" },
+    ],
+  },
+  {
     title: "Other",
     items: [
       { to: "/", label: "Dashboard", icon: "D" },
@@ -43,10 +56,8 @@ export function AppShell() {
   const navigate = useNavigate();
   const users = useAppStore((s) => s.users);
   const activeUserId = useAppStore((s) => s.activeUserId);
-  const setActiveUser = useAppStore((s) => s.setActiveUser);
   const processReminders = useAppStore((s) => s.processReminders);
   const createCompany = useAppStore((s) => s.createCompany);
-  const notes = useAppStore((s) => s.notes);
   const leadsCount = useAppStore(
     (s) => s.companies.filter((c) => c.companyStatus === "LEAD" && c.leadDisposition === "Open").length,
   );
@@ -55,7 +66,6 @@ export function AppShell() {
   const opsUrgentCount = useAppStore(
     (s) => s.opsCases.filter((entry) => (entry.status === "New" || entry.status === "InProgress") && entry.severity === "Urgent").length,
   );
-  const [openNotifications, setOpenNotifications] = useState(false);
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [newLeadForm, setNewLeadForm] = useState({
     name: "",
@@ -75,19 +85,6 @@ export function AppShell() {
   }, [processReminders]);
 
   const activeUser = users.find((u) => u.id === activeUserId);
-  const dueReminderCount = useMemo(
-    () =>
-      notes.filter(
-        (n) => n.reminderAt && !n.reminderTriggered && new Date(n.reminderAt).getTime() <= Date.now(),
-      ).length,
-    [notes],
-  );
-
-  const dueReminders = useMemo(
-    () => notes.filter((n) => n.reminderTriggered).slice(-10).reverse(),
-    [notes],
-  );
-
   useEffect(() => {
     if (!newLeadOpen) return;
     const currentUserDefaultEntity = users.find((user) => user.id === activeUserId)?.defaultOurEntity ?? "UK";
@@ -191,46 +188,6 @@ export function AppShell() {
         </div>
       </aside>
       <div className="flex flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-          <div className="flex-1">
-            <input
-              placeholder="Search companies, events, meetings..."
-              className="max-w-md rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700"
-            />
-          </div>
-          <Button onClick={() => setNewLeadOpen(true)}>+ New</Button>
-          <Button variant="secondary" onClick={() => setOpenNotifications((x) => !x)}>
-            Alerts {dueReminderCount > 0 ? `(${dueReminderCount})` : ""}
-          </Button>
-          <div className="w-56 min-w-[220px]">
-            <select value={activeUserId} onChange={(e) => setActiveUser(e.target.value)}>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} ({u.role})
-                </option>
-              ))}
-            </select>
-          </div>
-        </header>
-
-        {openNotifications && (
-          <div className="border-b border-slate-200 bg-white px-4 py-3">
-            <p className="mb-2 text-xs font-semibold text-slate-700">Triggered reminders</p>
-            <div className="grid gap-2 md:grid-cols-2">
-              {dueReminders.length === 0 ? (
-                <p className="text-xs text-slate-500">No reminders yet.</p>
-              ) : (
-                dueReminders.map((n) => (
-                  <div key={n.id} className="rounded-md border border-slate-200 p-2 text-xs">
-                    <p className="font-semibold text-slate-700">{n.text.slice(0, 80)}</p>
-                    <p className="text-slate-500">Company: {n.companyId}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
         <main className="flex-1 p-3">
           <Outlet />
         </main>

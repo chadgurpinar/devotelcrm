@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button, Card, FieldLabel, StatCard } from "../../components/ui";
 import { useAppStore } from "../../store/db";
@@ -12,6 +12,18 @@ import { MeetingCard } from "./MeetingCard";
 import { MeetingStartModal } from "./MeetingStartModal";
 
 type Tab = "Stream Board" | "Meetings List" | "Event Notes" | "Team Travel";
+
+function toDateTimeLocalInput(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
 
 export function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -30,6 +42,11 @@ export function EventDetailPage() {
 
   const [noteText, setNoteText] = useState("");
   const [reminderAt, setReminderAt] = useState("");
+  const [noteCompanyId, setNoteCompanyId] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState("");
+  const [editingReminderAt, setEditingReminderAt] = useState("");
+  const [editingCompanyId, setEditingCompanyId] = useState("");
   const allEventMeetings = useMemo(() => {
     if (!eventId) return [];
     return state.meetings
@@ -57,6 +74,20 @@ export function EventDetailPage() {
       .map((id) => state.companies.find((company) => company.id === id))
       .filter((company): company is NonNullable<typeof company> => Boolean(company));
   }, [allEventMeetings, state.companies]);
+  const noteCompanyOptions = useMemo(
+    () => (eventCompanies.length > 0 ? eventCompanies : state.companies),
+    [eventCompanies, state.companies],
+  );
+
+  useEffect(() => {
+    if (!noteCompanyOptions.length) {
+      if (noteCompanyId) setNoteCompanyId("");
+      return;
+    }
+    if (!noteCompanyOptions.some((company) => company.id === noteCompanyId)) {
+      setNoteCompanyId(noteCompanyOptions[0].id);
+    }
+  }, [noteCompanyId, noteCompanyOptions]);
 
   if (!event || !eventId) {
     return (
@@ -122,6 +153,26 @@ export function EventDetailPage() {
     });
     return conflicts;
   }, [eventMeetings]);
+  const editingNote = useMemo(
+    () => (editingNoteId ? eventNotes.find((row) => row.id === editingNoteId) ?? null : null),
+    [editingNoteId, eventNotes],
+  );
+
+  const resetEditingNote = () => {
+    setEditingNoteId(null);
+    setEditingNoteText("");
+    setEditingReminderAt("");
+    setEditingCompanyId("");
+  };
+
+  const startEditingNote = (noteId: string) => {
+    const note = eventNotes.find((row) => row.id === noteId);
+    if (!note) return;
+    setEditingNoteId(note.id);
+    setEditingNoteText(note.text);
+    setEditingReminderAt(toDateTimeLocalInput(note.reminderAt));
+    setEditingCompanyId(note.companyId);
+  };
 
   return (
     <div className="space-y-3">
@@ -275,11 +326,11 @@ export function EventDetailPage() {
       {tab === "Event Notes" && (
         <Card title="Event notes (same note also in company CRM)">
           <form
-            className="mb-3 grid gap-2 md:grid-cols-4"
+            className="mb-3 grid gap-2 md:grid-cols-6"
             onSubmit={(e) => {
               e.preventDefault();
               if (!noteText.trim()) return;
-              const companyId = allEventMeetings[0]?.companyId ?? state.companies[0]?.id;
+              const companyId = noteCompanyId.trim();
               if (!companyId) return;
               state.createNote({
                 companyId,
@@ -296,12 +347,28 @@ export function EventDetailPage() {
               <FieldLabel>Note</FieldLabel>
               <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Meeting note..." />
             </div>
+            <div className="md:col-span-2">
+              <FieldLabel>Company</FieldLabel>
+              <select value={noteCompanyId} onChange={(e) => setNoteCompanyId(e.target.value)} disabled={!noteCompanyOptions.length}>
+                {!noteCompanyOptions.length ? (
+                  <option value="">No company available</option>
+                ) : (
+                  noteCompanyOptions.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
             <div>
               <FieldLabel>Reminder</FieldLabel>
               <input type="datetime-local" value={reminderAt} onChange={(e) => setReminderAt(e.target.value)} />
             </div>
-            <div className="md:col-span-4">
-              <Button type="submit">Add event note</Button>
+            <div className="md:col-span-6">
+              <Button type="submit" disabled={!noteText.trim() || !noteCompanyId}>
+                Add event note
+              </Button>
             </div>
           </form>
           <div className="space-y-2">
@@ -310,6 +377,9 @@ export function EventDetailPage() {
                 <div className="mb-1 flex items-center justify-between gap-2">
                   <p className="font-semibold">{note.text}</p>
                   <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => startEditingNote(note.id)}>
+                      Edit
+                    </Button>
                     <Button onClick={() => state.convertNoteToTask(note.id, state.activeUserId)}>To task</Button>
                     <Button variant="danger" onClick={() => state.deleteNote(note.id)}>
                       Delete
@@ -413,6 +483,59 @@ export function EventDetailPage() {
       {startingMeeting && <MeetingStartModal eventId={eventId} meeting={startingMeeting} onClose={() => setStartingMeeting(null)} />}
       {staffCreateOpen && (
         <StaffTravelModal eventId={eventId} mode="create" onClose={() => setStaffCreateOpen(false)} />
+      )}
+      {editingNote && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={resetEditingNote}>
+          <div className="w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-800">Edit event note</h3>
+              <Button size="sm" variant="secondary" onClick={resetEditingNote}>
+                Close
+              </Button>
+            </div>
+            <form
+              className="grid gap-2 md:grid-cols-6"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!editingNoteText.trim() || !editingCompanyId) return;
+                state.updateNote({
+                  ...editingNote,
+                  text: editingNoteText.trim(),
+                  companyId: editingCompanyId,
+                  reminderAt: editingReminderAt ? new Date(editingReminderAt).toISOString() : undefined,
+                });
+                resetEditingNote();
+              }}
+            >
+              <div className="md:col-span-3">
+                <FieldLabel>Note</FieldLabel>
+                <input value={editingNoteText} onChange={(e) => setEditingNoteText(e.target.value)} autoFocus />
+              </div>
+              <div className="md:col-span-2">
+                <FieldLabel>Company</FieldLabel>
+                <select value={editingCompanyId} onChange={(e) => setEditingCompanyId(e.target.value)}>
+                  {state.companies.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Reminder</FieldLabel>
+                <input type="datetime-local" value={editingReminderAt} onChange={(e) => setEditingReminderAt(e.target.value)} />
+              </div>
+              <div className="md:col-span-6 flex items-center justify-end gap-2">
+                <Button size="sm" variant="secondary" onClick={resetEditingNote}>
+                  Cancel
+                </Button>
+                <Button size="sm" type="submit" disabled={!editingNoteText.trim() || !editingCompanyId}>
+                  Save note
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
       {editingStaff && (
         <StaffTravelModal

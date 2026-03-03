@@ -8,6 +8,18 @@ import {
   DbState,
   Event,
   EventStaff,
+  HrAsset,
+  HrCountryLeaveProfile,
+  HrCurrencyCode,
+  HrDepartment,
+  HrEmployee,
+  HrEmployeeCompensation,
+  HrExpense,
+  HrFxRate,
+  HrLegalEntity,
+  HrLeaveRequest,
+  HrPayrollMonthSnapshot,
+  HrSoftwareLicense,
   InterconnectionProcess,
   InterconnectionStage,
   InterconnectionType,
@@ -37,6 +49,7 @@ import {
   User,
   Workscope,
 } from "./types";
+import { computePayrollPreview, convertCurrency, workingDaysBetween } from "./hrUtils";
 
 const companyPrefixes = [
   "A1",
@@ -164,6 +177,18 @@ const interconnectionTypes: InterconnectionType[] = ["One-way", "Two-way"];
 const regions = ["Europe", "Middle East", "Asia", "Africa"];
 const billingTerms = ["Prepaid", "Net 7", "Net 15", "Net 30", "Net 45"];
 const currencies = ["USD", "EUR", "GBP", "TRY"];
+const hrCountries = ["Turkey", "United Kingdom", "United States", "Germany", "Spain"];
+const hrDepartmentNames = [
+  "Sales",
+  "NOC",
+  "Routing",
+  "Interconnection",
+  "Product",
+  "Finance",
+  "Human Resources",
+  "Management",
+];
+const hrExpenseCategories = ["Travel", "Meal", "Taxi", "Hotel", "Office", "Training", "Other"];
 
 const seedUsers: User[] = [
   { id: "u1", name: "Timur", role: "Sales", color: "#4f46e5", defaultOurEntity: "UK" },
@@ -936,6 +961,8 @@ function createTasks(
     const dueAt = idx % 5 === 0 ? new Date(createdAt.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString() : undefined;
     const completedAt =
       status === "Done" ? new Date(updatedAt.getTime() + 6 * 60 * 60 * 1000).toISOString() : undefined;
+    const archivedAt =
+      status === "Done" && idx % 6 === 0 ? new Date(updatedAt.getTime() + 36 * 60 * 60 * 1000).toISOString() : undefined;
     const linkedProcess = idx % 4 === 0 ? pick(interconnectionProcesses, idx) : undefined;
     const linkedProject = idx % 3 === 0 ? pick(projects, idx).id : undefined;
     const visibility: Task["visibility"] = creator.id === assignee.id ? "Private" : "Shared";
@@ -961,6 +988,7 @@ function createTasks(
       createdAt: createdAt.toISOString(),
       updatedAt: updatedAt.toISOString(),
       completedAt,
+      archivedAt,
     };
   });
 }
@@ -1562,6 +1590,484 @@ function createOpsShifts(users: User[]): OpsShift[] {
   return rows;
 }
 
+function createHrLegalEntities(): HrLegalEntity[] {
+  const now = new Date("2026-03-01T09:00:00Z").toISOString();
+  return [
+    {
+      id: "USA",
+      name: "Devotel USA Inc.",
+      country: "United States",
+      currency: "USD",
+      bankDetailsRef: "BANK-USA-001",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "UK",
+      name: "Devotel UK Ltd.",
+      country: "United Kingdom",
+      currency: "GBP",
+      bankDetailsRef: "BANK-UK-001",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "TR",
+      name: "Devotel Telekom TR A.S.",
+      country: "Turkey",
+      currency: "TRY",
+      bankDetailsRef: "BANK-TR-001",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
+function createHrFxRates(): HrFxRate[] {
+  const effectiveDates = ["2026-01-01T00:00:00.000Z", "2026-02-01T00:00:00.000Z", "2026-03-01T00:00:00.000Z"];
+  const rows: HrFxRate[] = [];
+  const matrix: Record<HrCurrencyCode, number[]> = {
+    EUR: [1, 1, 1],
+    USD: [0.92, 0.93, 0.94],
+    GBP: [1.16, 1.17, 1.18],
+    TRY: [0.029, 0.028, 0.027],
+  };
+  (Object.keys(matrix) as HrCurrencyCode[]).forEach((currency) => {
+    effectiveDates.forEach((effectiveAt, idx) => {
+      rows.push({
+        id: `hr-fx-${currency}-${idx + 1}`,
+        from: currency,
+        to: "EUR",
+        rate: matrix[currency][idx],
+        effectiveAt,
+        createdAt: effectiveAt,
+        updatedAt: effectiveAt,
+      });
+    });
+  });
+  return rows;
+}
+
+function createHrDepartments(): HrDepartment[] {
+  const now = new Date("2026-03-01T09:00:00Z").toISOString();
+  return hrDepartmentNames.map((name, idx) => ({
+    id: `hr-dept-${idx + 1}`,
+    name,
+    parentDepartmentId:
+      name === "Sales" || name === "NOC" || name === "Routing" || name === "Interconnection" ? `hr-dept-8` : undefined,
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
+
+function countryToCurrency(country: string): HrCurrencyCode {
+  if (country === "Turkey") return "TRY";
+  if (country === "United States") return "USD";
+  if (country === "United Kingdom") return "GBP";
+  return "EUR";
+}
+
+function legalEntityForCountry(country: string): OurEntity {
+  if (country === "Turkey") return "TR";
+  if (country === "United States") return "USA";
+  return "UK";
+}
+
+function createHrEmployees(users: User[], departments: HrDepartment[]): HrEmployee[] {
+  const start = new Date("2024-01-15T09:00:00Z");
+  return Array.from({ length: 72 }).map((_, idx) => {
+    const country = pick(hrCountries, idx);
+    const firstName = pick(firstNames, idx + 11);
+    const lastName = pick(lastNames, idx + 27);
+    const employmentStartDate = new Date(start);
+    employmentStartDate.setUTCDate(start.getUTCDate() + idx * 9);
+    const createdAt = new Date(employmentStartDate);
+    createdAt.setUTCDate(createdAt.getUTCDate() - 7);
+    const isManagement = idx < 6;
+    const managerIdx = isManagement ? undefined : Math.floor((idx % 12) / 2);
+    const managerId = managerIdx !== undefined ? `hr-emp-${managerIdx + 1}` : undefined;
+    const active = idx % 14 !== 0;
+    const systemUserId = idx < users.length ? users[idx].id : undefined;
+    return {
+      id: `hr-emp-${idx + 1}`,
+      firstName,
+      lastName,
+      email: `${cleanForEmail(`${firstName}.${lastName}`)}@devotel.com`,
+      phone: `+90 5${String(100000000 + idx * 87).slice(1)}`,
+      nationality: country,
+      countryOfEmployment: country,
+      departmentId: pick(departments, idx).id,
+      title: isManagement ? "Department Manager" : idx % 4 === 0 ? "Specialist" : "Senior Specialist",
+      managerId,
+      employmentStartDate: employmentStartDate.toISOString().slice(0, 10),
+      employmentType: idx % 10 === 0 ? "Contractor" : idx % 4 === 0 ? "Part-time" : "Full-time",
+      baseCurrency: countryToCurrency(country),
+      masterContractSignedAt: new Date(createdAt.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      active,
+      createdAt: createdAt.toISOString(),
+      updatedAt: createdAt.toISOString(),
+      systemUserId,
+      terminationDate: active ? undefined : new Date(createdAt.getTime() + 420 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    };
+  });
+}
+
+function createHrCompensations(employees: HrEmployee[]): HrEmployeeCompensation[] {
+  const now = new Date("2026-03-01T09:00:00Z").toISOString();
+  return employees.map((employee, idx) => {
+    const baseSalaryNet =
+      employee.baseCurrency === "TRY"
+        ? 52000 + (idx % 9) * 2800
+        : employee.baseCurrency === "USD"
+          ? 4200 + (idx % 10) * 220
+          : employee.baseCurrency === "GBP"
+            ? 3300 + (idx % 8) * 190
+            : 3800 + (idx % 8) * 210;
+    const baseSalaryGross = baseSalaryNet * (employee.baseCurrency === "TRY" ? 1.42 : 1.35);
+    const employerCost = baseSalaryGross * 1.18;
+    const primaryEntity = legalEntityForCountry(employee.countryOfEmployment);
+    const secondaryEntity: OurEntity = primaryEntity === "TR" ? "UK" : "TR";
+    const salaryDistribution =
+      idx % 5 === 0
+        ? [
+            {
+              id: `hr-dist-${employee.id}-1`,
+              legalEntityId: primaryEntity,
+              mode: "Percent" as const,
+              percent: 70,
+              currency: employee.baseCurrency,
+            },
+            {
+              id: `hr-dist-${employee.id}-2`,
+              legalEntityId: secondaryEntity,
+              mode: "Percent" as const,
+              percent: 30,
+              currency: employee.baseCurrency,
+            },
+          ]
+        : [
+            {
+              id: `hr-dist-${employee.id}-1`,
+              legalEntityId: primaryEntity,
+              mode: "Percent" as const,
+              percent: 100,
+              currency: employee.baseCurrency,
+            },
+          ];
+    const bonusEntries =
+      idx % 3 === 0
+        ? [
+            {
+              id: `hr-bonus-${employee.id}-1`,
+              employeeId: employee.id,
+              date: "2026-02-15",
+              amount: Math.round(baseSalaryNet * 0.12),
+              currency: employee.baseCurrency,
+              description: "Quarterly performance bonus",
+            },
+            {
+              id: `hr-bonus-${employee.id}-2`,
+              employeeId: employee.id,
+              date: "2026-03-18",
+              amount: Math.round(baseSalaryNet * 0.08),
+              currency: employee.baseCurrency,
+              description: "Project completion bonus",
+            },
+          ]
+        : idx % 7 === 0
+          ? [
+              {
+                id: `hr-bonus-${employee.id}-1`,
+                employeeId: employee.id,
+                date: "2026-03-10",
+                amount: Math.round(baseSalaryNet * 0.05),
+                currency: employee.baseCurrency,
+                description: "Manual spot bonus",
+              },
+            ]
+          : [];
+    return {
+      id: `hr-comp-${employee.id}`,
+      employeeId: employee.id,
+      baseSalaryNet: Math.round(baseSalaryNet * 100) / 100,
+      baseSalaryGross: Math.round(baseSalaryGross * 100) / 100,
+      employerCost: Math.round(employerCost * 100) / 100,
+      currency: employee.baseCurrency,
+      bonusEntries,
+      salaryDistribution,
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+}
+
+function createHrLeaveProfiles(): HrCountryLeaveProfile[] {
+  const now = new Date("2026-03-01T09:00:00Z").toISOString();
+  return [
+    {
+      id: "hr-leave-profile-tr",
+      country: "Turkey",
+      annualLeaveDays: 20,
+      sickLeaveDays: 10,
+      carryOverPolicy: "Up to 5 days carried to next year",
+      resetPolicy: "January 1",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "hr-leave-profile-uk",
+      country: "United Kingdom",
+      annualLeaveDays: 25,
+      sickLeaveDays: 10,
+      carryOverPolicy: "Up to 3 days carried to next year",
+      resetPolicy: "January 1",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "hr-leave-profile-us",
+      country: "United States",
+      annualLeaveDays: 15,
+      sickLeaveDays: 8,
+      carryOverPolicy: "No carry-over",
+      resetPolicy: "January 1",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "hr-leave-profile-de",
+      country: "Germany",
+      annualLeaveDays: 24,
+      sickLeaveDays: 12,
+      carryOverPolicy: "Up to 5 days by Q1",
+      resetPolicy: "January 1",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "hr-leave-profile-es",
+      country: "Spain",
+      annualLeaveDays: 23,
+      sickLeaveDays: 10,
+      carryOverPolicy: "Up to 5 days carried to next year",
+      resetPolicy: "January 1",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+}
+
+function createHrLeaveRequests(employees: HrEmployee[]): HrLeaveRequest[] {
+  return Array.from({ length: 54 }).map((_, idx) => {
+    const employee = employees[idx % employees.length];
+    const start = new Date("2026-02-01T00:00:00Z");
+    start.setUTCDate(start.getUTCDate() + idx * 2);
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + (idx % 4) + 1);
+    const status: HrLeaveRequest["status"] =
+      idx % 6 === 0 ? "PendingManager" : idx % 6 === 1 ? "PendingHR" : idx % 6 === 2 ? "Rejected" : "Approved";
+    const createdAt = new Date(start);
+    createdAt.setUTCDate(createdAt.getUTCDate() - 7);
+    const managerApprovedAt =
+      status === "PendingHR" || status === "Approved" || status === "Rejected"
+        ? new Date(createdAt.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+    const hrApprovedAt = status === "Approved" ? new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString() : undefined;
+    const rejectedAt = status === "Rejected" ? new Date(createdAt.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString() : undefined;
+    return {
+      id: `hr-leave-${idx + 1}`,
+      employeeId: employee.id,
+      leaveType: idx % 7 === 0 ? "Sick" : idx % 9 === 0 ? "Other" : "Annual",
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      totalDays: workingDaysBetween(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10)),
+      status,
+      managerApprovedAt,
+      hrApprovedAt,
+      rejectedAt,
+      rejectionReason: status === "Rejected" ? "Insufficient staffing coverage for selected dates." : undefined,
+      createdAt: createdAt.toISOString(),
+      updatedAt: (hrApprovedAt ?? rejectedAt ?? managerApprovedAt ?? createdAt.toISOString()),
+    };
+  });
+}
+
+function createHrAssets(employees: HrEmployee[]): HrAsset[] {
+  return Array.from({ length: 96 }).map((_, idx) => {
+    const category: HrAsset["category"] = idx % 4 === 0 ? "Laptop" : idx % 4 === 1 ? "Phone" : idx % 4 === 2 ? "Accessory" : "Software";
+    const employee = employees[idx % employees.length];
+    const assigned = idx % 8 !== 0;
+    const assignedAt = assigned ? new Date(Date.UTC(2026, 0, 2 + idx)).toISOString() : undefined;
+    const returnedAt = assigned && idx % 13 === 0 ? new Date(Date.UTC(2026, 2, 2 + idx)).toISOString() : undefined;
+    return {
+      id: `hr-asset-${idx + 1}`,
+      name:
+        category === "Laptop"
+          ? `Dell Latitude ${7400 + (idx % 6)}`
+          : category === "Phone"
+            ? `iPhone ${13 + (idx % 3)}`
+            : category === "Accessory"
+              ? `Headset ${idx + 1}`
+              : `Software seat ${idx + 1}`,
+      category,
+      assignedToEmployeeId: assigned && !returnedAt ? employee.id : undefined,
+      assignedAt: assigned && !returnedAt ? assignedAt : undefined,
+      returnedAt,
+      digitalAcceptance: Boolean(assigned && idx % 5 !== 0 && !returnedAt),
+      notes: idx % 10 === 0 ? "Needs replacement this quarter." : undefined,
+      createdAt: new Date(Date.UTC(2025, 11, 12)).toISOString(),
+      updatedAt: new Date(Date.UTC(2026, 2, 10)).toISOString(),
+    };
+  });
+}
+
+function createHrSoftwareLicenses(employees: HrEmployee[]): HrSoftwareLicense[] {
+  const vendors = ["Microsoft", "Google", "Atlassian", "Figma", "Slack", "HubSpot"];
+  const names = ["Microsoft 365", "Google Workspace", "Jira", "Figma Pro", "Slack Business+", "HubSpot Sales"];
+  return Array.from({ length: 84 }).map((_, idx) => {
+    const startDate = new Date(Date.UTC(2025, 11, 1 + idx)).toISOString().slice(0, 10);
+    const endDate = idx % 9 === 0 ? undefined : new Date(Date.UTC(2026, 11, 1 + (idx % 15))).toISOString().slice(0, 10);
+    return {
+      id: `hr-license-${idx + 1}`,
+      name: pick(names, idx),
+      vendor: pick(vendors, idx),
+      licenseType: idx % 2 === 0 ? "Annual Seat" : "Monthly Seat",
+      assignedToEmployeeId: idx % 7 === 0 ? undefined : employees[idx % employees.length]?.id,
+      startDate,
+      endDate,
+      cost: idx % 6 === 0 ? undefined : 10 + (idx % 8) * 7,
+      currency: idx % 3 === 0 ? "USD" : idx % 3 === 1 ? "EUR" : "GBP",
+      notes: idx % 12 === 0 ? "Pending true-up with vendor." : undefined,
+      createdAt: `${startDate}T09:00:00.000Z`,
+      updatedAt: "2026-03-01T09:00:00.000Z",
+    };
+  });
+}
+
+function createHrExpenses(employees: HrEmployee[], fxRates: HrFxRate[]): HrExpense[] {
+  return Array.from({ length: 70 }).map((_, idx) => {
+    const employee = employees[idx % employees.length];
+    const currency = employee.baseCurrency;
+    const createdAt = new Date(Date.UTC(2026, 1, 1 + idx)).toISOString();
+    const amount = currency === "TRY" ? 2800 + (idx % 10) * 430 : 45 + (idx % 8) * 22;
+    const convertedAmountEUR = convertCurrency(amount, currency, "EUR", fxRates, createdAt) ?? amount;
+    const status: HrExpense["status"] =
+      idx % 5 === 0
+        ? "PendingManager"
+        : idx % 5 === 1
+          ? "PendingFinance"
+          : idx % 5 === 2
+            ? "Approved"
+            : idx % 5 === 3
+              ? "Rejected"
+              : "Paid";
+    return {
+      id: `hr-expense-${idx + 1}`,
+      employeeId: employee.id,
+      category: pick(hrExpenseCategories, idx),
+      amount: Math.round(amount * 100) / 100,
+      currency,
+      convertedAmountEUR: Math.round(convertedAmountEUR * 100) / 100,
+      description: idx % 2 === 0 ? "Client meeting related expense." : "Operational expense reimbursement.",
+      receiptUrl: idx % 9 === 0 ? undefined : `upload://hr-expense-${idx + 1}/receipt.pdf`,
+      status,
+      managerApprovedAt:
+        status === "PendingFinance" || status === "Approved" || status === "Rejected" || status === "Paid"
+          ? new Date(new Date(createdAt).getTime() + 2 * 60 * 60 * 1000).toISOString()
+          : undefined,
+      financeApprovedAt:
+        status === "Approved" || status === "Paid"
+          ? new Date(new Date(createdAt).getTime() + 26 * 60 * 60 * 1000).toISOString()
+          : undefined,
+      paidAt: status === "Paid" ? new Date(new Date(createdAt).getTime() + 72 * 60 * 60 * 1000).toISOString() : undefined,
+      createdAt,
+      updatedAt: status === "Paid" ? new Date(new Date(createdAt).getTime() + 72 * 60 * 60 * 1000).toISOString() : createdAt,
+    };
+  });
+}
+
+function createHrPayrollSnapshots(
+  employees: HrEmployee[],
+  compensations: HrEmployeeCompensation[],
+  fxRates: HrFxRate[],
+  activeUserId: string,
+): HrPayrollMonthSnapshot[] {
+  const months = ["2026-02", "2026-03"];
+  return months.map((month, idx) => {
+    const snapshotId = `hr-payroll-snapshot-${idx + 1}`;
+    const preview = computePayrollPreview({
+      employees,
+      compensations,
+      fxRates,
+      month,
+      snapshotId,
+    });
+    return {
+      id: snapshotId,
+      month,
+      createdAt: `${month}-28T18:00:00.000Z`,
+      createdByUserId: activeUserId,
+      notes: "Generated from seeded compensation and FX data.",
+      filtersUsed: {},
+      fxRateSetRef: `fx-${month}`,
+      lines: preview.lines,
+      totals: preview.totals,
+    };
+  });
+}
+
+function createHrAuditLogs(
+  leaveRequests: HrLeaveRequest[],
+  expenses: HrExpense[],
+  assets: HrAsset[],
+  activeUserId: string,
+): DbState["hrAuditLogs"] {
+  const rows: DbState["hrAuditLogs"] = [];
+  leaveRequests.slice(0, 50).forEach((request, idx) => {
+    rows.push({
+      id: `hr-audit-leave-created-${idx + 1}`,
+      parentType: "Leave",
+      parentId: request.id,
+      actionType: "MANAGER_APPROVE",
+      performedByUserId: activeUserId,
+      comment: request.status === "PendingManager" ? "Leave request created and waiting manager." : "Manager action processed.",
+      timestamp: request.managerApprovedAt ?? request.createdAt,
+    });
+  });
+  expenses.slice(0, 50).forEach((expense, idx) => {
+    rows.push({
+      id: `hr-audit-expense-${idx + 1}`,
+      parentType: "Expense",
+      parentId: expense.id,
+      actionType:
+        expense.status === "PendingManager"
+          ? "MANAGER_APPROVE"
+          : expense.status === "PendingFinance"
+            ? "FINANCE_APPROVE"
+            : expense.status === "Rejected"
+              ? "FINANCE_REJECT"
+              : expense.status === "Paid"
+                ? "MARK_PAID"
+                : "FINANCE_APPROVE",
+      performedByUserId: activeUserId,
+      comment: "Seeded expense workflow log.",
+      timestamp: expense.updatedAt,
+    });
+  });
+  assets.slice(0, 40).forEach((asset, idx) => {
+    rows.push({
+      id: `hr-audit-asset-${idx + 1}`,
+      parentType: "Asset",
+      parentId: asset.id,
+      actionType: asset.returnedAt ? "ASSET_RETURNED" : asset.digitalAcceptance ? "ASSET_ACCEPTED" : "ASSET_ASSIGNED",
+      performedByUserId: activeUserId,
+      comment: "Seeded asset assignment event.",
+      timestamp: asset.updatedAt,
+    });
+  });
+  return rows.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+}
+
 export function createSeedDb(): DbState {
   const users = seedUsers;
   const events = createEvents();
@@ -1582,6 +2088,18 @@ export function createSeedDb(): DbState {
   const opsRequests = createOpsRequests(opsCases, companies, users);
   const opsAuditLogs = createOpsAuditLogs(opsRequests, opsCases, users);
   const opsShifts = createOpsShifts(users);
+  const hrLegalEntities = createHrLegalEntities();
+  const hrFxRates = createHrFxRates();
+  const hrDepartments = createHrDepartments();
+  const hrEmployees = createHrEmployees(users, hrDepartments);
+  const hrCompensations = createHrCompensations(hrEmployees);
+  const hrLeaveProfiles = createHrLeaveProfiles();
+  const hrLeaveRequests = createHrLeaveRequests(hrEmployees);
+  const hrAssets = createHrAssets(hrEmployees);
+  const hrSoftwareLicenses = createHrSoftwareLicenses(hrEmployees);
+  const hrExpenses = createHrExpenses(hrEmployees, hrFxRates);
+  const hrPayrollSnapshots = createHrPayrollSnapshots(hrEmployees, hrCompensations, hrFxRates, users[0].id);
+  const hrAuditLogs = createHrAuditLogs(hrLeaveRequests, hrExpenses, hrAssets, users[0].id);
 
   return {
     version: 1,
@@ -1600,6 +2118,18 @@ export function createSeedDb(): DbState {
     projectWeeklyReports,
     contracts,
     ourCompanyInfo,
+    hrLegalEntities,
+    hrFxRates,
+    hrDepartments,
+    hrEmployees,
+    hrCompensations,
+    hrPayrollSnapshots,
+    hrLeaveProfiles,
+    hrLeaveRequests,
+    hrAssets,
+    hrSoftwareLicenses,
+    hrExpenses,
+    hrAuditLogs,
     opsRequests,
     opsCases,
     opsMonitoringSignals,

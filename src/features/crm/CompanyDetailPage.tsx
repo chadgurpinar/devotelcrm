@@ -31,6 +31,18 @@ const billingTermOptions = ["Prepaid", "Net 7", "Net 15", "Net 30", "Net 45", "C
 const currencyOptions = ["USD", "EUR", "GBP", "TRY", "AED", "Other"];
 const ourEntities: OurEntity[] = ["USA", "UK", "TR"];
 
+function createEmptyContactForm() {
+  return {
+    name: "",
+    title: "",
+    phone: "",
+    mobile: "",
+    skypeId: "",
+    email: "",
+    roleTags: [] as ContactRoleTag[],
+  };
+}
+
 function hasSignedContract(
   contracts: Array<{ interconnectionProcessId: string; contractType: ContractType; status: string }>,
   processId: string,
@@ -86,15 +98,9 @@ export function CompanyDetailPage() {
   const [reminderAt, setReminderAt] = useState("");
   const [watchersOpen, setWatchersOpen] = useState(false);
   const watchersPopoverRef = useRef<HTMLDivElement | null>(null);
-  const [contactForm, setContactForm] = useState({
-    name: "",
-    title: "",
-    phone: "",
-    mobile: "",
-    skypeId: "",
-    email: "",
-    roleTags: [] as ContactRoleTag[],
-  });
+  const [contactForm, setContactForm] = useState(createEmptyContactForm());
+  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editingContactForm, setEditingContactForm] = useState(createEmptyContactForm());
 
   const company = state.companies.find((row) => row.id === companyId);
   const notes = useMemo(
@@ -267,6 +273,15 @@ export function CompanyDetailPage() {
       });
     }
     event.target.value = "";
+  }
+
+  function resetContactForm() {
+    setContactForm(createEmptyContactForm());
+  }
+
+  function closeContactEditModal() {
+    setEditingContactId(null);
+    setEditingContactForm(createEmptyContactForm());
   }
 
   return (
@@ -722,108 +737,233 @@ export function CompanyDetailPage() {
       )}
 
       {activeTab === "Contacts" && (
-        <Card title="Contacts">
-          <form
-            className="mb-3 grid gap-2 md:grid-cols-6"
-            onSubmit={(e) => {
-              e.preventDefault();
-              state.createContact({
-                ...contactForm,
-                companyId,
-                mobile: contactForm.mobile || undefined,
-                skypeId: contactForm.skypeId || undefined,
-                email: contactForm.email || undefined,
-                roleTags: contactForm.roleTags.length ? contactForm.roleTags : undefined,
-              });
-              setContactForm({ name: "", title: "", phone: "", mobile: "", skypeId: "", email: "", roleTags: [] });
-            }}
-          >
-            <div>
-              <FieldLabel>Name</FieldLabel>
-              <input value={contactForm.name} onChange={(e) => setContactForm((row) => ({ ...row, name: e.target.value }))} required />
-            </div>
-            <div>
-              <FieldLabel>Title</FieldLabel>
-              <input value={contactForm.title} onChange={(e) => setContactForm((row) => ({ ...row, title: e.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Phone</FieldLabel>
-              <input value={contactForm.phone} onChange={(e) => setContactForm((row) => ({ ...row, phone: e.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Mobile</FieldLabel>
-              <input value={contactForm.mobile} onChange={(e) => setContactForm((row) => ({ ...row, mobile: e.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Skype</FieldLabel>
-              <input value={contactForm.skypeId} onChange={(e) => setContactForm((row) => ({ ...row, skypeId: e.target.value }))} />
-            </div>
-            <div>
-              <FieldLabel>Email</FieldLabel>
-              <input value={contactForm.email} onChange={(e) => setContactForm((row) => ({ ...row, email: e.target.value }))} />
-            </div>
-            <div className="md:col-span-6">
-              <FieldLabel>Role tags</FieldLabel>
-              <div className="flex flex-wrap gap-2 rounded-md border border-slate-200 bg-slate-50/70 p-2">
-                {contactRoleTags.map((tag) => {
-                  const checked = contactForm.roleTags.includes(tag);
-                  return (
-                    <label
-                      key={tag}
-                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${
-                        checked ? "border-brand-200 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-600"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          setContactForm((row) => ({
-                            ...row,
-                            roleTags: e.target.checked
-                              ? Array.from(new Set([...row.roleTags, tag]))
-                              : row.roleTags.filter((item) => item !== tag),
-                          }));
+        <>
+          <Card title="Contacts">
+            <form
+              className="mb-3 grid gap-2 md:grid-cols-6"
+              onSubmit={(e) => {
+                e.preventDefault();
+                state.createContact({
+                  ...contactForm,
+                  companyId,
+                  mobile: contactForm.mobile || undefined,
+                  skypeId: contactForm.skypeId || undefined,
+                  email: contactForm.email || undefined,
+                  roleTags: contactForm.roleTags.length ? contactForm.roleTags : undefined,
+                });
+                resetContactForm();
+              }}
+            >
+              <div>
+                <FieldLabel>Name</FieldLabel>
+                <input value={contactForm.name} onChange={(e) => setContactForm((row) => ({ ...row, name: e.target.value }))} required />
+              </div>
+              <div>
+                <FieldLabel>Title</FieldLabel>
+                <input value={contactForm.title} onChange={(e) => setContactForm((row) => ({ ...row, title: e.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Phone</FieldLabel>
+                <input value={contactForm.phone} onChange={(e) => setContactForm((row) => ({ ...row, phone: e.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Mobile</FieldLabel>
+                <input value={contactForm.mobile} onChange={(e) => setContactForm((row) => ({ ...row, mobile: e.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Skype</FieldLabel>
+                <input value={contactForm.skypeId} onChange={(e) => setContactForm((row) => ({ ...row, skypeId: e.target.value }))} />
+              </div>
+              <div>
+                <FieldLabel>Email</FieldLabel>
+                <input value={contactForm.email} onChange={(e) => setContactForm((row) => ({ ...row, email: e.target.value }))} />
+              </div>
+              <div className="md:col-span-6">
+                <FieldLabel>Role tags</FieldLabel>
+                <div className="flex flex-wrap gap-2 rounded-md border border-slate-200 bg-slate-50/70 p-2">
+                  {contactRoleTags.map((tag) => {
+                    const checked = contactForm.roleTags.includes(tag);
+                    return (
+                      <label
+                        key={tag}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${
+                          checked ? "border-brand-200 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            setContactForm((row) => ({
+                              ...row,
+                              roleTags: e.target.checked
+                                ? Array.from(new Set([...row.roleTags, tag]))
+                                : row.roleTags.filter((item) => item !== tag),
+                            }));
+                          }}
+                        />
+                        {tag}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="md:col-span-6 flex items-center gap-2">
+                <Button type="submit">Add contact</Button>
+              </div>
+            </form>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Title</th>
+                  <th>Phone</th>
+                  <th>Mobile</th>
+                  <th>Skype</th>
+                  <th>Email</th>
+                  <th>Roles</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contacts.map((contact) => (
+                  <tr key={contact.id}>
+                    <td>{contact.name}</td>
+                    <td>{contact.title}</td>
+                    <td>{contact.phone}</td>
+                    <td>{contact.mobile ?? "-"}</td>
+                    <td>{contact.skypeId ?? "-"}</td>
+                    <td>{contact.email ?? "-"}</td>
+                    <td>{contact.roleTags?.length ? contact.roleTags.join(", ") : "-"}</td>
+                    <td>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setEditingContactId(contact.id);
+                          setEditingContactForm({
+                            name: contact.name,
+                            title: contact.title,
+                            phone: contact.phone,
+                            mobile: contact.mobile ?? "",
+                            skypeId: contact.skypeId ?? "",
+                            email: contact.email ?? "",
+                            roleTags: contact.roleTags ?? [],
+                          });
                         }}
-                      />
-                      {tag}
-                    </label>
-                  );
-                })}
+                      >
+                        Edit
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+
+          {editingContactId && (
+            <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={closeContactEditModal}>
+              <div
+                className="w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-slate-800">Edit contact</h3>
+                  <Button size="sm" variant="secondary" onClick={closeContactEditModal}>
+                    Close
+                  </Button>
+                </div>
+                <form
+                  className="grid gap-2 md:grid-cols-6"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const existing = state.contacts.find((row) => row.id === editingContactId);
+                    if (!existing) return;
+                    state.updateContact({
+                      ...existing,
+                      ...editingContactForm,
+                      companyId,
+                      mobile: editingContactForm.mobile || undefined,
+                      skypeId: editingContactForm.skypeId || undefined,
+                      email: editingContactForm.email || undefined,
+                      roleTags: editingContactForm.roleTags.length ? editingContactForm.roleTags : undefined,
+                    });
+                    closeContactEditModal();
+                  }}
+                >
+                  <div>
+                    <FieldLabel>Name</FieldLabel>
+                    <input
+                      value={editingContactForm.name}
+                      onChange={(e) => setEditingContactForm((row) => ({ ...row, name: e.target.value }))}
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>Title</FieldLabel>
+                    <input value={editingContactForm.title} onChange={(e) => setEditingContactForm((row) => ({ ...row, title: e.target.value }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Phone</FieldLabel>
+                    <input value={editingContactForm.phone} onChange={(e) => setEditingContactForm((row) => ({ ...row, phone: e.target.value }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Mobile</FieldLabel>
+                    <input value={editingContactForm.mobile} onChange={(e) => setEditingContactForm((row) => ({ ...row, mobile: e.target.value }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Skype</FieldLabel>
+                    <input value={editingContactForm.skypeId} onChange={(e) => setEditingContactForm((row) => ({ ...row, skypeId: e.target.value }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Email</FieldLabel>
+                    <input value={editingContactForm.email} onChange={(e) => setEditingContactForm((row) => ({ ...row, email: e.target.value }))} />
+                  </div>
+                  <div className="md:col-span-6">
+                    <FieldLabel>Role tags</FieldLabel>
+                    <div className="flex flex-wrap gap-2 rounded-md border border-slate-200 bg-slate-50/70 p-2">
+                      {contactRoleTags.map((tag) => {
+                        const checked = editingContactForm.roleTags.includes(tag);
+                        return (
+                          <label
+                            key={tag}
+                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs ${
+                              checked ? "border-brand-200 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-600"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setEditingContactForm((row) => ({
+                                  ...row,
+                                  roleTags: e.target.checked
+                                    ? Array.from(new Set([...row.roleTags, tag]))
+                                    : row.roleTags.filter((item) => item !== tag),
+                                }));
+                              }}
+                            />
+                            {tag}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="md:col-span-6 flex items-center justify-end gap-2">
+                    <Button size="sm" variant="secondary" onClick={closeContactEditModal}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" type="submit" disabled={!editingContactForm.name.trim()}>
+                      Save contact
+                    </Button>
+                  </div>
+                </form>
               </div>
             </div>
-            <div className="md:col-span-6">
-              <Button type="submit">Add contact</Button>
-            </div>
-          </form>
-
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Title</th>
-                <th>Phone</th>
-                <th>Mobile</th>
-                <th>Skype</th>
-                <th>Email</th>
-                <th>Roles</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contacts.map((contact) => (
-                <tr key={contact.id}>
-                  <td>{contact.name}</td>
-                  <td>{contact.title}</td>
-                  <td>{contact.phone}</td>
-                  <td>{contact.mobile ?? "-"}</td>
-                  <td>{contact.skypeId ?? "-"}</td>
-                  <td>{contact.email ?? "-"}</td>
-                  <td>{contact.roleTags?.length ? contact.roleTags.join(", ") : "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+          )}
+        </>
       )}
 
       {activeTab === "Meetings" && (
