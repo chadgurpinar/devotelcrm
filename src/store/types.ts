@@ -382,6 +382,8 @@ export interface OurCompanyInfo {
 
 export type HrCurrencyCode = "EUR" | "USD" | "GBP" | "TRY";
 export type HrEmploymentType = "Full-time" | "Part-time" | "Contractor";
+export type HrGender = "Male" | "Female" | "Other" | "PreferNotToSay";
+export type HrMaritalStatus = "Single" | "Married" | "Other";
 export type HrSalaryDistributionMode = "Percent" | "Fixed";
 export type HrLeaveType = "Annual" | "Sick" | "Other";
 export type HrLeaveStatus = "PendingManager" | "PendingHR" | "Approved" | "Rejected";
@@ -435,22 +437,48 @@ export interface HrEmployee {
   id: string;
   firstName: string;
   lastName: string;
+  displayName: string;
+  active: boolean;
+  employmentType: HrEmploymentType;
+  startDate: string;
+  endDate?: string;
+  seniorityYears?: number;
+  managerId?: string;
+  departmentId: string;
+  division?: string;
+  position?: string;
+  jobTitle?: string;
+  gradeLevel?: string;
+  workLocation?: string;
+  countryOfEmployment: string;
+  legalEntityId: OurEntity;
+  company?: string;
+  citizenshipIdNumber?: string;
   email: string;
   phone: string;
-  nationality: string;
-  countryOfEmployment: string;
-  departmentId: string;
-  title: string;
-  managerId?: string;
-  employmentStartDate: string;
-  employmentType: HrEmploymentType;
-  baseCurrency: HrCurrencyCode;
-  masterContractSignedAt: string;
-  active: boolean;
+  address?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  nationality?: string;
+  gender?: HrGender;
+  birthDate?: string;
+  maritalStatus?: HrMaritalStatus;
+  numberOfChildren?: number;
+  university?: string;
+  universityDepartment?: string;
+  degree?: string;
+  salaryTry?: number;
+  salaryEur?: number;
+  salaryGbp?: number;
+  salaryUsd?: number;
+  totalSalaryUsdEq?: number;
+  bankName?: string;
+  ibanOrTrc20?: string;
+  employeeFolderUrl?: string;
+  masterContractSignedAt?: string;
   createdAt: string;
   updatedAt: string;
   systemUserId?: string;
-  terminationDate?: string;
 }
 
 export interface HrBonusEntry {

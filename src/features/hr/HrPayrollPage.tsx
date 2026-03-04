@@ -35,6 +35,13 @@ function employeeName(firstName: string, lastName: string): string {
   return `${firstName} ${lastName}`.trim();
 }
 
+function currencyByCountry(country: string): HrCurrencyCode {
+  if (country === "Turkey") return "TRY";
+  if (country === "United States") return "USD";
+  if (country === "United Kingdom") return "GBP";
+  return "EUR";
+}
+
 function emptyCompensation(employeeId: string): CompensationDraft {
   return {
     employeeId,
@@ -90,6 +97,10 @@ export function HrPayrollPage() {
     const map = new Map(state.hrEmployees.map((employee) => [employee.id, employee]));
     return map;
   }, [state.hrEmployees]);
+  const legalEntityById = useMemo(() => {
+    const map = new Map(state.hrLegalEntities.map((entity) => [entity.id, entity]));
+    return map;
+  }, [state.hrLegalEntities]);
 
   const latestFxByCurrency = useMemo(() => {
     const map = new Map<HrCurrencyCode, (typeof state.hrFxRates)[number]>();
@@ -126,8 +137,8 @@ export function HrPayrollPage() {
       const employee = state.hrEmployees.find((row) => row.id === employeeId);
       const next = emptyCompensation(employeeId);
       if (employee) {
-        const legalEntity = employee.countryOfEmployment === "Turkey" ? "TR" : employee.countryOfEmployment === "United States" ? "USA" : "UK";
-        next.currency = employee.baseCurrency;
+        const legalEntity = employee.legalEntityId;
+        next.currency = legalEntityById.get(legalEntity)?.currency ?? currencyByCountry(employee.countryOfEmployment);
         next.distribution = [{ id: `dist-${employeeId}-1`, legalEntityId: legalEntity, percent: 100 }];
       }
       setDraft(next);

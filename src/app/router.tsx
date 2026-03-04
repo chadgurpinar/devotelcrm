@@ -21,7 +21,7 @@ import { AccountManagersPortalPage } from "../features/ops/AccountManagersPortal
 import { NocPerformanceAuditPage } from "../features/ops/NocPerformanceAuditPage";
 import { HrDashboardPage } from "../features/hr/HrDashboardPage";
 import { HrPeoplePage } from "../features/hr/HrPeoplePage";
-import { HrOrganizationPage } from "../features/hr/HrOrganizationPage";
+import { HrOrganizationPageV2 as HrOrganizationPage } from "../features/hr/HrOrganizationPageV2";
 import { HrPayrollPage } from "../features/hr/HrPayrollPage";
 import { HrLeavePage } from "../features/hr/HrLeavePage";
 import { HrAssetsPage } from "../features/hr/HrAssetsPage";

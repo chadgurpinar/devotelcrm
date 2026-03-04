@@ -234,6 +234,172 @@ function normalizeOurEntity(value: unknown): OurEntity | undefined {
   return undefined;
 }
 
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function toOptionalDate(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const raw = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function toOptionalDateTime(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const raw = value.trim();
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
+
+function sanitizeNonNegative(value: unknown): number | undefined {
+  const parsed = toOptionalNumber(value);
+  if (parsed === undefined || parsed < 0) return undefined;
+  return parsed;
+}
+
+function normalizeHrEmploymentType(value: unknown): HrEmployee["employmentType"] {
+  if (value === "Full-time" || value === "Part-time" || value === "Contractor") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "full-time" || normalized === "full time" || normalized === "fulltime") return "Full-time";
+    if (normalized === "part-time" || normalized === "part time" || normalized === "parttime") return "Part-time";
+    if (normalized === "contractor" || normalized === "freelancer") return "Contractor";
+  }
+  return "Full-time";
+}
+
+function normalizeHrGender(value: unknown): HrEmployee["gender"] {
+  if (value === "Male" || value === "Female" || value === "Other" || value === "PreferNotToSay") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "male" || normalized === "m") return "Male";
+    if (normalized === "female" || normalized === "f") return "Female";
+    if (normalized === "other") return "Other";
+    if (normalized === "prefernottosay" || normalized === "prefer_not_to_say" || normalized === "prefer not to say") {
+      return "PreferNotToSay";
+    }
+  }
+  return undefined;
+}
+
+function normalizeHrMaritalStatus(value: unknown): HrEmployee["maritalStatus"] {
+  if (value === "Single" || value === "Married" || value === "Other") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "single") return "Single";
+    if (normalized === "married") return "Married";
+    if (normalized === "other") return "Other";
+  }
+  return undefined;
+}
+
+function inferHrLegalEntity(countryOfEmployment: string | undefined): OurEntity {
+  if (!countryOfEmployment) return "UK";
+  const value = countryOfEmployment.trim().toLowerCase();
+  if (value.includes("turkey") || value === "tr") return "TR";
+  if (value.includes("united states") || value.includes("usa") || value === "us") return "USA";
+  return "UK";
+}
+
+function normalizeHrEmployeeRecord(
+  row: Record<string, unknown>,
+  idx: number,
+  fallbackDepartmentId: string,
+): HrEmployee {
+  const fallbackId = `hre-migrated-${idx + 1}`;
+  const id = asNonEmptyString(row.id) ?? fallbackId;
+  const firstName = asNonEmptyString(row.firstName) ?? "Employee";
+  const lastName = asNonEmptyString(row.lastName) ?? String(idx + 1);
+  const displayName = asNonEmptyString(row.displayName) ?? `${firstName} ${lastName}`.trim();
+  const createdAt = toOptionalDateTime(row.createdAt) ?? new Date().toISOString();
+  const updatedAt = toOptionalDateTime(row.updatedAt) ?? createdAt;
+
+  const statusRaw = typeof row.status === "string" ? row.status : typeof row.Status === "string" ? row.Status : undefined;
+  const active =
+    typeof row.active === "boolean"
+      ? row.active
+      : statusRaw
+        ? statusRaw.trim().toLowerCase() !== "inactive"
+        : true;
+
+  const startDate = toOptionalDate(row.startDate) ?? toOptionalDate(row.employmentStartDate) ?? createdAt.slice(0, 10);
+  const endDate = toOptionalDate(row.endDate) ?? toOptionalDate(row.terminationDate);
+  const managerRaw = asNonEmptyString(row.managerId);
+  const managerId = managerRaw && managerRaw !== id ? managerRaw : undefined;
+  const departmentId = asNonEmptyString(row.departmentId) ?? fallbackDepartmentId;
+  const countryOfEmployment = asNonEmptyString(row.countryOfEmployment) ?? asNonEmptyString(row.country) ?? "United Kingdom";
+  const legalEntityId =
+    normalizeOurEntity(row.legalEntityId ?? row.ourEntity) ??
+    normalizeOurEntity(row.legalEntity) ??
+    inferHrLegalEntity(countryOfEmployment);
+  const numberOfChildren = sanitizeNonNegative(row.numberOfChildren);
+
+  const normalizedEndDate = endDate && endDate >= startDate ? endDate : undefined;
+
+  return {
+    id,
+    firstName,
+    lastName,
+    displayName,
+    active,
+    employmentType: normalizeHrEmploymentType(row.employmentType),
+    startDate,
+    endDate: normalizedEndDate,
+    seniorityYears: sanitizeNonNegative(row.seniorityYears),
+    managerId,
+    departmentId,
+    division: asNonEmptyString(row.division),
+    position: asNonEmptyString(row.position),
+    jobTitle: asNonEmptyString(row.jobTitle) ?? asNonEmptyString(row.title),
+    gradeLevel: asNonEmptyString(row.gradeLevel),
+    workLocation: asNonEmptyString(row.workLocation),
+    countryOfEmployment,
+    legalEntityId,
+    company: asNonEmptyString(row.company),
+    citizenshipIdNumber: asNonEmptyString(row.citizenshipIdNumber),
+    email: asNonEmptyString(row.email) ?? `employee${idx + 1}@devotel.com`,
+    phone: asNonEmptyString(row.phone) ?? "",
+    address: asNonEmptyString(row.address),
+    emergencyContactName: asNonEmptyString(row.emergencyContactName),
+    emergencyContactPhone: asNonEmptyString(row.emergencyContactPhone),
+    nationality: asNonEmptyString(row.nationality),
+    gender: normalizeHrGender(row.gender),
+    birthDate: toOptionalDate(row.birthDate),
+    maritalStatus: normalizeHrMaritalStatus(row.maritalStatus),
+    numberOfChildren,
+    university: asNonEmptyString(row.university),
+    universityDepartment: asNonEmptyString(row.universityDepartment),
+    degree: asNonEmptyString(row.degree),
+    salaryTry: sanitizeNonNegative(row.salaryTry),
+    salaryEur: sanitizeNonNegative(row.salaryEur),
+    salaryGbp: sanitizeNonNegative(row.salaryGbp),
+    salaryUsd: sanitizeNonNegative(row.salaryUsd),
+    totalSalaryUsdEq: sanitizeNonNegative(row.totalSalaryUsdEq),
+    bankName: asNonEmptyString(row.bankName) ?? asNonEmptyString(row.bank),
+    ibanOrTrc20: asNonEmptyString(row.ibanOrTrc20) ?? asNonEmptyString(row.iban),
+    employeeFolderUrl: asNonEmptyString(row.employeeFolderUrl) ?? asNonEmptyString(row.employeeFolder),
+    masterContractSignedAt: toOptionalDateTime(row.masterContractSignedAt),
+    createdAt,
+    updatedAt,
+    systemUserId: asNonEmptyString(row.systemUserId),
+  };
+}
+
 function inferOurEntity(company: Record<string, unknown>): OurEntity {
   const explicit = normalizeOurEntity(company.ourEntity);
   if (explicit) return explicit;
@@ -1274,12 +1440,18 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     createHrEmployee: (payload) => {
       const id = uid("hre");
       const now = new Date().toISOString();
+      const firstName = payload.firstName.trim();
+      const lastName = payload.lastName.trim();
       set((state) => ({
         ...state,
         hrEmployees: [
           ...state.hrEmployees,
           {
             ...payload,
+            firstName,
+            lastName,
+            displayName: `${firstName} ${lastName}`.trim(),
+            managerId: payload.managerId === id ? undefined : payload.managerId,
             id,
             createdAt: now,
             updatedAt: now,
@@ -1295,6 +1467,8 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           row.id === employee.id
             ? {
                 ...employee,
+                displayName: `${employee.firstName.trim()} ${employee.lastName.trim()}`.trim(),
+                managerId: employee.managerId === employee.id ? undefined : employee.managerId,
                 updatedAt: new Date().toISOString(),
               }
             : row,
@@ -2454,7 +2628,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 14,
+    version: 15,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -3370,7 +3544,13 @@ export const useAppStore = create<AppStore>()(
       const hrDepartments = Array.isArray(state.hrDepartments)
         ? (state.hrDepartments as unknown as HrDepartment[])
         : fallback.hrDepartments;
-      const hrEmployees = Array.isArray(state.hrEmployees) ? (state.hrEmployees as unknown as HrEmployee[]) : fallback.hrEmployees;
+      const hrEmployees = Array.isArray(state.hrEmployees)
+        ? state.hrEmployees
+            .map((row, idx) =>
+              normalizeHrEmployeeRecord(row as unknown as Record<string, unknown>, idx, hrDepartments[0]?.id ?? "hr-dept-1"),
+            )
+            .filter((employee) => Boolean(employee.id))
+        : fallback.hrEmployees;
       const hrCompensations = Array.isArray(state.hrCompensations)
         ? (state.hrCompensations as unknown as HrEmployeeCompensation[])
         : fallback.hrCompensations;
