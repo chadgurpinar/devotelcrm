@@ -79,6 +79,10 @@ function buildCounts(db: DbState): Record<keyof DbState, number> {
     hrLeaveRequests: db.hrLeaveRequests.length,
     hrAssets: db.hrAssets.length,
     hrSoftwareLicenses: db.hrSoftwareLicenses.length,
+    hrAssetAssignments: db.hrAssetAssignments.length,
+    hrSoftwareProducts: db.hrSoftwareProducts.length,
+    hrSoftwareSeats: db.hrSoftwareSeats.length,
+    hrProvisionRequests: db.hrProvisionRequests.length,
     hrExpenses: db.hrExpenses.length,
     hrAuditLogs: db.hrAuditLogs.length,
     opsRequests: db.opsRequests.length,
@@ -267,6 +271,10 @@ function validateFkIntegrity(db: DbState, errors: string[]) {
   const hrLeaveRequestIds = new Set(db.hrLeaveRequests.map((row) => row.id));
   const hrExpenseIds = new Set(db.hrExpenses.map((row) => row.id));
   const hrAssetIds = new Set(db.hrAssets.map((row) => row.id));
+  const hrAssetAssignmentIds = new Set(db.hrAssetAssignments.map((row) => row.id));
+  const hrSoftwareProductIds = new Set(db.hrSoftwareProducts.map((row) => row.id));
+  const hrSoftwareSeatIds = new Set(db.hrSoftwareSeats.map((row) => row.id));
+  const hrProvisionRequestIds = new Set(db.hrProvisionRequests.map((row) => row.id));
   const opsCaseIds = new Set(db.opsCases.map((row) => row.id));
   const opsRequestIds = new Set(db.opsRequests.map((row) => row.id));
   const legalEntityIds = new Set<OurEntity>(db.hrLegalEntities.map((row) => row.id));
@@ -386,6 +394,45 @@ function validateFkIntegrity(db: DbState, errors: string[]) {
       pushFkError(errors, "HrAsset.assignedToEmployeeId", row.assignedToEmployeeId);
     }
   });
+  db.hrAssetAssignments.forEach((row) => {
+    if (!hrAssetIds.has(row.assetId)) pushFkError(errors, "HrAssetAssignment.assetId", row.assetId);
+    if (!hrEmployeeIds.has(row.employeeId)) pushFkError(errors, "HrAssetAssignment.employeeId", row.employeeId);
+    if (!userIds.has(row.assignedByUserId)) pushFkError(errors, "HrAssetAssignment.assignedByUserId", row.assignedByUserId);
+  });
+  db.hrSoftwareProducts.forEach((row) => {
+    if (!row.name.trim()) errors.push(`HrSoftwareProduct.name is empty for ${row.id}.`);
+  });
+  db.hrSoftwareSeats.forEach((row) => {
+    if (!hrSoftwareProductIds.has(row.softwareProductId)) {
+      pushFkError(errors, "HrSoftwareSeat.softwareProductId", row.softwareProductId);
+    }
+    if (row.assignedToEmployeeId && !hrEmployeeIds.has(row.assignedToEmployeeId)) {
+      pushFkError(errors, "HrSoftwareSeat.assignedToEmployeeId", row.assignedToEmployeeId);
+    }
+    if (row.status === "Assigned" && !row.assignedToEmail) {
+      errors.push(`HrSoftwareSeat ${row.id} is Assigned but assignedToEmail is missing.`);
+    }
+  });
+  db.hrProvisionRequests.forEach((row) => {
+    if (!hrEmployeeIds.has(row.requesterEmployeeId)) {
+      pushFkError(errors, "HrProvisionRequest.requesterEmployeeId", row.requesterEmployeeId);
+    }
+    if (row.requestedSoftwareProductId && !hrSoftwareProductIds.has(row.requestedSoftwareProductId)) {
+      pushFkError(errors, "HrProvisionRequest.requestedSoftwareProductId", row.requestedSoftwareProductId);
+    }
+    if (row.linkedAssetAssignmentId && !hrAssetAssignmentIds.has(row.linkedAssetAssignmentId)) {
+      pushFkError(errors, "HrProvisionRequest.linkedAssetAssignmentId", row.linkedAssetAssignmentId);
+    }
+    if (row.linkedSoftwareSeatId && !hrSoftwareSeatIds.has(row.linkedSoftwareSeatId)) {
+      pushFkError(errors, "HrProvisionRequest.linkedSoftwareSeatId", row.linkedSoftwareSeatId);
+    }
+    if (row.managerApproverUserId && !userIds.has(row.managerApproverUserId)) {
+      pushFkError(errors, "HrProvisionRequest.managerApproverUserId", row.managerApproverUserId);
+    }
+    if (row.hrApproverUserId && !userIds.has(row.hrApproverUserId)) {
+      pushFkError(errors, "HrProvisionRequest.hrApproverUserId", row.hrApproverUserId);
+    }
+  });
   db.hrSoftwareLicenses.forEach((row) => {
     if (row.assignedToEmployeeId && !hrEmployeeIds.has(row.assignedToEmployeeId)) {
       pushFkError(errors, "HrSoftwareLicense.assignedToEmployeeId", row.assignedToEmployeeId);
@@ -399,6 +446,15 @@ function validateFkIntegrity(db: DbState, errors: string[]) {
     if (row.parentType === "Leave" && !hrLeaveRequestIds.has(row.parentId)) pushFkError(errors, "HrAuditLogEntry.parentId(Leave)", row.parentId);
     if (row.parentType === "Expense" && !hrExpenseIds.has(row.parentId)) pushFkError(errors, "HrAuditLogEntry.parentId(Expense)", row.parentId);
     if (row.parentType === "Asset" && !hrAssetIds.has(row.parentId)) pushFkError(errors, "HrAuditLogEntry.parentId(Asset)", row.parentId);
+    if (row.parentType === "AssetAssignment" && !hrAssetAssignmentIds.has(row.parentId)) {
+      pushFkError(errors, "HrAuditLogEntry.parentId(AssetAssignment)", row.parentId);
+    }
+    if (row.parentType === "SoftwareSeat" && !hrSoftwareSeatIds.has(row.parentId)) {
+      pushFkError(errors, "HrAuditLogEntry.parentId(SoftwareSeat)", row.parentId);
+    }
+    if (row.parentType === "ProvisionRequest" && !hrProvisionRequestIds.has(row.parentId)) {
+      pushFkError(errors, "HrAuditLogEntry.parentId(ProvisionRequest)", row.parentId);
+    }
     if (row.parentType === "Compensation" && !hrCompensationIds.has(row.parentId)) {
       pushFkError(errors, "HrAuditLogEntry.parentId(Compensation)", row.parentId);
     }

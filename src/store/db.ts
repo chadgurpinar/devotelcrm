@@ -11,6 +11,7 @@ import {
   Event,
   EventStaff,
   HrAsset,
+  HrAssetAssignment,
   HrAuditLogEntry,
   HrCountryLeaveProfile,
   HrDepartment,
@@ -24,7 +25,10 @@ import {
   HrLegalEntity,
   HrPayrollFilters,
   HrPayrollMonthSnapshot,
+  HrProvisionRequest,
   HrSoftwareLicense,
+  HrSoftwareProduct,
+  HrSoftwareSeat,
   InterconnectionProcess,
   InterconnectionStage,
   InterconnectionTrack,
@@ -128,9 +132,47 @@ interface DbActions {
   updateHrAsset: (asset: HrAsset) => void;
   assignHrAsset: (assetId: string, employeeId: string) => void;
   returnHrAsset: (assetId: string) => void;
+  retireHrAsset: (assetId: string) => void;
   markHrAssetAcceptance: (assetId: string, accepted: boolean) => void;
   createHrSoftwareLicense: (payload: Omit<HrSoftwareLicense, "id" | "createdAt" | "updatedAt">) => string;
   updateHrSoftwareLicense: (license: HrSoftwareLicense) => void;
+  createHrSoftwareProduct: (payload: Omit<HrSoftwareProduct, "id" | "createdAt" | "updatedAt">) => string;
+  updateHrSoftwareProduct: (product: HrSoftwareProduct) => void;
+  createHrSoftwareSeat: (payload: Omit<HrSoftwareSeat, "id" | "createdAt" | "updatedAt">) => string;
+  updateHrSoftwareSeat: (seat: HrSoftwareSeat) => void;
+  assignHrSoftwareSeat: (
+    seatId: string,
+    payload: { employeeId: string; assignedToEmail: string; requestId?: string; notes?: string },
+  ) => { ok: boolean; message?: string };
+  revokeHrSoftwareSeat: (seatId: string, note?: string) => { ok: boolean; message?: string };
+  createHrProvisionRequest: (
+    payload: Omit<
+      HrProvisionRequest,
+      | "id"
+      | "status"
+      | "managerApproverUserId"
+      | "hrApproverUserId"
+      | "managerApprovedAt"
+      | "hrApprovedAt"
+      | "fulfilledAt"
+      | "rejectionReason"
+      | "cancellationReason"
+      | "linkedAssetAssignmentId"
+      | "linkedSoftwareSeatId"
+      | "createdAt"
+      | "updatedAt"
+    >,
+  ) => string;
+  approveHrProvisionByManager: (requestId: string, comment?: string) => { ok: boolean; message?: string };
+  rejectHrProvisionByManager: (requestId: string, comment: string) => { ok: boolean; message?: string };
+  approveHrProvisionByHr: (requestId: string, comment?: string) => { ok: boolean; message?: string };
+  rejectHrProvisionByHr: (requestId: string, comment: string) => { ok: boolean; message?: string };
+  cancelHrProvisionRequest: (requestId: string, comment?: string) => { ok: boolean; message?: string };
+  fulfillHrProvisionRequest: (
+    requestId: string,
+    payload: { assetId?: string; softwareSeatId?: string; assignedToEmail?: string; note?: string },
+  ) => { ok: boolean; message?: string };
+  setHrAssetAssignmentAcceptance: (assignmentId: string, accepted: boolean) => { ok: boolean; message?: string };
   createHrExpense: (
     payload: Omit<
       HrExpense,
@@ -1713,19 +1755,25 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     createHrAsset: (payload) => {
       const id = uid("hra");
       const now = new Date().toISOString();
-      set((state) => ({
-        ...state,
-        hrAssets: [
-          ...state.hrAssets,
-          {
-            ...payload,
-            id,
-            assignedAt: payload.assignedToEmployeeId ? payload.assignedAt ?? now : undefined,
-            createdAt: now,
-            updatedAt: now,
-          },
-        ],
-      }));
+      set((state) => {
+        const isAssigned = Boolean(payload.assignedToEmployeeId);
+        return {
+          ...state,
+          hrAssets: [
+            ...state.hrAssets,
+            {
+              ...payload,
+              id,
+              status: payload.status ?? (isAssigned ? "Assigned" : "Available"),
+              assignedAt: isAssigned ? payload.assignedAt ?? now : undefined,
+              returnedAt: isAssigned ? undefined : payload.returnedAt,
+              digitalAcceptance: isAssigned ? payload.digitalAcceptance : false,
+              createdAt: now,
+              updatedAt: now,
+            },
+          ],
+        };
+      });
       return id;
     },
     updateHrAsset: (asset) =>
@@ -1743,12 +1791,16 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     assignHrAsset: (assetId, employeeId) =>
       set((state) => {
         const now = new Date().toISOString();
+        const assignee = state.hrEmployees.find((row) => row.id === employeeId);
+        if (!assignee) return state;
+        const assignmentId = uid("hraa");
         return {
           ...state,
           hrAssets: state.hrAssets.map((row) =>
             row.id === assetId
               ? {
                   ...row,
+                  status: "Assigned",
                   assignedToEmployeeId: employeeId,
                   assignedAt: now,
                   returnedAt: undefined,
@@ -1757,11 +1809,36 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
                 }
               : row,
           ),
+          hrAssetAssignments: [
+            ...state.hrAssetAssignments.map((row) =>
+              row.assetId === assetId && !row.returnedAt
+                ? {
+                    ...row,
+                    returnedAt: now,
+                    updatedAt: now,
+                  }
+                : row,
+            ),
+            {
+              id: assignmentId,
+              assetId,
+              employeeId,
+              assignedAt: now,
+              returnedAt: undefined,
+              acceptanceStatus: "Pending",
+              acceptedAt: undefined,
+              revokedAt: undefined,
+              assignedByUserId: state.activeUserId,
+              notes: undefined,
+              createdAt: now,
+              updatedAt: now,
+            },
+          ],
           hrAuditLogs: appendHrAudit(state, {
             parentType: "Asset",
             parentId: assetId,
             actionType: "ASSET_ASSIGNED",
-            comment: `Assigned to ${employeeId}.`,
+            comment: `Assigned to ${assignee.displayName || assignee.email}.`,
             timestamp: now,
           }),
         };
@@ -1769,15 +1846,26 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     returnHrAsset: (assetId) =>
       set((state) => {
         const now = new Date().toISOString();
+        const activeAssignment = state.hrAssetAssignments.find((row) => row.assetId === assetId && !row.returnedAt);
         return {
           ...state,
           hrAssets: state.hrAssets.map((row) =>
             row.id === assetId
               ? {
                   ...row,
+                  status: "Returned",
                   assignedToEmployeeId: undefined,
                   returnedAt: now,
                   digitalAcceptance: false,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAssetAssignments: state.hrAssetAssignments.map((row) =>
+            row.assetId === assetId && !row.returnedAt
+              ? {
+                  ...row,
+                  returnedAt: now,
                   updatedAt: now,
                 }
               : row,
@@ -1787,10 +1875,25 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             parentId: assetId,
             actionType: "ASSET_RETURNED",
             timestamp: now,
-          }),
+            comment: "Asset returned to inventory.",
+          }).concat(
+            activeAssignment
+              ? [
+                  {
+                    id: uid("hra"),
+                    parentType: "AssetAssignment",
+                    parentId: activeAssignment.id,
+                    actionType: "ASSET_ASSIGNMENT_ACCEPTANCE_REVOKED",
+                    performedByUserId: state.activeUserId,
+                    timestamp: now,
+                    comment: "Assignment closed due to asset return.",
+                  } as HrAuditLogEntry,
+                ]
+              : [],
+          ),
         };
       }),
-    markHrAssetAcceptance: (assetId, accepted) =>
+    retireHrAsset: (assetId) =>
       set((state) => {
         const now = new Date().toISOString();
         return {
@@ -1799,7 +1902,54 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             row.id === assetId
               ? {
                   ...row,
+                  status: "Retired",
+                  assignedToEmployeeId: undefined,
+                  returnedAt: row.returnedAt ?? now,
+                  digitalAcceptance: false,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAssetAssignments: state.hrAssetAssignments.map((row) =>
+            row.assetId === assetId && !row.returnedAt
+              ? {
+                  ...row,
+                  returnedAt: now,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "Asset",
+            parentId: assetId,
+            actionType: "ASSET_RETURNED",
+            comment: "Asset retired from active inventory.",
+            timestamp: now,
+          }),
+        };
+      }),
+    markHrAssetAcceptance: (assetId, accepted) =>
+      set((state) => {
+        const now = new Date().toISOString();
+        const activeAssignment = state.hrAssetAssignments.find((row) => row.assetId === assetId && !row.returnedAt);
+        return {
+          ...state,
+          hrAssets: state.hrAssets.map((row) =>
+            row.id === assetId
+              ? {
+                  ...row,
                   digitalAcceptance: accepted,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAssetAssignments: state.hrAssetAssignments.map((row) =>
+            row.id === activeAssignment?.id
+              ? {
+                  ...row,
+                  acceptanceStatus: accepted ? "Accepted" : "Pending",
+                  acceptedAt: accepted ? now : undefined,
+                  revokedAt: accepted ? undefined : now,
                   updatedAt: now,
                 }
               : row,
@@ -1842,6 +1992,580 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             : row,
         ),
       })),
+    createHrSoftwareProduct: (payload) => {
+      const id = uid("hrsp");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        hrSoftwareProducts: [
+          ...state.hrSoftwareProducts,
+          {
+            ...payload,
+            id,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      }));
+      return id;
+    },
+    updateHrSoftwareProduct: (product) =>
+      set((state) => ({
+        ...state,
+        hrSoftwareProducts: state.hrSoftwareProducts.map((row) =>
+          row.id === product.id
+            ? {
+                ...product,
+                updatedAt: new Date().toISOString(),
+              }
+            : row,
+        ),
+      })),
+    createHrSoftwareSeat: (payload) => {
+      const id = uid("hrss");
+      const now = new Date().toISOString();
+      set((state) => {
+        const status = payload.status ?? (payload.assignedToEmployeeId ? "Assigned" : "Available");
+        return {
+          ...state,
+          hrSoftwareSeats: [
+            ...state.hrSoftwareSeats,
+            {
+              ...payload,
+              id,
+              status,
+              assignedAt: status === "Assigned" ? payload.assignedAt ?? now : undefined,
+              createdAt: now,
+              updatedAt: now,
+            },
+          ],
+        };
+      });
+      return id;
+    },
+    updateHrSoftwareSeat: (seat) =>
+      set((state) => ({
+        ...state,
+        hrSoftwareSeats: state.hrSoftwareSeats.map((row) =>
+          row.id === seat.id
+            ? {
+                ...seat,
+                updatedAt: new Date().toISOString(),
+              }
+            : row,
+        ),
+      })),
+    assignHrSoftwareSeat: (seatId, payload) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Seat not found." };
+      set((state) => {
+        const seat = state.hrSoftwareSeats.find((row) => row.id === seatId);
+        if (!seat) return state;
+        const employee = state.hrEmployees.find((row) => row.id === payload.employeeId);
+        if (!employee) {
+          result = { ok: false, message: "Employee not found." };
+          return state;
+        }
+        if (!payload.assignedToEmail.trim()) {
+          result = { ok: false, message: "Assigned email is required." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        const nextRequests: HrProvisionRequest[] = payload.requestId
+          ? state.hrProvisionRequests.map((request): HrProvisionRequest =>
+              request.id === payload.requestId
+                ? {
+                    ...request,
+                    status: "Fulfilled",
+                    fulfilledAt: now,
+                    linkedSoftwareSeatId: seatId,
+                    updatedAt: now,
+                  }
+                : request,
+            )
+          : state.hrProvisionRequests;
+        return {
+          ...state,
+          hrSoftwareSeats: state.hrSoftwareSeats.map((row) =>
+            row.id === seatId
+              ? {
+                  ...row,
+                  status: "Assigned",
+                  assignedToEmployeeId: payload.employeeId,
+                  assignedToEmail: payload.assignedToEmail.trim(),
+                  assignedAt: now,
+                  revokedAt: undefined,
+                  updatedAt: now,
+                  notes: payload.notes ?? row.notes,
+                }
+              : row,
+          ),
+          hrProvisionRequests: nextRequests,
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "SoftwareSeat",
+            parentId: seatId,
+            actionType: "SOFTWARE_SEAT_ASSIGNED",
+            comment: payload.notes,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    revokeHrSoftwareSeat: (seatId, note) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Seat not found." };
+      set((state) => {
+        const seat = state.hrSoftwareSeats.find((row) => row.id === seatId);
+        if (!seat) return state;
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrSoftwareSeats: state.hrSoftwareSeats.map((row) =>
+            row.id === seatId
+              ? {
+                  ...row,
+                  status: "Revoked",
+                  revokedAt: now,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "SoftwareSeat",
+            parentId: seatId,
+            actionType: "SOFTWARE_SEAT_REVOKED",
+            comment: note?.trim() || undefined,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    createHrProvisionRequest: (payload) => {
+      const id = uid("hrpr");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        hrProvisionRequests: [
+          ...state.hrProvisionRequests,
+          {
+            ...payload,
+            id,
+            status: "PendingManager",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        hrAuditLogs: appendHrAudit(state, {
+          parentType: "ProvisionRequest",
+          parentId: id,
+          actionType: "PROVISION_REQUEST_CREATED",
+          performedByUserId: state.activeUserId,
+          timestamp: now,
+        }),
+      }));
+      return id;
+    },
+    approveHrProvisionByManager: (requestId, comment) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Request not found." };
+      set((state) => {
+        const request = state.hrProvisionRequests.find((row) => row.id === requestId);
+        if (!request) return state;
+        if (request.status !== "PendingManager") {
+          result = { ok: false, message: "Only PendingManager requests can be approved." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrProvisionRequests: state.hrProvisionRequests.map((row) =>
+            row.id === requestId
+              ? {
+                  ...row,
+                  status: "PendingHR",
+                  managerApproverUserId: state.activeUserId,
+                  managerApprovedAt: now,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "ProvisionRequest",
+            parentId: requestId,
+            actionType: "PROVISION_MANAGER_APPROVED",
+            comment: comment?.trim() || undefined,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    rejectHrProvisionByManager: (requestId, comment) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Request not found." };
+      set((state) => {
+        const request = state.hrProvisionRequests.find((row) => row.id === requestId);
+        if (!request) return state;
+        if (request.status !== "PendingManager") {
+          result = { ok: false, message: "Only PendingManager requests can be rejected." };
+          return state;
+        }
+        const reason = comment.trim();
+        if (!reason) {
+          result = { ok: false, message: "Rejection reason is required." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrProvisionRequests: state.hrProvisionRequests.map((row) =>
+            row.id === requestId
+              ? {
+                  ...row,
+                  status: "Rejected",
+                  managerApproverUserId: state.activeUserId,
+                  managerApprovedAt: now,
+                  rejectionReason: reason,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "ProvisionRequest",
+            parentId: requestId,
+            actionType: "PROVISION_MANAGER_REJECTED",
+            comment: reason,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    approveHrProvisionByHr: (requestId, comment) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Request not found." };
+      set((state) => {
+        const request = state.hrProvisionRequests.find((row) => row.id === requestId);
+        if (!request) return state;
+        if (request.status !== "PendingHR") {
+          result = { ok: false, message: "Only PendingHR requests can be approved." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrProvisionRequests: state.hrProvisionRequests.map((row) =>
+            row.id === requestId
+              ? {
+                  ...row,
+                  hrApproverUserId: state.activeUserId,
+                  hrApprovedAt: now,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "ProvisionRequest",
+            parentId: requestId,
+            actionType: "PROVISION_HR_APPROVED",
+            comment: comment?.trim() || undefined,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    rejectHrProvisionByHr: (requestId, comment) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Request not found." };
+      set((state) => {
+        const request = state.hrProvisionRequests.find((row) => row.id === requestId);
+        if (!request) return state;
+        if (request.status !== "PendingHR") {
+          result = { ok: false, message: "Only PendingHR requests can be rejected." };
+          return state;
+        }
+        const reason = comment.trim();
+        if (!reason) {
+          result = { ok: false, message: "Rejection reason is required." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrProvisionRequests: state.hrProvisionRequests.map((row) =>
+            row.id === requestId
+              ? {
+                  ...row,
+                  status: "Rejected",
+                  hrApproverUserId: state.activeUserId,
+                  hrApprovedAt: now,
+                  rejectionReason: reason,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "ProvisionRequest",
+            parentId: requestId,
+            actionType: "PROVISION_HR_REJECTED",
+            comment: reason,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    cancelHrProvisionRequest: (requestId, comment) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Request not found." };
+      set((state) => {
+        const request = state.hrProvisionRequests.find((row) => row.id === requestId);
+        if (!request) return state;
+        if (request.status !== "PendingManager") {
+          result = { ok: false, message: "Only PendingManager requests can be cancelled by requester." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrProvisionRequests: state.hrProvisionRequests.map((row) =>
+            row.id === requestId
+              ? {
+                  ...row,
+                  status: "Cancelled",
+                  cancellationReason: comment?.trim() || "Cancelled by requester.",
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "ProvisionRequest",
+            parentId: requestId,
+            actionType: "PROVISION_CANCELLED",
+            comment: comment?.trim() || undefined,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    fulfillHrProvisionRequest: (requestId, payload) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Request not found." };
+      set((state) => {
+        const request = state.hrProvisionRequests.find((row) => row.id === requestId);
+        if (!request) return state;
+        if (request.status !== "PendingHR") {
+          result = { ok: false, message: "Only PendingHR requests can be fulfilled." };
+          return state;
+        }
+        const requester = state.hrEmployees.find((row) => row.id === request.requesterEmployeeId);
+        if (!requester) {
+          result = { ok: false, message: "Requester employee was not found." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        if (request.requestType === "Hardware") {
+          if (!payload.assetId) {
+            result = { ok: false, message: "Asset selection is required for hardware fulfillment." };
+            return state;
+          }
+          const asset = state.hrAssets.find((row) => row.id === payload.assetId);
+          if (!asset) {
+            result = { ok: false, message: "Selected asset not found." };
+            return state;
+          }
+          if (asset.status === "Assigned" || asset.status === "Retired") {
+            result = { ok: false, message: "Selected asset is not available for assignment." };
+            return state;
+          }
+          const assignmentId = uid("hraa");
+          result = { ok: true };
+          return {
+            ...state,
+            hrAssets: state.hrAssets.map((row) =>
+              row.id === payload.assetId
+                ? {
+                    ...row,
+                    status: "Assigned",
+                    assignedToEmployeeId: requester.id,
+                    assignedAt: now,
+                    returnedAt: undefined,
+                    digitalAcceptance: false,
+                    updatedAt: now,
+                  }
+                : row,
+            ),
+            hrAssetAssignments: [
+              ...state.hrAssetAssignments.map((row) =>
+                row.assetId === payload.assetId && !row.returnedAt
+                  ? {
+                      ...row,
+                      returnedAt: now,
+                      updatedAt: now,
+                    }
+                  : row,
+              ),
+              {
+                id: assignmentId,
+                assetId: payload.assetId,
+                employeeId: requester.id,
+                assignedAt: now,
+                returnedAt: undefined,
+                acceptanceStatus: "Pending",
+                acceptedAt: undefined,
+                revokedAt: undefined,
+                assignedByUserId: state.activeUserId,
+                notes: payload.note?.trim() || undefined,
+                createdAt: now,
+                updatedAt: now,
+              },
+            ],
+            hrProvisionRequests: state.hrProvisionRequests.map((row) =>
+              row.id === requestId
+                ? {
+                    ...row,
+                    status: "Fulfilled",
+                    hrApproverUserId: row.hrApproverUserId ?? state.activeUserId,
+                    hrApprovedAt: row.hrApprovedAt ?? now,
+                    fulfilledAt: now,
+                    linkedAssetAssignmentId: assignmentId,
+                    updatedAt: now,
+                  }
+                : row,
+            ),
+            hrAuditLogs: appendHrAudit(state, {
+              parentType: "ProvisionRequest",
+              parentId: requestId,
+              actionType: "PROVISION_FULFILLED",
+              comment: payload.note?.trim() || undefined,
+              timestamp: now,
+            }).concat([
+              {
+                id: uid("hra"),
+                parentType: "AssetAssignment",
+                parentId: assignmentId,
+                actionType: "ASSET_ASSIGNMENT_CREATED",
+                performedByUserId: state.activeUserId,
+                timestamp: now,
+                comment: payload.note?.trim() || undefined,
+              } as HrAuditLogEntry,
+            ]),
+          };
+        }
+        if (!payload.softwareSeatId) {
+          result = { ok: false, message: "Seat selection is required for software fulfillment." };
+          return state;
+        }
+        if (!payload.assignedToEmail?.trim()) {
+          result = { ok: false, message: "Assigned email is required for software seat fulfillment." };
+          return state;
+        }
+        const seat = state.hrSoftwareSeats.find((row) => row.id === payload.softwareSeatId);
+        if (!seat) {
+          result = { ok: false, message: "Selected seat not found." };
+          return state;
+        }
+        if (seat.status === "Assigned" || seat.status === "Expired") {
+          result = { ok: false, message: "Selected seat is not available for assignment." };
+          return state;
+        }
+        result = { ok: true };
+        return {
+          ...state,
+          hrSoftwareSeats: state.hrSoftwareSeats.map((row) =>
+            row.id === payload.softwareSeatId
+              ? {
+                  ...row,
+                  status: "Assigned",
+                  assignedToEmployeeId: requester.id,
+                  assignedToEmail: payload.assignedToEmail?.trim(),
+                  assignedAt: now,
+                  revokedAt: undefined,
+                  updatedAt: now,
+                  notes: payload.note?.trim() || row.notes,
+                }
+              : row,
+          ),
+          hrProvisionRequests: state.hrProvisionRequests.map((row) =>
+            row.id === requestId
+              ? {
+                  ...row,
+                  status: "Fulfilled",
+                  hrApproverUserId: row.hrApproverUserId ?? state.activeUserId,
+                  hrApprovedAt: row.hrApprovedAt ?? now,
+                  fulfilledAt: now,
+                  linkedSoftwareSeatId: payload.softwareSeatId,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "ProvisionRequest",
+            parentId: requestId,
+            actionType: "PROVISION_FULFILLED",
+            comment: payload.note?.trim() || undefined,
+            timestamp: now,
+          }).concat([
+            {
+              id: uid("hra"),
+              parentType: "SoftwareSeat",
+              parentId: payload.softwareSeatId,
+              actionType: "SOFTWARE_SEAT_ASSIGNED",
+              performedByUserId: state.activeUserId,
+              timestamp: now,
+              comment: payload.note?.trim() || undefined,
+            } as HrAuditLogEntry,
+          ]),
+        };
+      });
+      return result;
+    },
+    setHrAssetAssignmentAcceptance: (assignmentId, accepted) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Assignment not found." };
+      set((state) => {
+        const assignment = state.hrAssetAssignments.find((row) => row.id === assignmentId);
+        if (!assignment) return state;
+        if (assignment.returnedAt) {
+          result = { ok: false, message: "Returned assignments cannot be accepted." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrAssetAssignments: state.hrAssetAssignments.map((row) =>
+            row.id === assignmentId
+              ? {
+                  ...row,
+                  acceptanceStatus: accepted ? "Accepted" : "Pending",
+                  acceptedAt: accepted ? now : undefined,
+                  revokedAt: accepted ? undefined : now,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAssets: state.hrAssets.map((row) =>
+            row.id === assignment.assetId
+              ? {
+                  ...row,
+                  digitalAcceptance: accepted,
+                  updatedAt: now,
+                }
+              : row,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "AssetAssignment",
+            parentId: assignmentId,
+            actionType: accepted ? "ASSET_ASSIGNMENT_ACCEPTED" : "ASSET_ASSIGNMENT_ACCEPTANCE_REVOKED",
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
     createHrExpense: (payload) => {
       const id = uid("hrex");
       const now = new Date().toISOString();
@@ -2540,6 +3264,10 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           hrLeaveRequests: Array.isArray(data.hrLeaveRequests) ? data.hrLeaveRequests : state.hrLeaveRequests,
           hrAssets: Array.isArray(data.hrAssets) ? data.hrAssets : state.hrAssets,
           hrSoftwareLicenses: Array.isArray(data.hrSoftwareLicenses) ? data.hrSoftwareLicenses : state.hrSoftwareLicenses,
+          hrAssetAssignments: Array.isArray(data.hrAssetAssignments) ? data.hrAssetAssignments : state.hrAssetAssignments,
+          hrSoftwareProducts: Array.isArray(data.hrSoftwareProducts) ? data.hrSoftwareProducts : state.hrSoftwareProducts,
+          hrSoftwareSeats: Array.isArray(data.hrSoftwareSeats) ? data.hrSoftwareSeats : state.hrSoftwareSeats,
+          hrProvisionRequests: Array.isArray(data.hrProvisionRequests) ? data.hrProvisionRequests : state.hrProvisionRequests,
           hrExpenses: Array.isArray(data.hrExpenses) ? data.hrExpenses : state.hrExpenses,
           hrAuditLogs: Array.isArray(data.hrAuditLogs) ? data.hrAuditLogs : state.hrAuditLogs,
           opsRequests: Array.isArray(data.opsRequests) ? data.opsRequests : state.opsRequests,
@@ -2628,7 +3356,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 15,
+    version: 16,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -2655,6 +3383,10 @@ export const useAppStore = create<AppStore>()(
             hrLeaveRequests?: Array<Record<string, unknown>>;
             hrAssets?: Array<Record<string, unknown>>;
             hrSoftwareLicenses?: Array<Record<string, unknown>>;
+            hrAssetAssignments?: Array<Record<string, unknown>>;
+            hrSoftwareProducts?: Array<Record<string, unknown>>;
+            hrSoftwareSeats?: Array<Record<string, unknown>>;
+            hrProvisionRequests?: Array<Record<string, unknown>>;
             hrExpenses?: Array<Record<string, unknown>>;
             hrAuditLogs?: Array<Record<string, unknown>>;
           })
@@ -3563,10 +4295,140 @@ export const useAppStore = create<AppStore>()(
       const hrLeaveRequests = Array.isArray(state.hrLeaveRequests)
         ? (state.hrLeaveRequests as unknown as HrLeaveRequest[])
         : fallback.hrLeaveRequests;
-      const hrAssets = Array.isArray(state.hrAssets) ? (state.hrAssets as unknown as HrAsset[]) : fallback.hrAssets;
+      const hrAssets = Array.isArray(state.hrAssets)
+        ? (state.hrAssets as unknown as Array<Record<string, unknown>>).map((row, idx) => {
+            const raw = row as Partial<HrAsset> & Record<string, unknown>;
+            const categoryRaw = typeof raw.category === "string" ? raw.category : "Other";
+            const category: HrAsset["category"] =
+              categoryRaw === "Laptop" || categoryRaw === "Phone" || categoryRaw === "Accessory" || categoryRaw === "Monitor"
+                ? categoryRaw
+                : "Other";
+            const assignedToEmployeeId = typeof raw.assignedToEmployeeId === "string" ? raw.assignedToEmployeeId : undefined;
+            const returnedAt = typeof raw.returnedAt === "string" ? raw.returnedAt : undefined;
+            const status: HrAsset["status"] =
+              raw.status === "Available" || raw.status === "Assigned" || raw.status === "Returned" || raw.status === "Retired"
+                ? raw.status
+                : returnedAt
+                  ? "Returned"
+                  : assignedToEmployeeId
+                    ? "Assigned"
+                    : "Available";
+            return {
+              id: typeof raw.id === "string" ? raw.id : `hr-asset-migrated-${idx + 1}`,
+              name: typeof raw.name === "string" ? raw.name : `Asset ${idx + 1}`,
+              category,
+              status,
+              assignedToEmployeeId: status === "Assigned" ? assignedToEmployeeId : undefined,
+              assignedAt: typeof raw.assignedAt === "string" ? raw.assignedAt : undefined,
+              returnedAt,
+              digitalAcceptance: Boolean(raw.digitalAcceptance),
+              notes: typeof raw.notes === "string" ? raw.notes : undefined,
+              createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
+              updatedAt:
+                typeof raw.updatedAt === "string"
+                  ? raw.updatedAt
+                  : typeof raw.createdAt === "string"
+                    ? raw.createdAt
+                    : new Date().toISOString(),
+            } as HrAsset;
+          })
+        : fallback.hrAssets;
       const hrSoftwareLicenses = Array.isArray(state.hrSoftwareLicenses)
         ? (state.hrSoftwareLicenses as unknown as HrSoftwareLicense[])
         : fallback.hrSoftwareLicenses;
+      const hrAssetAssignments = Array.isArray(state.hrAssetAssignments)
+        ? (state.hrAssetAssignments as unknown as HrAssetAssignment[])
+        : hrAssets
+            .filter((asset) => Boolean(asset.assignedToEmployeeId))
+            .map((asset, idx) => ({
+              id: `hraa-migrated-${idx + 1}`,
+              assetId: asset.id,
+              employeeId: asset.assignedToEmployeeId as string,
+              assignedAt: asset.assignedAt ?? asset.createdAt,
+              returnedAt: asset.returnedAt,
+              acceptanceStatus: asset.digitalAcceptance ? "Accepted" : "Pending",
+              acceptedAt: asset.digitalAcceptance ? asset.updatedAt : undefined,
+              revokedAt: undefined,
+              assignedByUserId: activeUserId,
+              notes: asset.notes,
+              createdAt: asset.assignedAt ?? asset.createdAt,
+              updatedAt: asset.updatedAt,
+            }));
+      const hrSoftwareProducts = Array.isArray(state.hrSoftwareProducts)
+        ? (state.hrSoftwareProducts as unknown as HrSoftwareProduct[])
+        : (() => {
+            const rows: HrSoftwareProduct[] = [];
+            const keySet = new Set<string>();
+            hrSoftwareLicenses.forEach((license, idx) => {
+              const key = `${license.name}::${license.vendor}::${license.licenseType}`;
+              if (keySet.has(key)) return;
+              keySet.add(key);
+              rows.push({
+                id: `hrsp-migrated-${rows.length + 1}`,
+                name: license.name,
+                vendor: license.vendor,
+                licenseType: license.licenseType.toLowerCase().includes("enterprise")
+                  ? "Enterprise"
+                  : license.licenseType.toLowerCase().includes("seat")
+                    ? "Seat"
+                    : "Other",
+                notes: undefined,
+                createdAt: license.createdAt ?? new Date().toISOString(),
+                updatedAt: license.updatedAt ?? license.createdAt ?? new Date().toISOString(),
+              });
+            });
+            if (!rows.length) {
+              rows.push({
+                id: "hrsp-migrated-1",
+                name: "Workspace Suite",
+                vendor: "Legacy Vendor",
+                licenseType: "Seat",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+            }
+            return rows;
+          })();
+      const productIdByLegacyKey = new Map<string, string>();
+      hrSoftwareProducts.forEach((product) => {
+        const key = `${product.name}::${product.vendor}`;
+        if (!productIdByLegacyKey.has(key)) {
+          productIdByLegacyKey.set(key, product.id);
+        }
+      });
+      const hrSoftwareSeats = Array.isArray(state.hrSoftwareSeats)
+        ? (state.hrSoftwareSeats as unknown as HrSoftwareSeat[])
+        : hrSoftwareLicenses.map((license, idx) => {
+            const key = `${license.name}::${license.vendor}`;
+            const softwareProductId = productIdByLegacyKey.get(key) ?? hrSoftwareProducts[0]?.id ?? "hrsp-migrated-1";
+            const assignedEmployee = license.assignedToEmployeeId
+              ? hrEmployees.find((employee) => employee.id === license.assignedToEmployeeId)
+              : undefined;
+            const expired = typeof license.endDate === "string" && license.endDate < new Date().toISOString().slice(0, 10);
+            const status: HrSoftwareSeat["status"] = license.assignedToEmployeeId
+              ? expired
+                ? "Expired"
+                : "Assigned"
+              : "Available";
+            return {
+              id: `hrss-migrated-${idx + 1}`,
+              softwareProductId,
+              status,
+              assignedToEmployeeId: license.assignedToEmployeeId,
+              assignedToEmail: license.assignedToEmployeeId ? assignedEmployee?.email : undefined,
+              assignedAt: license.startDate ? `${license.startDate}T09:00:00.000Z` : undefined,
+              revokedAt: undefined,
+              endDate: license.endDate,
+              cost: license.cost,
+              currency: license.currency,
+              notes: license.notes,
+              createdAt: license.createdAt,
+              updatedAt: license.updatedAt,
+            } as HrSoftwareSeat;
+          });
+      const hrProvisionRequests = Array.isArray(state.hrProvisionRequests)
+        ? (state.hrProvisionRequests as unknown as HrProvisionRequest[])
+        : fallback.hrProvisionRequests;
       const hrExpenses = Array.isArray(state.hrExpenses) ? (state.hrExpenses as unknown as HrExpense[]) : fallback.hrExpenses;
       const hrAuditLogs = Array.isArray(state.hrAuditLogs) ? (state.hrAuditLogs as unknown as HrAuditLogEntry[]) : fallback.hrAuditLogs;
 
@@ -3601,6 +4463,10 @@ export const useAppStore = create<AppStore>()(
         hrLeaveRequests,
         hrAssets,
         hrSoftwareLicenses,
+        hrAssetAssignments,
+        hrSoftwareProducts,
+        hrSoftwareSeats,
+        hrProvisionRequests,
         hrExpenses,
         hrAuditLogs,
         opsRequests: Array.isArray(state.opsRequests) ? opsRequests : fallback.opsRequests,

@@ -388,7 +388,14 @@ export type HrSalaryDistributionMode = "Percent" | "Fixed";
 export type HrLeaveType = "Annual" | "Sick" | "Other";
 export type HrLeaveStatus = "PendingManager" | "PendingHR" | "Approved" | "Rejected";
 export type HrExpenseStatus = "PendingManager" | "PendingFinance" | "Approved" | "Rejected" | "Paid";
-export type HrAssetCategory = "Laptop" | "Phone" | "Accessory" | "Software";
+export type HrAssetCategory = "Laptop" | "Phone" | "Accessory" | "Monitor" | "Other";
+export type HrAssetStatus = "Available" | "Assigned" | "Returned" | "Retired";
+export type HrAssetAcceptanceStatus = "Pending" | "Accepted";
+export type HrSoftwareLicenseType = "Seat" | "Enterprise" | "Other";
+export type HrSoftwareSeatStatus = "Available" | "Assigned" | "Revoked" | "Expired";
+export type HrProvisionRequestType = "Hardware" | "Software";
+export type HrProvisionRequestPriority = "Low" | "Medium" | "High";
+export type HrProvisionRequestStatus = "PendingManager" | "PendingHR" | "Fulfilled" | "Rejected" | "Cancelled";
 export type HrLeaveActionType = "MANAGER_APPROVE" | "MANAGER_REJECT" | "HR_APPROVE" | "HR_REJECT";
 export type HrExpenseActionType =
   | "MANAGER_APPROVE"
@@ -396,9 +403,23 @@ export type HrExpenseActionType =
   | "FINANCE_APPROVE"
   | "FINANCE_REJECT"
   | "MARK_PAID";
+export type HrProvisionActionType =
+  | "PROVISION_REQUEST_CREATED"
+  | "PROVISION_MANAGER_APPROVED"
+  | "PROVISION_MANAGER_REJECTED"
+  | "PROVISION_HR_APPROVED"
+  | "PROVISION_HR_REJECTED"
+  | "PROVISION_CANCELLED"
+  | "PROVISION_FULFILLED"
+  | "ASSET_ASSIGNMENT_CREATED"
+  | "ASSET_ASSIGNMENT_ACCEPTED"
+  | "ASSET_ASSIGNMENT_ACCEPTANCE_REVOKED"
+  | "SOFTWARE_SEAT_ASSIGNED"
+  | "SOFTWARE_SEAT_REVOKED";
 export type HrAuditActionType =
   | HrLeaveActionType
   | HrExpenseActionType
+  | HrProvisionActionType
   | "ASSET_ASSIGNED"
   | "ASSET_ACCEPTED"
   | "ASSET_RETURNED"
@@ -587,6 +608,7 @@ export interface HrLeaveRequest {
   leaveType: HrLeaveType;
   startDate: string;
   endDate: string;
+  employeeComment?: string;
   totalDays: number;
   status: HrLeaveStatus;
   managerApprovedAt?: string;
@@ -601,6 +623,7 @@ export interface HrAsset {
   id: string;
   name: string;
   category: HrAssetCategory;
+  status: HrAssetStatus;
   assignedToEmployeeId?: string;
   assignedAt?: string;
   returnedAt?: string;
@@ -625,6 +648,69 @@ export interface HrSoftwareLicense {
   updatedAt: string;
 }
 
+export interface HrAssetAssignment {
+  id: string;
+  assetId: string;
+  employeeId: string;
+  assignedAt: string;
+  returnedAt?: string;
+  acceptanceStatus: HrAssetAcceptanceStatus;
+  acceptedAt?: string;
+  revokedAt?: string;
+  assignedByUserId: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrSoftwareProduct {
+  id: string;
+  name: string;
+  vendor: string;
+  licenseType: HrSoftwareLicenseType;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrSoftwareSeat {
+  id: string;
+  softwareProductId: string;
+  status: HrSoftwareSeatStatus;
+  assignedToEmployeeId?: string;
+  assignedToEmail?: string;
+  assignedAt?: string;
+  revokedAt?: string;
+  endDate?: string;
+  cost?: number;
+  currency?: HrCurrencyCode;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HrProvisionRequest {
+  id: string;
+  requesterEmployeeId: string;
+  requestType: HrProvisionRequestType;
+  requestedAssetCategory?: HrAssetCategory;
+  requestedSoftwareProductId?: string;
+  justification: string;
+  priority: HrProvisionRequestPriority;
+  status: HrProvisionRequestStatus;
+  managerApproverUserId?: string;
+  hrApproverUserId?: string;
+  managerApprovedAt?: string;
+  hrApprovedAt?: string;
+  fulfilledAt?: string;
+  rejectionReason?: string;
+  cancellationReason?: string;
+  linkedAssetAssignmentId?: string;
+  linkedSoftwareSeatId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HrExpense {
   id: string;
   employeeId: string;
@@ -644,7 +730,15 @@ export interface HrExpense {
 
 export interface HrAuditLogEntry {
   id: string;
-  parentType: "Leave" | "Expense" | "Asset" | "Compensation" | "PayrollSnapshot";
+  parentType:
+    | "Leave"
+    | "Expense"
+    | "Asset"
+    | "Compensation"
+    | "PayrollSnapshot"
+    | "ProvisionRequest"
+    | "AssetAssignment"
+    | "SoftwareSeat";
   parentId: string;
   actionType: HrAuditActionType;
   performedByUserId: string;
@@ -830,6 +924,10 @@ export interface DbState {
   hrLeaveRequests: HrLeaveRequest[];
   hrAssets: HrAsset[];
   hrSoftwareLicenses: HrSoftwareLicense[];
+  hrAssetAssignments: HrAssetAssignment[];
+  hrSoftwareProducts: HrSoftwareProduct[];
+  hrSoftwareSeats: HrSoftwareSeat[];
+  hrProvisionRequests: HrProvisionRequest[];
   hrExpenses: HrExpense[];
   hrAuditLogs: HrAuditLogEntry[];
   opsRequests: OpsRequest[];

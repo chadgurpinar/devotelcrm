@@ -27,7 +27,7 @@ export function OrgTreeNode(props: NodeProps<OrgTreeNodeData>) {
   const { data } = props;
   return (
     <div
-      className={`w-[240px] cursor-pointer rounded-lg border p-2 shadow-sm transition hover:border-brand-300 ${nodeTone(data)}`}
+      className={`w-[220px] cursor-pointer rounded-lg border p-2 shadow-sm transition hover:border-brand-300 ${nodeTone(data)}`}
       onClick={() => data.onOpenEmployee(data.employeeId)}
     >
       <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: "none" }} />

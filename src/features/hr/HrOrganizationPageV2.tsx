@@ -184,6 +184,11 @@ export function HrOrganizationPageV2() {
   }, [focusedEmployeeId, orgChart]);
 
   useEffect(() => {
+    if (tab !== "OrgChart") return;
+    setFitRequestVersion((value) => value + 1);
+  }, [tab]);
+
+  useEffect(() => {
     if (hasLoggedOrgValidationRef.current) return;
     if (includeInactive) return;
     hasLoggedOrgValidationRef.current = true;

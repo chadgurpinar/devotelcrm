@@ -1,5 +1,7 @@
 import {
   HrAsset,
+  HrAssetAssignment,
+  HrAuditLogEntry,
   HrCountryLeaveProfile,
   HrCurrencyCode,
   HrDepartment,
@@ -10,6 +12,9 @@ import {
   HrLegalEntity,
   HrLeaveRequest,
   HrPayrollMonthSnapshot,
+  HrProvisionRequest,
+  HrSoftwareProduct,
+  HrSoftwareSeat,
   HrSoftwareLicense,
   OurEntity,
   User,
@@ -31,29 +36,13 @@ export interface SeedHrResult {
   hrLeaveProfiles: HrCountryLeaveProfile[];
   hrLeaveRequests: HrLeaveRequest[];
   hrAssets: HrAsset[];
+  hrAssetAssignments: HrAssetAssignment[];
+  hrSoftwareProducts: HrSoftwareProduct[];
+  hrSoftwareSeats: HrSoftwareSeat[];
+  hrProvisionRequests: HrProvisionRequest[];
   hrSoftwareLicenses: HrSoftwareLicense[];
   hrExpenses: HrExpense[];
-  hrAuditLogs: Array<{
-    id: string;
-    parentType: "Leave" | "Expense" | "Asset" | "Compensation" | "PayrollSnapshot";
-    parentId: string;
-    actionType:
-      | "MANAGER_APPROVE"
-      | "MANAGER_REJECT"
-      | "HR_APPROVE"
-      | "HR_REJECT"
-      | "FINANCE_APPROVE"
-      | "FINANCE_REJECT"
-      | "MARK_PAID"
-      | "ASSET_ASSIGNED"
-      | "ASSET_ACCEPTED"
-      | "ASSET_RETURNED"
-      | "COMPENSATION_UPDATED"
-      | "PAYROLL_SNAPSHOT_GENERATED";
-    performedByUserId: string;
-    comment?: string;
-    timestamp: string;
-  }>;
+  hrAuditLogs: HrAuditLogEntry[];
 }
 
 const DEPARTMENT_NAMES = ["Management", "Sales", "Interconnection", "NOC", "Routing", "Product", "Finance", "Human Resources"];
@@ -75,9 +64,10 @@ const UNIVERSITIES = ["Northbridge Institute", "Helix Technical College", "Latti
 const UNIVERSITY_DEPARTMENTS = ["Computer Systems", "Business Strategy", "Industrial Engineering", "Network Technologies"];
 const DEGREES = ["Bachelor", "Master", "MBA"];
 const BANKS = ["SeedBank One", "Vertex Financial", "Orbit Credit", "Nova Treasury"];
-const LICENSE_NAMES = ["Suite Workspace", "Issue Tracker Pro", "Design Studio", "Comm Stream", "Sales Orbit"];
-const LICENSE_VENDORS = ["CloudAxis", "TrackForge", "VisioGrid", "SignalHub", "MarketLoop"];
+const LICENSE_NAMES = ["Suite Workspace", "Issue Tracker Pro", "Design Studio", "Comm Stream", "Sales Orbit", "Docs Vault"];
+const LICENSE_VENDORS = ["CloudAxis", "TrackForge", "VisioGrid", "SignalHub", "MarketLoop", "Northbridge Labs"];
 const EXPENSE_CATEGORIES = ["Travel", "Meal", "Hotel", "Taxi", "Equipment", "Training"];
+const HARDWARE_REQUEST_CATEGORIES: Array<HrAsset["category"]> = ["Laptop", "Phone", "Accessory", "Monitor", "Other"];
 
 function currencyByCountry(country: string): HrCurrencyCode {
   if (country === "Turkey") return "TRY";
@@ -620,10 +610,13 @@ export function seedHr(params: {
 
   const hrAssets: HrAsset[] = Array.from({ length: scenario.counts.hrAssets }).map((_, idx) => {
     const employee = hrEmployees[idx % hrEmployees.length];
-    const category: HrAsset["category"] = idx % 4 === 0 ? "Laptop" : idx % 4 === 1 ? "Phone" : idx % 4 === 2 ? "Accessory" : "Software";
+    const category: HrAsset["category"] = HARDWARE_REQUEST_CATEGORIES[idx % HARDWARE_REQUEST_CATEGORIES.length];
+    const createdAt = addDaysToIso("2025-12-12T09:00:00.000Z", idx);
     const assignedAt = addDaysToIso("2026-01-10T09:00:00.000Z", idx);
     const returnedAt = idx % 13 === 0 ? addDaysToIso(assignedAt, 45) : undefined;
-    const assigned = idx % 8 !== 0 && !returnedAt;
+    const retired = idx % 23 === 0;
+    const assigned = !retired && idx % 8 !== 0 && !returnedAt;
+    const status: HrAsset["status"] = retired ? "Retired" : returnedAt ? "Returned" : assigned ? "Assigned" : "Available";
     return {
       id: idFactory.next("hrAsset"),
       name:
@@ -632,35 +625,156 @@ export function seedHr(params: {
           : category === "Phone"
             ? `Device Phone ${idx + 1}`
             : category === "Accessory"
-              ? `Accessory ${idx + 1}`
-              : `Software Asset ${idx + 1}`,
+              ? `Accessory Kit ${idx + 1}`
+              : category === "Monitor"
+                ? `Display Monitor ${idx + 1}`
+                : `Shared Peripheral ${idx + 1}`,
       category,
+      status,
       assignedToEmployeeId: assigned ? employee.id : undefined,
       assignedAt: assigned ? assignedAt : undefined,
       returnedAt,
       digitalAcceptance: assigned && idx % 5 !== 0,
-      notes: idx % 10 === 0 ? "Lifecycle review pending." : undefined,
-      createdAt: "2025-12-12T09:00:00.000Z",
+      notes: retired ? "Retired from active lifecycle." : idx % 10 === 0 ? "Lifecycle review pending." : undefined,
+      createdAt,
       updatedAt: addDaysToIso("2026-03-01T09:00:00.000Z", idx % 9),
     };
   });
 
-  const hrSoftwareLicenses: HrSoftwareLicense[] = Array.from({ length: scenario.counts.hrSoftwareLicenses }).map((_, idx) => {
+  const hrAssetAssignments: HrAssetAssignment[] = hrAssets
+    .filter((asset) => Boolean(asset.assignedToEmployeeId))
+    .map((asset) => ({
+      id: idFactory.next("hrAssetAssignment"),
+      assetId: asset.id,
+      employeeId: asset.assignedToEmployeeId as string,
+      assignedAt: asset.assignedAt ?? asset.createdAt,
+      returnedAt: asset.returnedAt,
+      acceptanceStatus: asset.digitalAcceptance ? "Accepted" : "Pending",
+      acceptedAt: asset.digitalAcceptance ? addDaysToIso(asset.assignedAt ?? asset.createdAt, 1) : undefined,
+      revokedAt: undefined,
+      assignedByUserId: activeUserId,
+      notes: asset.notes,
+      createdAt: asset.assignedAt ?? asset.createdAt,
+      updatedAt: asset.updatedAt,
+    }));
+
+  const hrSoftwareProducts: HrSoftwareProduct[] = LICENSE_NAMES.map((name, idx) => ({
+    id: idFactory.next("hrSoftwareProduct"),
+    name,
+    vendor: LICENSE_VENDORS[idx % LICENSE_VENDORS.length],
+    licenseType: idx % 5 === 0 ? "Enterprise" : idx % 2 === 0 ? "Seat" : "Other",
+    notes: idx % 3 === 0 ? "Used by multiple teams." : undefined,
+    createdAt: "2025-12-01T09:00:00.000Z",
+    updatedAt: "2026-03-01T09:00:00.000Z",
+  }));
+  const productById = new Map(hrSoftwareProducts.map((product) => [product.id, product]));
+
+  const hrSoftwareSeats: HrSoftwareSeat[] = Array.from({ length: scenario.counts.hrSoftwareLicenses }).map((_, idx) => {
     const employee = hrEmployees[idx % hrEmployees.length];
-    const startDate = addDaysToIso("2025-12-01T00:00:00.000Z", idx).slice(0, 10);
+    const product = hrSoftwareProducts[idx % hrSoftwareProducts.length];
+    const createdAt = addDaysToIso("2025-12-01T09:00:00.000Z", idx);
+    const assignedAt = addDaysToIso("2026-01-07T10:00:00.000Z", idx);
+    const revokedAt = idx % 11 === 0 ? addDaysToIso(assignedAt, 75) : undefined;
+    const endDate = idx % 9 === 0 ? addDaysToIso(assignedAt, 180).slice(0, 10) : undefined;
+    const status: HrSoftwareSeat["status"] =
+      revokedAt ? "Revoked" : endDate && endDate < "2026-03-01" ? "Expired" : idx % 4 === 0 ? "Available" : "Assigned";
+    const assignedToEmployeeId = status === "Assigned" ? employee.id : undefined;
+    return {
+      id: idFactory.next("hrSoftwareSeat"),
+      softwareProductId: product.id,
+      status,
+      assignedToEmployeeId,
+      assignedToEmail:
+        status === "Assigned"
+          ? `${employee.firstName.toLowerCase()}.${employee.lastName.toLowerCase()}@workspace.seed.local`
+          : undefined,
+      assignedAt: status === "Assigned" ? assignedAt : undefined,
+      revokedAt,
+      endDate,
+      cost: idx % 6 === 0 ? undefined : 8 + (idx % 10) * 4,
+      currency: idx % 3 === 0 ? "USD" : idx % 3 === 1 ? "EUR" : "GBP",
+      notes: idx % 12 === 0 ? "Seat tracked in enterprise pool." : undefined,
+      createdAt,
+      updatedAt: "2026-03-01T09:00:00.000Z",
+    };
+  });
+
+  const hrSoftwareLicenses: HrSoftwareLicense[] = hrSoftwareSeats.map((seat, idx) => {
+    const product = productById.get(seat.softwareProductId) ?? hrSoftwareProducts[0];
+    const startDate = (seat.assignedAt ?? seat.createdAt).slice(0, 10);
     return {
       id: idFactory.next("hrSoftwareLicense"),
-      name: LICENSE_NAMES[idx % LICENSE_NAMES.length],
-      vendor: LICENSE_VENDORS[idx % LICENSE_VENDORS.length],
-      licenseType: idx % 2 === 0 ? "Annual Seat" : "Monthly Seat",
-      assignedToEmployeeId: idx % 7 === 0 ? undefined : employee.id,
+      name: product.name,
+      vendor: product.vendor,
+      licenseType: product.licenseType === "Enterprise" ? "Enterprise Seat" : product.licenseType === "Other" ? "Other" : "Seat",
+      assignedToEmployeeId: seat.assignedToEmployeeId,
       startDate,
-      endDate: idx % 9 === 0 ? undefined : addDaysToIso(`${startDate}T00:00:00.000Z`, 330).slice(0, 10),
-      cost: idx % 6 === 0 ? undefined : 12 + (idx % 9) * 6,
-      currency: idx % 3 === 0 ? "USD" : idx % 3 === 1 ? "EUR" : "GBP",
-      notes: idx % 11 === 0 ? "Seat renewal due next quarter." : undefined,
-      createdAt: `${startDate}T09:00:00.000Z`,
-      updatedAt: "2026-03-01T09:00:00.000Z",
+      endDate: seat.endDate,
+      cost: seat.cost,
+      currency: seat.currency,
+      notes: idx % 11 === 0 ? "Legacy compatibility row." : seat.notes,
+      createdAt: seat.createdAt,
+      updatedAt: seat.updatedAt,
+    };
+  });
+
+  const activeAssetAssignments = hrAssetAssignments.filter((assignment) => !assignment.returnedAt);
+  const activeSoftwareSeats = hrSoftwareSeats.filter((seat) => seat.status === "Assigned");
+  const provisionRequestCount = Math.max(24, Math.floor(hrEmployees.length * 0.55));
+  const hrProvisionRequests: HrProvisionRequest[] = Array.from({ length: provisionRequestCount }).map((_, idx) => {
+    const requester = hrEmployees[(idx * 3) % hrEmployees.length];
+    const requestType: HrProvisionRequest["requestType"] = idx % 2 === 0 ? "Hardware" : "Software";
+    const createdAt = addDaysToIso("2026-01-15T09:00:00.000Z", idx);
+    const status: HrProvisionRequest["status"] =
+      idx % 9 === 0
+        ? "PendingManager"
+        : idx % 9 === 1
+          ? "PendingHR"
+          : idx % 9 === 2
+            ? "Rejected"
+            : idx % 9 === 3
+              ? "Cancelled"
+              : "Fulfilled";
+    const managerApprovedAt =
+      status === "PendingHR" || status === "Rejected" || status === "Fulfilled"
+        ? addDaysToIso(createdAt, 1)
+        : undefined;
+    const hrApprovedAt =
+      status === "Fulfilled" || (status === "PendingHR" && idx % 2 === 0)
+        ? addDaysToIso(createdAt, 2)
+        : undefined;
+    const fulfilledAt = status === "Fulfilled" ? addDaysToIso(createdAt, 3) : undefined;
+    const linkedAssetAssignmentId =
+      status === "Fulfilled" && requestType === "Hardware"
+        ? activeAssetAssignments[idx % Math.max(1, activeAssetAssignments.length)]?.id
+        : undefined;
+    const linkedSoftwareSeatId =
+      status === "Fulfilled" && requestType === "Software"
+        ? activeSoftwareSeats[idx % Math.max(1, activeSoftwareSeats.length)]?.id
+        : undefined;
+    return {
+      id: idFactory.next("hrProvisionRequest"),
+      requesterEmployeeId: requester.id,
+      requestType,
+      requestedAssetCategory: requestType === "Hardware" ? HARDWARE_REQUEST_CATEGORIES[idx % HARDWARE_REQUEST_CATEGORIES.length] : undefined,
+      requestedSoftwareProductId: requestType === "Software" ? hrSoftwareProducts[idx % hrSoftwareProducts.length]?.id : undefined,
+      justification:
+        requestType === "Hardware"
+          ? "Workstation refresh required for current workload."
+          : "Access required for team collaboration platform.",
+      priority: idx % 5 === 0 ? "High" : idx % 2 === 0 ? "Medium" : "Low",
+      status,
+      managerApproverUserId: managerApprovedAt ? users[(idx + 1) % Math.max(1, users.length)]?.id ?? activeUserId : undefined,
+      hrApproverUserId: hrApprovedAt ? users[(idx + 2) % Math.max(1, users.length)]?.id ?? activeUserId : undefined,
+      managerApprovedAt,
+      hrApprovedAt,
+      fulfilledAt,
+      rejectionReason: status === "Rejected" ? "Request deferred due to current budget cycle." : undefined,
+      cancellationReason: status === "Cancelled" ? "Requester cancelled before manager approval." : undefined,
+      linkedAssetAssignmentId,
+      linkedSoftwareSeatId,
+      createdAt,
+      updatedAt: fulfilledAt ?? hrApprovedAt ?? managerApprovedAt ?? createdAt,
     };
   });
 
@@ -758,11 +872,106 @@ export function seedHr(params: {
       id: idFactory.next("hrAudit"),
       parentType: "Asset",
       parentId: asset.id,
-      actionType: asset.returnedAt ? "ASSET_RETURNED" : asset.digitalAcceptance ? "ASSET_ACCEPTED" : "ASSET_ASSIGNED",
+      actionType: asset.status === "Returned" ? "ASSET_RETURNED" : asset.digitalAcceptance ? "ASSET_ACCEPTED" : "ASSET_ASSIGNED",
       performedByUserId: activeUserId,
       comment: "Synthetic asset lifecycle audit.",
       timestamp: asset.updatedAt,
     });
+  });
+  hrAssetAssignments.slice(0, 40).forEach((assignment) => {
+    hrAuditLogs.push({
+      id: idFactory.next("hrAudit"),
+      parentType: "AssetAssignment",
+      parentId: assignment.id,
+      actionType: assignment.acceptanceStatus === "Accepted" ? "ASSET_ASSIGNMENT_ACCEPTED" : "ASSET_ASSIGNMENT_CREATED",
+      performedByUserId: assignment.assignedByUserId,
+      comment: assignment.notes,
+      timestamp: assignment.updatedAt,
+    });
+  });
+  hrSoftwareSeats.slice(0, 40).forEach((seat) => {
+    if (seat.status === "Assigned") {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "SoftwareSeat",
+        parentId: seat.id,
+        actionType: "SOFTWARE_SEAT_ASSIGNED",
+        performedByUserId: activeUserId,
+        timestamp: seat.assignedAt ?? seat.updatedAt,
+      });
+    }
+    if (seat.status === "Revoked") {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "SoftwareSeat",
+        parentId: seat.id,
+        actionType: "SOFTWARE_SEAT_REVOKED",
+        performedByUserId: activeUserId,
+        timestamp: seat.revokedAt ?? seat.updatedAt,
+      });
+    }
+  });
+  hrProvisionRequests.forEach((request) => {
+    hrAuditLogs.push({
+      id: idFactory.next("hrAudit"),
+      parentType: "ProvisionRequest",
+      parentId: request.id,
+      actionType: "PROVISION_REQUEST_CREATED",
+      performedByUserId: activeUserId,
+      timestamp: request.createdAt,
+    });
+    if (request.managerApprovedAt) {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "ProvisionRequest",
+        parentId: request.id,
+        actionType: "PROVISION_MANAGER_APPROVED",
+        performedByUserId: request.managerApproverUserId ?? activeUserId,
+        timestamp: request.managerApprovedAt,
+      });
+    }
+    if (request.hrApprovedAt) {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "ProvisionRequest",
+        parentId: request.id,
+        actionType: "PROVISION_HR_APPROVED",
+        performedByUserId: request.hrApproverUserId ?? activeUserId,
+        timestamp: request.hrApprovedAt,
+      });
+    }
+    if (request.status === "Rejected") {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "ProvisionRequest",
+        parentId: request.id,
+        actionType: request.hrApproverUserId ? "PROVISION_HR_REJECTED" : "PROVISION_MANAGER_REJECTED",
+        performedByUserId: request.hrApproverUserId ?? request.managerApproverUserId ?? activeUserId,
+        comment: request.rejectionReason,
+        timestamp: request.updatedAt,
+      });
+    }
+    if (request.status === "Cancelled") {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "ProvisionRequest",
+        parentId: request.id,
+        actionType: "PROVISION_CANCELLED",
+        performedByUserId: activeUserId,
+        comment: request.cancellationReason,
+        timestamp: request.updatedAt,
+      });
+    }
+    if (request.fulfilledAt) {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "ProvisionRequest",
+        parentId: request.id,
+        actionType: "PROVISION_FULFILLED",
+        performedByUserId: request.hrApproverUserId ?? activeUserId,
+        timestamp: request.fulfilledAt,
+      });
+    }
   });
   hrPayrollSnapshots.forEach((snapshot) => {
     hrAuditLogs.push({
@@ -785,6 +994,10 @@ export function seedHr(params: {
     hrLeaveProfiles: hrLeaveProfiles.sort((left, right) => left.id.localeCompare(right.id)),
     hrLeaveRequests: hrLeaveRequests.sort((left, right) => left.id.localeCompare(right.id)),
     hrAssets: hrAssets.sort((left, right) => left.id.localeCompare(right.id)),
+    hrAssetAssignments: hrAssetAssignments.sort((left, right) => left.id.localeCompare(right.id)),
+    hrSoftwareProducts: hrSoftwareProducts.sort((left, right) => left.id.localeCompare(right.id)),
+    hrSoftwareSeats: hrSoftwareSeats.sort((left, right) => left.id.localeCompare(right.id)),
+    hrProvisionRequests: hrProvisionRequests.sort((left, right) => left.id.localeCompare(right.id)),
     hrSoftwareLicenses: hrSoftwareLicenses.sort((left, right) => left.id.localeCompare(right.id)),
     hrExpenses: hrExpenses.sort((left, right) => left.id.localeCompare(right.id)),
     hrAuditLogs: hrAuditLogs.sort((left, right) => left.timestamp.localeCompare(right.timestamp) || left.id.localeCompare(right.id)),

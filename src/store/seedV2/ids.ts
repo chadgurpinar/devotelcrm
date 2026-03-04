@@ -21,6 +21,10 @@ type EntityKey =
   | "hrLeaveProfile"
   | "hrLeaveRequest"
   | "hrAsset"
+  | "hrAssetAssignment"
+  | "hrSoftwareProduct"
+  | "hrSoftwareSeat"
+  | "hrProvisionRequest"
   | "hrSoftwareLicense"
   | "hrExpense"
   | "hrAudit"
@@ -54,6 +58,10 @@ const PREFIX: Record<EntityKey, string> = {
   hrLeaveProfile: "hr-lp",
   hrLeaveRequest: "hr-leave",
   hrAsset: "hr-asset",
+  hrAssetAssignment: "hr-asset-assignment",
+  hrSoftwareProduct: "hr-software-product",
+  hrSoftwareSeat: "hr-software-seat",
+  hrProvisionRequest: "hr-provision",
   hrSoftwareLicense: "hr-license",
   hrExpense: "hr-expense",
   hrAudit: "hr-audit",
