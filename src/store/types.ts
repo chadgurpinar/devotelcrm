@@ -769,8 +769,17 @@ export interface HrAuditLogEntry {
   timestamp: string;
 }
 
-export type OpsTrack = "SMS" | "Voice";
-export type OpsSeverity = "Urgent" | "High" | "Medium";
+export type OpsPortalId =
+  | "sms-noc"
+  | "voice-noc"
+  | "routing-noc"
+  | "am-noc-routing"
+  | "account-managers"
+  | "performance-audit";
+
+export type OpsTrack = "SMS" | "VOICE";
+export type OpsTrackFilter = OpsTrack | "ANY";
+export type OpsSeverity = "MEDIUM" | "HIGH" | "URGENT";
 export type OpsRequestType =
   | "RoutingRequest"
   | "TroubleTicketRequest"
@@ -789,20 +798,44 @@ export type OpsRequestActionType =
   | "LOSS_ACCEPTED"
   | "CANCELLED";
 export type OpsMonitoringModuleOrigin =
-  | "ProviderIssues"
-  | "Losses"
-  | "NewAndLostTraffics"
-  | "TrafficComparison"
-  | "ScheduleTestResults"
-  | "FailedSmsOrCallAnalysis";
-export type OpsCaseStatus = "New" | "InProgress" | "Resolved" | "Ignored" | "Cancelled";
-export type OpsCaseCategory = "Loss" | "KPI" | "Traffic" | "Provider" | "Test" | "Other";
-export type OpsSlaProfileId = "KPI_ALERT" | "LOSS_ALERT";
-export type OpsResolutionType = "Fixed" | "FalsePositive" | "PartnerIssue" | "PlannedWork" | "Unknown";
+  | "PROVIDER_ISSUES"
+  | "LOSSES"
+  | "NEW_AND_LOST_TRAFFICS"
+  | "TRAFFIC_COMPARISON"
+  | "SCHEDULE_TEST_RESULTS"
+  | "FAILED_SMS_OR_CALL_ANALYSIS";
+export type OpsCaseStatus = "NEW" | "IN_PROGRESS" | "RESOLVED" | "IGNORED" | "CANCELLED";
+export type OpsCaseCategory =
+  | "PROVIDER_ISSUE"
+  | "LOSSES"
+  | "NEW_LOST_TRAFFIC"
+  | "TRAFFIC_COMPARISON"
+  | "SCHEDULE_TEST_RESULT"
+  | "FAILED_SMS_CALL";
+export type OpsTrafficComparisonType = "INCREASE" | "DECREASE";
+export type OpsSlaProfileId = "DEFAULT" | "LOSS" | "KPI" | "TEST";
+export type OpsResolutionType =
+  | "NO_ISSUE"
+  | "ROUTING_CHANGED"
+  | "ACCOUNT_MANAGER_INFORMED"
+  | "ROUTING_INFORMED"
+  | "TT_RAISED"
+  | "IGNORED"
+  | "FIXED"
+  | "FALSE_POSITIVE"
+  | "PARTNER_ISSUE"
+  | "PLANNED_WORK"
+  | "UNKNOWN";
 export type OpsCaseActionType =
+  | "CHECKED_NO_ISSUE"
+  | "ROUTING_CHANGED"
+  | "ACCOUNT_MANAGER_INFORMED"
+  | "ROUTING_INFORMED"
+  | "TT_RAISED"
+  | "IGNORED"
+  | "RESOLVE"
   | "ASSIGN"
   | "START"
-  | "RESOLVE"
   | "IGNORE"
   | "CANCEL"
   | "COMMENT"
@@ -831,23 +864,97 @@ export interface OpsRequest {
   updatedAt: string;
 }
 
+export interface OpsSlaProfile {
+  id: OpsSlaProfileId;
+  name: string;
+  targetsMs: Record<OpsSeverity, number>;
+}
+
+export interface OpsCaseMetadataProviderIssue {
+  providerName: string;
+  smsCount?: number;
+  callCount?: number;
+  dlrValue?: number;
+  asrValue?: number;
+  alertTime: string;
+}
+
+export interface OpsCaseMetadataLosses {
+  customerName: string;
+  destination: string;
+  lossAmount: number;
+  alertTime: string;
+}
+
+export interface OpsCaseMetadataNewLostTraffic {
+  customerName: string;
+  destination: string;
+  attemptCount: number;
+  alertTime: string;
+}
+
+export interface OpsCaseMetadataTrafficComparison {
+  comparisonType: OpsTrafficComparisonType;
+  comparisonPercentage: number;
+  alertTime: string;
+}
+
+export interface OpsCaseMetadataScheduleTestResult {
+  providerName: string;
+  destination: string;
+  testResult: string;
+  testToolName: "TELQ" | "ARPTEL";
+  alertTime: string;
+}
+
+export interface OpsCaseMetadataFailedSmsCall {
+  customerName: string;
+  destination: string;
+  attemptCount: number;
+  alertTime: string;
+}
+
+export type OpsCaseMetadata =
+  | OpsCaseMetadataProviderIssue
+  | OpsCaseMetadataLosses
+  | OpsCaseMetadataNewLostTraffic
+  | OpsCaseMetadataTrafficComparison
+  | OpsCaseMetadataScheduleTestResult
+  | OpsCaseMetadataFailedSmsCall;
+
+export interface OpsCaseDisposition {
+  resolutionType: OpsResolutionType;
+  performedByUserId: string;
+  performedAt: string;
+  comment?: string;
+}
+
 export interface OpsCase {
   id: string;
+  portalOrigin: OpsPortalId;
   moduleOrigin: OpsMonitoringModuleOrigin;
-  relatedTrack: OpsTrack;
+  track: OpsTrack;
+  relatedTrack?: OpsTrack;
   severity: OpsSeverity;
   category: OpsCaseCategory;
   detectedAt: string;
+  metadata: OpsCaseMetadata;
   relatedCompanyId?: string;
   relatedProvider?: string;
   relatedDestination?: string;
   description: string;
   status: OpsCaseStatus;
   slaProfileId: OpsSlaProfileId;
+  slaDeadline: string;
+  linkedSignalIds: string[];
+  lastSignalAt?: string;
+  ttNumber?: string;
+  ttRaisedAt?: string;
   resolvedAt?: string;
   ignoredAt?: string;
   cancelledAt?: string;
   resolutionType?: OpsResolutionType;
+  disposition?: OpsCaseDisposition;
   assignedToUserId?: string;
   createdAt: string;
   updatedAt: string;
@@ -856,10 +963,12 @@ export interface OpsCase {
 export interface OpsMonitoringSignal {
   id: string;
   moduleOrigin: OpsMonitoringModuleOrigin;
-  relatedTrack: OpsTrack;
+  track: OpsTrack;
+  relatedTrack?: OpsTrack;
   severity: OpsSeverity;
   category: OpsCaseCategory;
   detectedAt: string;
+  metadata: OpsCaseMetadata;
   fingerprint: string;
   relatedCompanyId?: string;
   relatedProvider?: string;
@@ -872,16 +981,29 @@ export interface OpsMonitoringSignal {
 
 export interface OpsMonitoringSignalInput {
   moduleOrigin: OpsMonitoringModuleOrigin;
-  relatedTrack: OpsTrack;
+  track: OpsTrack;
+  relatedTrack?: OpsTrack;
   severity: OpsSeverity;
   category: OpsCaseCategory;
   detectedAt: string;
+  metadata: OpsCaseMetadata;
   fingerprint: string;
   relatedCompanyId?: string;
   relatedProvider?: string;
   relatedDestination?: string;
   description: string;
   rawPayload: unknown;
+}
+
+export interface OpsCaseAction {
+  id: string;
+  caseId: string;
+  type: OpsCaseActionType;
+  resolutionType?: OpsResolutionType;
+  comment?: string;
+  ttNumber?: string;
+  performedByUserId: string;
+  performedAt: string;
 }
 
 export interface OpsAuditLogEntry {
@@ -891,12 +1013,15 @@ export interface OpsAuditLogEntry {
   actionType: OpsAuditActionType;
   performedByUserId: string;
   comment?: string;
+  resolutionType?: OpsResolutionType;
+  ttNumber?: string;
+  caseActionId?: string;
   timestamp: string;
 }
 
 export interface OpsShift {
   id: string;
-  track: OpsTrack | "Both";
+  track: OpsTrack | "BOTH";
   startsAt: string;
   endsAt: string;
   userIds: string[];
@@ -958,6 +1083,7 @@ export interface DbState {
   opsMonitoringSignals: OpsMonitoringSignal[];
   opsAuditLogs: OpsAuditLogEntry[];
   opsShifts: OpsShift[];
+  opsSlaProfiles: OpsSlaProfile[];
   outbox: string[];
 }
 

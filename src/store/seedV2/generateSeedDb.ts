@@ -255,6 +255,7 @@ export function generateSeedDb(
     opsMonitoringSignals: ops.opsMonitoringSignals,
     opsAuditLogs: ops.opsAuditLogs,
     opsShifts: ops.opsShifts,
+    opsSlaProfiles: ops.opsSlaProfiles,
     outbox: [],
   };
 

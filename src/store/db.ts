@@ -61,6 +61,18 @@ import {
   validateSalaryDistribution,
   workingDaysBetween,
 } from "./hrUtils";
+import {
+  actionCompletesSla,
+  getCaseActionDefinition,
+  isOpsCaseTerminal,
+  nextCaseStatusForAction as policyNextCaseStatusForAction,
+  normalizeCaseActionType,
+  requiresCaseComment as requiresCaseCommentByPolicy,
+  requiresTtNumber,
+  resolutionTypeForAction,
+} from "../features/ops/domain/opsPolicies";
+import { inferCaseCategoryFromModule } from "../features/ops/domain/opsCaseTypes";
+import { computeSlaDeadline } from "../features/ops/domain/opsSla";
 
 interface DbActions {
   setActiveUser: (userId: string) => void;
@@ -229,6 +241,7 @@ interface DbActions {
     actionType: OpsCaseActionType,
     options?: {
       comment?: string;
+      ttNumber?: string;
       assignedToUserId?: string;
       resolutionType?: OpsCase["resolutionType"];
       doneByUserId?: string;
@@ -720,10 +733,6 @@ function isOpsRequestTerminal(status: OpsRequest["status"]): boolean {
   return status === "Done" || status === "Cancelled" || status === "Failed";
 }
 
-function isOpsCaseTerminal(status: OpsCase["status"]): boolean {
-  return status === "Resolved" || status === "Ignored" || status === "Cancelled";
-}
-
 function requestDoneActionForType(requestType: OpsRequest["requestType"]): OpsRequestActionType {
   if (requestType === "TroubleTicketRequest") return "TT_SENT";
   if (requestType === "TestRequest") return "TEST_DONE";
@@ -745,27 +754,148 @@ function nextRequestStatusForAction(
   return undefined;
 }
 
-function nextCaseStatusForAction(
-  currentStatus: OpsCase["status"],
-  actionType: OpsCaseActionType,
-): OpsCase["status"] | undefined {
-  if (actionType === "START") return currentStatus === "New" ? "InProgress" : undefined;
-  if (actionType === "RESOLVE") return currentStatus === "InProgress" ? "Resolved" : undefined;
-  if (actionType === "IGNORE") return currentStatus === "New" || currentStatus === "InProgress" ? "Ignored" : undefined;
-  if (actionType === "CANCEL") return currentStatus === "New" || currentStatus === "InProgress" ? "Cancelled" : undefined;
-  return undefined;
-}
-
 function requiresRequestComment(actionType: OpsRequestActionType): boolean {
   return actionType === "CANCELLED";
 }
 
-function requiresCaseComment(actionType: OpsCaseActionType): boolean {
-  return actionType === "IGNORE" || actionType === "CANCEL" || actionType === "COMMENT";
+function buildOpsSlaProfileId(category: OpsCase["category"]): OpsCase["slaProfileId"] {
+  if (category === "LOSSES") return "LOSS";
+  if (category === "SCHEDULE_TEST_RESULT") return "TEST";
+  if (category === "FAILED_SMS_CALL") return "KPI";
+  return "DEFAULT";
 }
 
-function buildOpsSlaProfileId(category: OpsCase["category"]): OpsCase["slaProfileId"] {
-  return category === "Loss" ? "LOSS_ALERT" : "KPI_ALERT";
+function mapOpsTrack(value: unknown): OpsCase["track"] {
+  if (value === "VOICE" || value === "Voice") return "VOICE";
+  return "SMS";
+}
+
+function mapOpsSeverity(value: unknown): OpsCase["severity"] {
+  if (value === "URGENT" || value === "Urgent") return "URGENT";
+  if (value === "HIGH" || value === "High") return "HIGH";
+  return "MEDIUM";
+}
+
+function mapOpsModuleOrigin(value: unknown): OpsCase["moduleOrigin"] {
+  if (value === "PROVIDER_ISSUES" || value === "ProviderIssues") return "PROVIDER_ISSUES";
+  if (value === "LOSSES" || value === "Losses") return "LOSSES";
+  if (value === "NEW_AND_LOST_TRAFFICS" || value === "NewAndLostTraffics") return "NEW_AND_LOST_TRAFFICS";
+  if (value === "TRAFFIC_COMPARISON" || value === "TrafficComparison") return "TRAFFIC_COMPARISON";
+  if (value === "SCHEDULE_TEST_RESULTS" || value === "ScheduleTestResults") return "SCHEDULE_TEST_RESULTS";
+  return "FAILED_SMS_OR_CALL_ANALYSIS";
+}
+
+function mapOpsCategory(value: unknown, moduleOrigin: OpsCase["moduleOrigin"]): OpsCase["category"] {
+  if (value === "PROVIDER_ISSUE" || value === "Provider") return "PROVIDER_ISSUE";
+  if (value === "LOSSES" || value === "Loss") return "LOSSES";
+  if (value === "NEW_LOST_TRAFFIC" || value === "Traffic") {
+    return moduleOrigin === "TRAFFIC_COMPARISON" ? "TRAFFIC_COMPARISON" : "NEW_LOST_TRAFFIC";
+  }
+  if (value === "TRAFFIC_COMPARISON") return "TRAFFIC_COMPARISON";
+  if (value === "SCHEDULE_TEST_RESULT" || value === "Test") return "SCHEDULE_TEST_RESULT";
+  if (value === "FAILED_SMS_CALL" || value === "KPI") return "FAILED_SMS_CALL";
+  return inferCaseCategoryFromModule(moduleOrigin);
+}
+
+function mapOpsCaseStatus(value: unknown): OpsCase["status"] {
+  if (value === "NEW" || value === "New") return "NEW";
+  if (value === "IN_PROGRESS" || value === "InProgress") return "IN_PROGRESS";
+  if (value === "RESOLVED" || value === "Resolved") return "RESOLVED";
+  if (value === "IGNORED" || value === "Ignored") return "IGNORED";
+  if (value === "CANCELLED" || value === "Cancelled") return "CANCELLED";
+  return "NEW";
+}
+
+function mapOpsResolutionType(value: unknown): OpsCase["resolutionType"] {
+  if (
+    value === "NO_ISSUE" ||
+    value === "ROUTING_CHANGED" ||
+    value === "ACCOUNT_MANAGER_INFORMED" ||
+    value === "ROUTING_INFORMED" ||
+    value === "TT_RAISED" ||
+    value === "IGNORED" ||
+    value === "FIXED" ||
+    value === "FALSE_POSITIVE" ||
+    value === "PARTNER_ISSUE" ||
+    value === "PLANNED_WORK" ||
+    value === "UNKNOWN"
+  ) {
+    return value;
+  }
+  if (value === "Fixed") return "FIXED";
+  if (value === "FalsePositive") return "FALSE_POSITIVE";
+  if (value === "PartnerIssue") return "PARTNER_ISSUE";
+  if (value === "PlannedWork") return "PLANNED_WORK";
+  if (value === "Unknown") return "UNKNOWN";
+  return undefined;
+}
+
+function mapOpsAuditActionType(parentType: OpsAuditLogEntry["parentType"], value: unknown): OpsAuditLogEntry["actionType"] {
+  if (typeof value !== "string") {
+    return parentType === "Case" ? "COMMENT" : "SEND";
+  }
+  if (parentType === "Case") {
+    if (value === "IGNORE") return "IGNORED";
+    if (value === "RESOLVE") return "CHECKED_NO_ISSUE";
+    return value as OpsAuditLogEntry["actionType"];
+  }
+  return value as OpsAuditLogEntry["actionType"];
+}
+
+function buildFallbackOpsMetadata(
+  category: OpsCase["category"],
+  detectedAt: string,
+  relatedProvider?: string,
+  relatedDestination?: string,
+): OpsCase["metadata"] {
+  if (category === "PROVIDER_ISSUE") {
+    return {
+      providerName: relatedProvider ?? "Unknown provider",
+      smsCount: 0,
+      callCount: 0,
+      dlrValue: 0,
+      asrValue: 0,
+      alertTime: detectedAt,
+    };
+  }
+  if (category === "LOSSES") {
+    return {
+      customerName: "Unknown customer",
+      destination: relatedDestination ?? "Unknown destination",
+      lossAmount: 0,
+      alertTime: detectedAt,
+    };
+  }
+  if (category === "NEW_LOST_TRAFFIC") {
+    return {
+      customerName: "Unknown customer",
+      destination: relatedDestination ?? "Unknown destination",
+      attemptCount: 0,
+      alertTime: detectedAt,
+    };
+  }
+  if (category === "TRAFFIC_COMPARISON") {
+    return {
+      comparisonType: "DECREASE",
+      comparisonPercentage: 0,
+      alertTime: detectedAt,
+    };
+  }
+  if (category === "SCHEDULE_TEST_RESULT") {
+    return {
+      providerName: relatedProvider ?? "Unknown provider",
+      destination: relatedDestination ?? "Unknown destination",
+      testResult: "UNKNOWN",
+      testToolName: "TELQ",
+      alertTime: detectedAt,
+    };
+  }
+  return {
+    customerName: "Unknown customer",
+    destination: relatedDestination ?? "Unknown destination",
+    attemptCount: 0,
+    alertTime: detectedAt,
+  };
 }
 
 function mapCompanyAddress(company: Record<string, unknown>): Company["address"] {
@@ -3229,8 +3359,23 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       const now = new Date().toISOString();
       let createdId = id;
       set((state) => {
+        const track = payload.track ?? payload.relatedTrack ?? "SMS";
+        const category = payload.category ?? inferCaseCategoryFromModule(payload.moduleOrigin);
+        const detectedAt = payload.detectedAt ?? now;
+        const slaProfileId = payload.slaProfileId ?? buildOpsSlaProfileId(category);
         const row: OpsCase = {
           ...payload,
+          portalOrigin: payload.portalOrigin ?? (track === "SMS" ? "sms-noc" : "voice-noc"),
+          track,
+          relatedTrack: track,
+          category,
+          detectedAt,
+          metadata:
+            payload.metadata ??
+            buildFallbackOpsMetadata(category, detectedAt, payload.relatedProvider, payload.relatedDestination),
+          slaProfileId,
+          slaDeadline: payload.slaDeadline ?? computeSlaDeadline(detectedAt, slaProfileId, payload.severity),
+          linkedSignalIds: payload.linkedSignalIds ?? [],
           id,
           createdAt: now,
           updatedAt: now,
@@ -3285,14 +3430,20 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           result = { ok: false, message: "Case not found." };
           return state;
         }
+        const normalizedActionType = normalizeCaseActionType(actionType);
         const comment = options?.comment?.trim();
-        if (requiresCaseComment(actionType) && !comment) {
+        if (requiresCaseCommentByPolicy(target, normalizedActionType) && !comment) {
           result = { ok: false, message: "Comment is mandatory for this action." };
+          return state;
+        }
+        const ttNumber = options?.ttNumber?.trim();
+        if (requiresTtNumber(target, normalizedActionType) && !ttNumber) {
+          result = { ok: false, message: "TT number is mandatory for this action." };
           return state;
         }
         const doneByUserId = options?.doneByUserId ?? state.activeUserId;
         const now = new Date().toISOString();
-        if (actionType === "ASSIGN") {
+        if (normalizedActionType === "ASSIGN") {
           if (!options?.assignedToUserId) {
             result = { ok: false, message: "Select assignee first." };
             return state;
@@ -3312,7 +3463,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
                 id: uid("opsa"),
                 parentType: "Case",
                 parentId: caseId,
-                actionType,
+                actionType: normalizedActionType,
                 performedByUserId: doneByUserId,
                 comment: comment ?? `Assigned to ${options.assignedToUserId}.`,
                 timestamp: now,
@@ -3320,7 +3471,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             ],
           };
         }
-        if (actionType === "COMMENT") {
+        if (normalizedActionType === "COMMENT") {
           result = { ok: true };
           return {
             ...state,
@@ -3330,7 +3481,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
                 id: uid("opsa"),
                 parentType: "Case",
                 parentId: caseId,
-                actionType,
+                actionType: normalizedActionType,
                 performedByUserId: doneByUserId,
                 comment,
                 timestamp: now,
@@ -3338,18 +3489,33 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             ],
           };
         }
-        const nextStatus = nextCaseStatusForAction(target.status, actionType);
+        const nextStatus = policyNextCaseStatusForAction(target, normalizedActionType);
         if (!nextStatus) {
           result = { ok: false, message: "Action is not valid for current status." };
           return state;
         }
+        const resolutionType = resolutionTypeForAction(target, normalizedActionType, options?.resolutionType);
+        const completesSla = actionCompletesSla(target, normalizedActionType);
+        const definition = getCaseActionDefinition(target, normalizedActionType);
+        const dispositionComment = comment ?? definition?.label;
         const nextCase: OpsCase = {
           ...target,
           status: nextStatus,
-          resolvedAt: actionType === "RESOLVE" ? now : target.resolvedAt,
-          ignoredAt: actionType === "IGNORE" ? now : target.ignoredAt,
-          cancelledAt: actionType === "CANCEL" ? now : target.cancelledAt,
-          resolutionType: actionType === "RESOLVE" ? options?.resolutionType ?? "Unknown" : target.resolutionType,
+          resolvedAt: nextStatus === "RESOLVED" ? now : target.resolvedAt,
+          ignoredAt: nextStatus === "IGNORED" ? now : target.ignoredAt,
+          cancelledAt: nextStatus === "CANCELLED" ? now : target.cancelledAt,
+          resolutionType: resolutionType ?? target.resolutionType,
+          ttNumber: normalizedActionType === "TT_RAISED" ? ttNumber : target.ttNumber,
+          ttRaisedAt: normalizedActionType === "TT_RAISED" ? now : target.ttRaisedAt,
+          disposition:
+            resolutionType && completesSla
+              ? {
+                  resolutionType,
+                  performedByUserId: doneByUserId,
+                  performedAt: now,
+                  comment: dispositionComment,
+                }
+              : target.disposition,
           updatedAt: now,
         };
         result = { ok: true };
@@ -3362,9 +3528,12 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
               id: uid("opsa"),
               parentType: "Case",
               parentId: caseId,
-              actionType,
+                actionType: normalizedActionType,
               performedByUserId: doneByUserId,
               comment,
+                resolutionType,
+                ttNumber: normalizedActionType === "TT_RAISED" ? ttNumber : undefined,
+                caseActionId: uid("opca"),
               timestamp: now,
             },
           ],
@@ -3375,12 +3544,23 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     createOpsMonitoringSignal: (payload) => {
       const id = uid("opsg");
       const now = new Date().toISOString();
+      const track = payload.track ?? payload.relatedTrack ?? "SMS";
+      const moduleOrigin = payload.moduleOrigin;
+      const category = payload.category ?? inferCaseCategoryFromModule(moduleOrigin);
+      const detectedAt = payload.detectedAt ?? now;
       set((state) => ({
         ...state,
         opsMonitoringSignals: [
           ...state.opsMonitoringSignals,
           {
             ...payload,
+            track,
+            relatedTrack: track,
+            moduleOrigin,
+            category,
+            detectedAt,
+            metadata:
+              payload.metadata ?? buildFallbackOpsMetadata(category, detectedAt, payload.relatedProvider, payload.relatedDestination),
             id,
             createdAt: now,
           },
@@ -3397,8 +3577,14 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         const nextCases = [...state.opsCases];
         const nextAudit = [...state.opsAuditLogs];
         signals.forEach((signal) => {
+          const track = signal.track ?? signal.relatedTrack ?? "SMS";
+          const moduleOrigin = signal.moduleOrigin;
+          const category = signal.category ?? inferCaseCategoryFromModule(moduleOrigin);
+          const detectedAt = signal.detectedAt ?? now;
+          const metadata =
+            signal.metadata ?? buildFallbackOpsMetadata(category, detectedAt, signal.relatedProvider, signal.relatedDestination);
           const alreadyExists = nextSignals.some(
-            (entry) => entry.fingerprint === signal.fingerprint && entry.moduleOrigin === signal.moduleOrigin,
+            (entry) => entry.fingerprint === signal.fingerprint && entry.moduleOrigin === moduleOrigin,
           );
           if (alreadyExists) {
             return;
@@ -3410,15 +3596,19 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             const openCase = nextCases.find(
               (entry) =>
                 !isOpsCaseTerminal(entry.status) &&
-                entry.moduleOrigin === signal.moduleOrigin &&
-                entry.relatedTrack === signal.relatedTrack &&
-                entry.category === signal.category &&
+                entry.moduleOrigin === moduleOrigin &&
+                entry.track === track &&
+                entry.category === category &&
                 entry.relatedProvider === signal.relatedProvider &&
                 entry.relatedDestination === signal.relatedDestination,
             );
             if (openCase) {
               createdCaseId = openCase.id;
               openCase.updatedAt = now;
+              openCase.lastSignalAt = detectedAt;
+              if (!openCase.linkedSignalIds.includes(signalId)) {
+                openCase.linkedSignalIds = [...openCase.linkedSignalIds, signalId];
+              }
               nextAudit.push({
                 id: uid("opsa"),
                 parentType: "Case",
@@ -3431,19 +3621,26 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             } else {
               const caseId = uid("opc");
               createdCaseId = caseId;
+              const slaProfileId = buildOpsSlaProfileId(category);
               nextCases.push({
                 id: caseId,
-                moduleOrigin: signal.moduleOrigin,
-                relatedTrack: signal.relatedTrack,
+                portalOrigin: track === "SMS" ? "sms-noc" : "voice-noc",
+                moduleOrigin,
+                track,
+                relatedTrack: track,
                 severity: signal.severity,
-                category: signal.category,
-                detectedAt: signal.detectedAt,
+                category,
+                detectedAt,
+                metadata,
                 relatedCompanyId: signal.relatedCompanyId,
                 relatedProvider: signal.relatedProvider,
                 relatedDestination: signal.relatedDestination,
                 description: signal.description,
-                status: "New",
-                slaProfileId: buildOpsSlaProfileId(signal.category),
+                status: "NEW",
+                slaProfileId,
+                slaDeadline: computeSlaDeadline(detectedAt, slaProfileId, signal.severity),
+                linkedSignalIds: [signalId],
+                lastSignalAt: detectedAt,
                 createdAt: now,
                 updatedAt: now,
               });
@@ -3460,6 +3657,12 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           }
           nextSignals.push({
             ...signal,
+            moduleOrigin,
+            track,
+            relatedTrack: track,
+            category,
+            detectedAt,
+            metadata,
             id: signalId,
             createdAt: now,
             createdCaseId,
@@ -3477,12 +3680,15 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     createOpsShift: (payload) => {
       const id = uid("opsh");
       const now = new Date().toISOString();
+      const payloadTrack = String(payload.track ?? "");
+      const track = payloadTrack === "VOICE" || payloadTrack === "Voice" ? "VOICE" : payloadTrack === "SMS" ? "SMS" : "BOTH";
       set((state) => ({
         ...state,
         opsShifts: [
           ...state.opsShifts,
           {
             ...payload,
+            track,
             id,
             userIds: Array.from(new Set(payload.userIds)),
             createdAt: now,
@@ -3499,6 +3705,12 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           entry.id === shift.id
             ? {
                 ...shift,
+                track:
+                  String(shift.track) === "VOICE" || String(shift.track) === "Voice"
+                    ? "VOICE"
+                    : String(shift.track) === "SMS"
+                      ? "SMS"
+                      : "BOTH",
                 userIds: Array.from(new Set(shift.userIds)),
                 updatedAt: new Date().toISOString(),
               }
@@ -3551,6 +3763,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           opsMonitoringSignals: Array.isArray(data.opsMonitoringSignals) ? data.opsMonitoringSignals : state.opsMonitoringSignals,
           opsAuditLogs: Array.isArray(data.opsAuditLogs) ? data.opsAuditLogs : state.opsAuditLogs,
           opsShifts: Array.isArray(data.opsShifts) ? data.opsShifts : state.opsShifts,
+          opsSlaProfiles: Array.isArray(data.opsSlaProfiles) ? data.opsSlaProfiles : state.opsSlaProfiles,
         }));
         return { ok: true, message: "Data imported successfully." };
       } catch {
@@ -3632,7 +3845,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 16,
+    version: 17,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -3649,6 +3862,7 @@ export const useAppStore = create<AppStore>()(
             opsMonitoringSignals?: Array<Record<string, unknown>>;
             opsAuditLogs?: Array<Record<string, unknown>>;
             opsShifts?: Array<Record<string, unknown>>;
+            opsSlaProfiles?: Array<Record<string, unknown>>;
             hrLegalEntities?: Array<Record<string, unknown>>;
             hrFxRates?: Array<Record<string, unknown>>;
             hrDepartments?: Array<Record<string, unknown>>;
@@ -4344,7 +4558,7 @@ export const useAppStore = create<AppStore>()(
                 raw.status === "Failed"
                   ? raw.status
                   : "Draft";
-              const priority = raw.priority === "Urgent" || raw.priority === "High" ? raw.priority : "Medium";
+              const priority = mapOpsSeverity(raw.priority);
               const assignedToRole =
                 raw.assignedToRole === "AM" ||
                 raw.assignedToRole === "NOC" ||
@@ -4352,7 +4566,7 @@ export const useAppStore = create<AppStore>()(
                 raw.assignedToRole === "Supervisor"
                   ? raw.assignedToRole
                   : "NOC";
-              const relatedTrack = raw.relatedTrack === "Voice" ? "Voice" : "SMS";
+              const relatedTrack = mapOpsTrack(raw.relatedTrack);
               const destinationRaw =
                 raw.destination && typeof raw.destination === "object" ? (raw.destination as Record<string, unknown>) : {};
               return {
@@ -4389,58 +4603,104 @@ export const useAppStore = create<AppStore>()(
         ? state.opsCases
             .map((row, idx) => {
               const raw = row as unknown as Record<string, unknown>;
-              const moduleOrigin =
-                raw.moduleOrigin === "ProviderIssues" ||
-                raw.moduleOrigin === "Losses" ||
-                raw.moduleOrigin === "NewAndLostTraffics" ||
-                raw.moduleOrigin === "TrafficComparison" ||
-                raw.moduleOrigin === "ScheduleTestResults" ||
-                raw.moduleOrigin === "FailedSmsOrCallAnalysis"
-                  ? raw.moduleOrigin
-                  : "ProviderIssues";
-              const severity = raw.severity === "Urgent" || raw.severity === "High" ? raw.severity : "Medium";
-              const category =
-                raw.category === "Loss" ||
-                raw.category === "KPI" ||
-                raw.category === "Traffic" ||
-                raw.category === "Provider" ||
-                raw.category === "Test" ||
-                raw.category === "Other"
-                  ? raw.category
-                  : "Other";
-              const status =
-                raw.status === "New" ||
-                raw.status === "InProgress" ||
-                raw.status === "Resolved" ||
-                raw.status === "Ignored" ||
-                raw.status === "Cancelled"
-                  ? raw.status
-                  : "New";
-              const slaProfileId = raw.slaProfileId === "LOSS_ALERT" ? "LOSS_ALERT" : "KPI_ALERT";
+              const moduleOrigin = mapOpsModuleOrigin(raw.moduleOrigin);
+              const category = mapOpsCategory(raw.category, moduleOrigin);
+              const severity = mapOpsSeverity(raw.severity);
+              const status = mapOpsCaseStatus(raw.status);
+              const track = mapOpsTrack(raw.track ?? raw.relatedTrack);
+              const detectedAt = typeof raw.detectedAt === "string" ? raw.detectedAt : new Date().toISOString();
+              const metadataRaw =
+                raw.metadata && typeof raw.metadata === "object" ? (raw.metadata as Partial<OpsCase["metadata"]> & Record<string, unknown>) : undefined;
+              const metadata = metadataRaw
+                ? ({
+                    ...buildFallbackOpsMetadata(category, detectedAt, typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined, typeof raw.relatedDestination === "string" ? raw.relatedDestination : undefined),
+                    ...metadataRaw,
+                    alertTime: typeof metadataRaw.alertTime === "string" ? metadataRaw.alertTime : detectedAt,
+                  } as OpsCase["metadata"])
+                : buildFallbackOpsMetadata(
+                    category,
+                    detectedAt,
+                    typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined,
+                    typeof raw.relatedDestination === "string" ? raw.relatedDestination : undefined,
+                  );
+              const rawSlaProfile = typeof raw.slaProfileId === "string" ? raw.slaProfileId : undefined;
+              const slaProfileId: OpsCase["slaProfileId"] =
+                rawSlaProfile === "LOSS" || rawSlaProfile === "KPI" || rawSlaProfile === "DEFAULT" || rawSlaProfile === "TEST"
+                  ? rawSlaProfile
+                  : rawSlaProfile === "LOSS_ALERT"
+                    ? "LOSS"
+                    : rawSlaProfile === "KPI_ALERT"
+                      ? "KPI"
+                      : buildOpsSlaProfileId(category);
+              const resolutionType = mapOpsResolutionType(raw.resolutionType);
+              const dispositionRaw =
+                raw.disposition && typeof raw.disposition === "object" ? (raw.disposition as Record<string, unknown>) : undefined;
+              const performedAtCandidate =
+                typeof dispositionRaw?.performedAt === "string"
+                  ? dispositionRaw.performedAt
+                  : status === "RESOLVED"
+                    ? (typeof raw.resolvedAt === "string" ? raw.resolvedAt : undefined)
+                    : status === "IGNORED"
+                      ? (typeof raw.ignoredAt === "string" ? raw.ignoredAt : undefined)
+                      : undefined;
+              const disposition =
+                resolutionType && performedAtCandidate
+                  ? {
+                      resolutionType,
+                      performedByUserId:
+                        typeof dispositionRaw?.performedByUserId === "string"
+                          ? dispositionRaw.performedByUserId
+                          : typeof raw.assignedToUserId === "string"
+                            ? raw.assignedToUserId
+                            : activeUserId,
+                      performedAt: performedAtCandidate,
+                      comment: typeof dispositionRaw?.comment === "string" ? dispositionRaw.comment : undefined,
+                    }
+                  : undefined;
+              const portalOriginRaw = typeof raw.portalOrigin === "string" ? raw.portalOrigin : undefined;
+              const portalOrigin: OpsCase["portalOrigin"] =
+                portalOriginRaw === "sms-noc" ||
+                portalOriginRaw === "voice-noc" ||
+                portalOriginRaw === "routing-noc" ||
+                portalOriginRaw === "am-noc-routing" ||
+                portalOriginRaw === "account-managers" ||
+                portalOriginRaw === "performance-audit"
+                  ? portalOriginRaw
+                  : track === "SMS"
+                    ? "sms-noc"
+                    : "voice-noc";
+              const linkedSignalIds = Array.isArray(raw.linkedSignalIds)
+                ? raw.linkedSignalIds.filter((entry): entry is string => typeof entry === "string")
+                : [];
               return {
                 id: typeof raw.id === "string" ? raw.id : `opc-migrated-${idx + 1}`,
+                portalOrigin,
                 moduleOrigin,
-                relatedTrack: raw.relatedTrack === "Voice" ? "Voice" : "SMS",
+                track,
+                relatedTrack: track,
                 severity,
                 category,
-                detectedAt: typeof raw.detectedAt === "string" ? raw.detectedAt : new Date().toISOString(),
+                detectedAt,
+                metadata,
                 relatedCompanyId: typeof raw.relatedCompanyId === "string" ? raw.relatedCompanyId : undefined,
                 relatedProvider: typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined,
                 relatedDestination: typeof raw.relatedDestination === "string" ? raw.relatedDestination : undefined,
                 description: typeof raw.description === "string" ? raw.description : "",
                 status,
                 slaProfileId,
+                slaDeadline:
+                  typeof raw.slaDeadline === "string"
+                    ? raw.slaDeadline
+                    : computeSlaDeadline(detectedAt, slaProfileId, severity),
+                linkedSignalIds,
+                lastSignalAt: typeof raw.lastSignalAt === "string" ? raw.lastSignalAt : detectedAt,
+                ttNumber: typeof raw.ttNumber === "string" ? raw.ttNumber : undefined,
+                ttRaisedAt: typeof raw.ttRaisedAt === "string" ? raw.ttRaisedAt : undefined,
                 resolvedAt: typeof raw.resolvedAt === "string" ? raw.resolvedAt : undefined,
                 ignoredAt: typeof raw.ignoredAt === "string" ? raw.ignoredAt : undefined,
                 cancelledAt: typeof raw.cancelledAt === "string" ? raw.cancelledAt : undefined,
-                resolutionType:
-                  raw.resolutionType === "Fixed" ||
-                  raw.resolutionType === "FalsePositive" ||
-                  raw.resolutionType === "PartnerIssue" ||
-                  raw.resolutionType === "PlannedWork" ||
-                  raw.resolutionType === "Unknown"
-                    ? raw.resolutionType
-                    : undefined,
+                resolutionType,
+                disposition,
                 assignedToUserId: typeof raw.assignedToUserId === "string" ? raw.assignedToUserId : undefined,
                 createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date().toISOString(),
                 updatedAt:
@@ -4458,32 +4718,39 @@ export const useAppStore = create<AppStore>()(
         ? state.opsMonitoringSignals
             .map((row, idx) => {
               const raw = row as unknown as Record<string, unknown>;
-              const moduleOrigin =
-                raw.moduleOrigin === "ProviderIssues" ||
-                raw.moduleOrigin === "Losses" ||
-                raw.moduleOrigin === "NewAndLostTraffics" ||
-                raw.moduleOrigin === "TrafficComparison" ||
-                raw.moduleOrigin === "ScheduleTestResults" ||
-                raw.moduleOrigin === "FailedSmsOrCallAnalysis"
-                  ? raw.moduleOrigin
-                  : "ProviderIssues";
-              const category =
-                raw.category === "Loss" ||
-                raw.category === "KPI" ||
-                raw.category === "Traffic" ||
-                raw.category === "Provider" ||
-                raw.category === "Test" ||
-                raw.category === "Other"
-                  ? raw.category
-                  : "Other";
-              const severity = raw.severity === "Urgent" || raw.severity === "High" ? raw.severity : "Medium";
+              const moduleOrigin = mapOpsModuleOrigin(raw.moduleOrigin);
+              const category = mapOpsCategory(raw.category, moduleOrigin);
+              const severity = mapOpsSeverity(raw.severity);
+              const track = mapOpsTrack(raw.track ?? raw.relatedTrack);
+              const detectedAt = typeof raw.detectedAt === "string" ? raw.detectedAt : new Date().toISOString();
+              const metadataRaw =
+                raw.metadata && typeof raw.metadata === "object" ? (raw.metadata as Partial<OpsMonitoringSignal["metadata"]> & Record<string, unknown>) : undefined;
+              const metadata = metadataRaw
+                ? ({
+                    ...buildFallbackOpsMetadata(
+                      category,
+                      detectedAt,
+                      typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined,
+                      typeof raw.relatedDestination === "string" ? raw.relatedDestination : undefined,
+                    ),
+                    ...metadataRaw,
+                    alertTime: typeof metadataRaw.alertTime === "string" ? metadataRaw.alertTime : detectedAt,
+                  } as OpsMonitoringSignal["metadata"])
+                : buildFallbackOpsMetadata(
+                    category,
+                    detectedAt,
+                    typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined,
+                    typeof raw.relatedDestination === "string" ? raw.relatedDestination : undefined,
+                  );
               return {
                 id: typeof raw.id === "string" ? raw.id : `opsg-migrated-${idx + 1}`,
                 moduleOrigin,
-                relatedTrack: raw.relatedTrack === "Voice" ? "Voice" : "SMS",
+                track,
+                relatedTrack: track,
                 severity,
                 category,
-                detectedAt: typeof raw.detectedAt === "string" ? raw.detectedAt : new Date().toISOString(),
+                detectedAt,
+                metadata,
                 fingerprint: typeof raw.fingerprint === "string" ? raw.fingerprint : `fingerprint-${idx + 1}`,
                 relatedCompanyId: typeof raw.relatedCompanyId === "string" ? raw.relatedCompanyId : undefined,
                 relatedProvider: typeof raw.relatedProvider === "string" ? raw.relatedProvider : undefined,
@@ -4502,20 +4769,18 @@ export const useAppStore = create<AppStore>()(
             .map((row, idx) => {
               const raw = row as unknown as Record<string, unknown>;
               const parentType = raw.parentType === "Case" ? "Case" : "Request";
-              const actionType =
-                typeof raw.actionType === "string"
-                  ? raw.actionType
-                  : parentType === "Case"
-                    ? "COMMENT"
-                    : "SEND";
+              const actionType = mapOpsAuditActionType(parentType, raw.actionType);
               return {
                 id: typeof raw.id === "string" ? raw.id : `opsa-migrated-${idx + 1}`,
                 parentType,
                 parentId: typeof raw.parentId === "string" ? raw.parentId : "",
-                actionType: actionType as OpsAuditLogEntry["actionType"],
+                actionType,
                 performedByUserId:
                   typeof raw.performedByUserId === "string" ? raw.performedByUserId : activeUserId,
                 comment: typeof raw.comment === "string" ? raw.comment : undefined,
+                resolutionType: mapOpsResolutionType(raw.resolutionType),
+                ttNumber: typeof raw.ttNumber === "string" ? raw.ttNumber : undefined,
+                caseActionId: typeof raw.caseActionId === "string" ? raw.caseActionId : undefined,
                 timestamp: typeof raw.timestamp === "string" ? raw.timestamp : new Date().toISOString(),
               } as OpsAuditLogEntry;
             })
@@ -4529,7 +4794,14 @@ export const useAppStore = create<AppStore>()(
               const raw = row as unknown as Record<string, unknown>;
               return {
                 id: typeof raw.id === "string" ? raw.id : `opsh-migrated-${idx + 1}`,
-                track: raw.track === "SMS" || raw.track === "Voice" || raw.track === "Both" ? raw.track : "Both",
+                track:
+                  raw.track === "SMS" || raw.track === "VOICE" || raw.track === "Voice" || raw.track === "BOTH" || raw.track === "Both"
+                    ? raw.track === "Voice"
+                      ? "VOICE"
+                      : raw.track === "Both"
+                        ? "BOTH"
+                        : raw.track
+                    : "BOTH",
                 startsAt: typeof raw.startsAt === "string" ? raw.startsAt : new Date().toISOString(),
                 endsAt: typeof raw.endsAt === "string" ? raw.endsAt : new Date().toISOString(),
                 userIds: Array.isArray(raw.userIds) ? raw.userIds.filter((entry): entry is string => typeof entry === "string") : [],
@@ -4544,6 +4816,32 @@ export const useAppStore = create<AppStore>()(
             })
             .filter((entry) => Boolean(entry.id))
         : fallback.opsShifts;
+      const opsSlaProfiles = Array.isArray(state.opsSlaProfiles)
+        ? state.opsSlaProfiles
+            .map((row, idx) => {
+              const raw = row as unknown as Record<string, unknown>;
+              const idRaw = typeof raw.id === "string" ? raw.id : "DEFAULT";
+              const id = idRaw === "DEFAULT" || idRaw === "LOSS" || idRaw === "KPI" || idRaw === "TEST" ? idRaw : "DEFAULT";
+              const targetsRaw =
+                raw.targetsMs && typeof raw.targetsMs === "object" ? (raw.targetsMs as Record<string, unknown>) : {};
+              const urgent =
+                typeof targetsRaw.URGENT === "number" && Number.isFinite(targetsRaw.URGENT) ? targetsRaw.URGENT : 30 * 60 * 1000;
+              const high =
+                typeof targetsRaw.HIGH === "number" && Number.isFinite(targetsRaw.HIGH) ? targetsRaw.HIGH : 2 * 60 * 60 * 1000;
+              const medium =
+                typeof targetsRaw.MEDIUM === "number" && Number.isFinite(targetsRaw.MEDIUM) ? targetsRaw.MEDIUM : 4 * 60 * 60 * 1000;
+              return {
+                id,
+                name: typeof raw.name === "string" ? raw.name : `SLA Profile ${idx + 1}`,
+                targetsMs: {
+                  URGENT: urgent,
+                  HIGH: high,
+                  MEDIUM: medium,
+                },
+              };
+            })
+            .filter((entry) => Boolean(entry.id))
+        : fallback.opsSlaProfiles;
 
       const hrLegalEntities = Array.isArray(state.hrLegalEntities)
         ? (state.hrLegalEntities as unknown as HrLegalEntity[])
@@ -4836,6 +5134,7 @@ export const useAppStore = create<AppStore>()(
           : fallback.opsMonitoringSignals,
         opsAuditLogs: Array.isArray(state.opsAuditLogs) ? opsAuditLogs : fallback.opsAuditLogs,
         opsShifts: Array.isArray(state.opsShifts) ? opsShifts : fallback.opsShifts,
+        opsSlaProfiles: Array.isArray(state.opsSlaProfiles) ? opsSlaProfiles : fallback.opsSlaProfiles,
       } as unknown as AppStore;
     },
   }),

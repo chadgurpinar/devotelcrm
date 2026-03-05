@@ -2,6 +2,7 @@ import {
   Company,
   OpsAuditLogEntry,
   OpsCase,
+  OpsCaseActionType,
   OpsCaseCategory,
   OpsCaseStatus,
   OpsMonitoringModuleOrigin,
@@ -9,8 +10,10 @@ import {
   OpsRequest,
   OpsRequestStatus,
   OpsRequestType,
+  OpsResolutionType,
   OpsSeverity,
   OpsShift,
+  OpsSlaProfile,
   OpsSlaProfileId,
   OpsTrack,
   User,
@@ -26,15 +29,16 @@ export interface SeedOpsResult {
   opsRequests: OpsRequest[];
   opsAuditLogs: OpsAuditLogEntry[];
   opsShifts: OpsShift[];
+  opsSlaProfiles: OpsSlaProfile[];
 }
 
 const MODULE_ORIGINS: OpsMonitoringModuleOrigin[] = [
-  "ProviderIssues",
-  "Losses",
-  "NewAndLostTraffics",
-  "TrafficComparison",
-  "ScheduleTestResults",
-  "FailedSmsOrCallAnalysis",
+  "PROVIDER_ISSUES",
+  "LOSSES",
+  "NEW_AND_LOST_TRAFFICS",
+  "TRAFFIC_COMPARISON",
+  "SCHEDULE_TEST_RESULTS",
+  "FAILED_SMS_OR_CALL_ANALYSIS",
 ];
 
 const REQUEST_TYPES: OpsRequestType[] = [
@@ -45,22 +49,65 @@ const REQUEST_TYPES: OpsRequestType[] = [
   "InterconnectionRequest",
 ];
 
-const CASE_STATUSES: OpsCaseStatus[] = ["New", "InProgress", "Resolved", "Ignored", "Cancelled"];
+const CASE_STATUSES: OpsCaseStatus[] = ["NEW", "IN_PROGRESS", "RESOLVED", "IGNORED", "CANCELLED"];
 const REQUEST_STATUSES: OpsRequestStatus[] = ["Draft", "Sent", "InProgress", "Done", "Cancelled", "Failed"];
-const DESTINATIONS = ["North Zone", "South Zone", "East Corridor", "West Corridor", "Metro Core", "Rural Mesh"];
+const DESTINATIONS = ["United Kingdom", "Spain", "Germany", "Turkey", "UAE", "France"];
 const PROVIDERS = ["Carrier Sigma", "Carrier Nova", "Provider Orbit", "Provider Helix", "Gateway Flux", "Node Prism"];
+const CUSTOMERS = ["NovaTel", "Blue Signal", "Astera Global", "MetroCom", "InfiniRoute"];
+
+const OPS_SLA_PROFILES: OpsSlaProfile[] = [
+  {
+    id: "DEFAULT",
+    name: "Default SLA",
+    targetsMs: {
+      URGENT: 30 * 60 * 1000,
+      HIGH: 2 * 60 * 60 * 1000,
+      MEDIUM: 4 * 60 * 60 * 1000,
+    },
+  },
+  {
+    id: "LOSS",
+    name: "Loss Alerts",
+    targetsMs: {
+      URGENT: 30 * 60 * 1000,
+      HIGH: 2 * 60 * 60 * 1000,
+      MEDIUM: 4 * 60 * 60 * 1000,
+    },
+  },
+  {
+    id: "KPI",
+    name: "KPI Alerts",
+    targetsMs: {
+      URGENT: 45 * 60 * 1000,
+      HIGH: 3 * 60 * 60 * 1000,
+      MEDIUM: 6 * 60 * 60 * 1000,
+    },
+  },
+  {
+    id: "TEST",
+    name: "Test Results",
+    targetsMs: {
+      URGENT: 20 * 60 * 1000,
+      HIGH: 90 * 60 * 1000,
+      MEDIUM: 3 * 60 * 60 * 1000,
+    },
+  },
+];
 
 function categoryFromModule(moduleOrigin: OpsMonitoringModuleOrigin): OpsCaseCategory {
-  if (moduleOrigin === "Losses") return "Loss";
-  if (moduleOrigin === "ProviderIssues") return "Provider";
-  if (moduleOrigin === "TrafficComparison" || moduleOrigin === "NewAndLostTraffics") return "Traffic";
-  if (moduleOrigin === "ScheduleTestResults") return "Test";
-  if (moduleOrigin === "FailedSmsOrCallAnalysis") return "KPI";
-  return "Other";
+  if (moduleOrigin === "PROVIDER_ISSUES") return "PROVIDER_ISSUE";
+  if (moduleOrigin === "LOSSES") return "LOSSES";
+  if (moduleOrigin === "NEW_AND_LOST_TRAFFICS") return "NEW_LOST_TRAFFIC";
+  if (moduleOrigin === "TRAFFIC_COMPARISON") return "TRAFFIC_COMPARISON";
+  if (moduleOrigin === "SCHEDULE_TEST_RESULTS") return "SCHEDULE_TEST_RESULT";
+  return "FAILED_SMS_CALL";
 }
 
 function slaProfileFromCategory(category: OpsCaseCategory): OpsSlaProfileId {
-  return category === "Loss" ? "LOSS_ALERT" : "KPI_ALERT";
+  if (category === "LOSSES") return "LOSS";
+  if (category === "SCHEDULE_TEST_RESULT") return "TEST";
+  if (category === "FAILED_SMS_CALL") return "KPI";
+  return "DEFAULT";
 }
 
 function requestAssignedRole(requestType: OpsRequestType): OpsRequest["assignedToRole"] {
@@ -77,15 +124,106 @@ function requestDoneAction(requestType: OpsRequestType): "ROUTING_DONE" | "TT_SE
   return "ROUTING_DONE";
 }
 
-export function getSlaDurationMs(profile: OpsSlaProfileId, severity: OpsSeverity): number {
-  if (profile === "LOSS_ALERT") {
-    if (severity === "Urgent") return 30 * 60 * 1000;
-    if (severity === "High") return 60 * 60 * 1000;
-    return 2 * 60 * 60 * 1000;
+function actionFromResolution(resolutionType: OpsResolutionType | undefined): OpsCaseActionType {
+  if (resolutionType === "TT_RAISED") return "TT_RAISED";
+  if (resolutionType === "ROUTING_CHANGED") return "ROUTING_CHANGED";
+  if (resolutionType === "ACCOUNT_MANAGER_INFORMED") return "ACCOUNT_MANAGER_INFORMED";
+  if (resolutionType === "ROUTING_INFORMED") return "ROUTING_INFORMED";
+  if (resolutionType === "IGNORED") return "IGNORED";
+  return "CHECKED_NO_ISSUE";
+}
+
+function withMinutes(baseIso: string, deltaMinutes: number): string {
+  return new Date(new Date(baseIso).getTime() + deltaMinutes * 60 * 1000).toISOString();
+}
+
+function updateMetadataAlertTime(metadata: OpsCase["metadata"], alertTime: string): OpsCase["metadata"] {
+  return {
+    ...metadata,
+    alertTime,
+  };
+}
+
+function buildSignalMetadata(params: {
+  moduleOrigin: OpsMonitoringModuleOrigin;
+  track: OpsTrack;
+  idx: number;
+  alertTime: string;
+  providerName: string;
+  destination: string;
+  customerName: string;
+}): OpsCase["metadata"] {
+  const { moduleOrigin, track, idx, alertTime, providerName, destination, customerName } = params;
+  const category = categoryFromModule(moduleOrigin);
+  if (category === "PROVIDER_ISSUE") {
+    return {
+      providerName,
+      smsCount: track === "SMS" ? 1400 + idx * 11 : undefined,
+      callCount: track === "VOICE" ? 980 + idx * 9 : undefined,
+      dlrValue: track === "SMS" ? 92 - (idx % 13) : undefined,
+      asrValue: track === "VOICE" ? 78 - (idx % 12) : undefined,
+      alertTime,
+    };
   }
-  if (severity === "Urgent") return 60 * 60 * 1000;
-  if (severity === "High") return 4 * 60 * 60 * 1000;
-  return 8 * 60 * 60 * 1000;
+  if (category === "LOSSES") {
+    return {
+      customerName,
+      destination,
+      lossAmount: 400 + idx * 37,
+      alertTime,
+    };
+  }
+  if (category === "NEW_LOST_TRAFFIC") {
+    return {
+      customerName,
+      destination,
+      attemptCount: 550 + idx * 14,
+      alertTime,
+    };
+  }
+  if (category === "TRAFFIC_COMPARISON") {
+    return {
+      comparisonType: idx % 2 === 0 ? "DECREASE" : "INCREASE",
+      comparisonPercentage: 8 + (idx % 21),
+      alertTime,
+    };
+  }
+  if (category === "SCHEDULE_TEST_RESULT") {
+    return {
+      providerName,
+      destination,
+      testResult: idx % 2 === 0 ? "FAILED" : "DELAYED",
+      testToolName: track === "SMS" ? "TELQ" : "ARPTEL",
+      alertTime,
+    };
+  }
+  return {
+    customerName,
+    destination,
+    attemptCount: 280 + idx * 10,
+    alertTime,
+  };
+}
+
+export function getSlaDurationMs(profile: OpsSlaProfileId, severity: OpsSeverity): number {
+  if (profile === "LOSS") {
+    if (severity === "URGENT") return 30 * 60 * 1000;
+    if (severity === "HIGH") return 2 * 60 * 60 * 1000;
+    return 4 * 60 * 60 * 1000;
+  }
+  if (profile === "TEST") {
+    if (severity === "URGENT") return 20 * 60 * 1000;
+    if (severity === "HIGH") return 90 * 60 * 1000;
+    return 3 * 60 * 60 * 1000;
+  }
+  if (profile === "KPI") {
+    if (severity === "URGENT") return 45 * 60 * 1000;
+    if (severity === "HIGH") return 3 * 60 * 60 * 1000;
+    return 6 * 60 * 60 * 1000;
+  }
+  if (severity === "URGENT") return 30 * 60 * 1000;
+  if (severity === "HIGH") return 2 * 60 * 60 * 1000;
+  return 4 * 60 * 60 * 1000;
 }
 
 export function seedOps(params: {
@@ -97,31 +235,44 @@ export function seedOps(params: {
   baseNowIso: string;
   activeUserId: string;
 }): SeedOpsResult {
-  const { rng, idFactory, scenario, users, companies, baseNowIso, activeUserId } = params;
+  const { idFactory, scenario, users, companies, baseNowIso, activeUserId } = params;
   const nocAssignableUsers = users.filter((user) =>
     ["NOC", "Interconnection Manager", "Head of SMS", "Head of Voice"].includes(user.role),
   );
-  const trackValues: OpsTrack[] = ["SMS", "Voice"];
+  const trackValues: OpsTrack[] = ["SMS", "VOICE"];
 
   const opsMonitoringSignals: OpsMonitoringSignal[] = Array.from({ length: scenario.counts.opsSignals }).map((_, idx) => {
     const moduleOrigin = MODULE_ORIGINS[idx % MODULE_ORIGINS.length];
     const category = categoryFromModule(moduleOrigin);
-    const relatedTrack = trackValues[idx % trackValues.length];
-    const severity: OpsSeverity = idx % 9 === 0 ? "Urgent" : idx % 3 === 0 ? "High" : "Medium";
+    const track = trackValues[idx % trackValues.length];
+    const severity: OpsSeverity = idx % 9 === 0 ? "URGENT" : idx % 3 === 0 ? "HIGH" : "MEDIUM";
     const relatedCompany = idx % 5 === 0 ? undefined : companies[(idx * 3 + 1) % companies.length];
-    const detectedAt = addDaysToIso(baseNowIso, -Math.floor(idx / 3));
+    const detectedAt = withMinutes(baseNowIso, -(idx + 1) * 38);
+    const providerName = PROVIDERS[idx % PROVIDERS.length];
+    const destination = DESTINATIONS[(idx + 2) % DESTINATIONS.length];
+    const customerName = CUSTOMERS[idx % CUSTOMERS.length];
     return {
       id: idFactory.next("opsSignal"),
       moduleOrigin,
-      relatedTrack,
+      track,
+      relatedTrack: track,
       severity,
       category,
       detectedAt,
-      fingerprint: `fp-${moduleOrigin}-${relatedTrack}-${idx % 11}`,
+      metadata: buildSignalMetadata({
+        moduleOrigin,
+        track,
+        idx,
+        alertTime: detectedAt,
+        providerName,
+        destination,
+        customerName,
+      }),
+      fingerprint: `fp-${moduleOrigin}-${track}-${destination}-${providerName}-${idx % 11}`,
       relatedCompanyId: relatedCompany?.id,
-      relatedProvider: PROVIDERS[idx % PROVIDERS.length],
-      relatedDestination: DESTINATIONS[(idx + 2) % DESTINATIONS.length],
-      description: `${moduleOrigin} alert for ${relatedTrack} route ${idx + 1}.`,
+      relatedProvider: providerName,
+      relatedDestination: destination,
+      description: `${moduleOrigin.replace(/_/g, " ")} alert for ${track} route ${idx + 1}.`,
       rawPayload: {
         source: "seed-v2",
         sample: idx + 1,
@@ -135,49 +286,83 @@ export function seedOps(params: {
     const createdAt = signal.createdAt;
     let detectedAt = signal.detectedAt;
     const slaProfileId = slaProfileFromCategory(signal.category);
-    if (scenario.toggles.forceOpsBreaches && (status === "New" || status === "InProgress") && idx % 3 === 0) {
+    if (scenario.toggles.forceOpsBreaches && (status === "NEW" || status === "IN_PROGRESS") && idx % 3 === 0) {
       const breachWindowMs = getSlaDurationMs(slaProfileId, signal.severity) + 30 * 60 * 1000;
       detectedAt = new Date(new Date(baseNowIso).getTime() - breachWindowMs).toISOString();
     }
-    const updatedAt = new Date(new Date(createdAt).getTime() + (idx % 5 + 1) * 45 * 60 * 1000).toISOString();
+    const slaDeadline = new Date(new Date(detectedAt).getTime() + getSlaDurationMs(slaProfileId, signal.severity)).toISOString();
+    const updatedAt = withMinutes(createdAt, (idx % 5 + 1) * 45);
+    const resolvedAt = status === "RESOLVED" ? updatedAt : undefined;
+    const ignoredAt = status === "IGNORED" ? updatedAt : undefined;
+    const cancelledAt = status === "CANCELLED" ? updatedAt : undefined;
+    const baseResolution: OpsResolutionType | undefined =
+      status === "RESOLVED"
+        ? idx % 4 === 0
+          ? "TT_RAISED"
+          : idx % 4 === 1
+            ? "ROUTING_CHANGED"
+            : idx % 4 === 2
+              ? "ACCOUNT_MANAGER_INFORMED"
+              : "NO_ISSUE"
+        : status === "IGNORED"
+          ? "IGNORED"
+          : undefined;
+    const ttRaised = baseResolution === "TT_RAISED";
+    const dispositionTime = status === "RESOLVED" ? resolvedAt : status === "IGNORED" ? ignoredAt : undefined;
     return {
       id: idFactory.next("opsCase"),
+      portalOrigin: signal.track === "SMS" ? "sms-noc" : "voice-noc",
       moduleOrigin: signal.moduleOrigin,
-      relatedTrack: signal.relatedTrack,
+      track: signal.track,
+      relatedTrack: signal.track,
       severity: signal.severity,
       category: signal.category,
       detectedAt,
+      metadata: updateMetadataAlertTime(signal.metadata, detectedAt),
       relatedCompanyId: signal.relatedCompanyId,
       relatedProvider: signal.relatedProvider,
       relatedDestination: signal.relatedDestination,
       description: signal.description,
       status,
       slaProfileId,
-      resolvedAt: status === "Resolved" ? updatedAt : undefined,
-      ignoredAt: status === "Ignored" ? updatedAt : undefined,
-      cancelledAt: status === "Cancelled" ? updatedAt : undefined,
-      resolutionType: status === "Resolved" ? (idx % 2 === 0 ? "Fixed" : "PartnerIssue") : undefined,
+      slaDeadline,
+      linkedSignalIds: [signal.id],
+      lastSignalAt: detectedAt,
+      ttNumber: ttRaised ? `TT-${1000 + idx}` : undefined,
+      ttRaisedAt: ttRaised && dispositionTime ? withMinutes(dispositionTime, -5) : undefined,
+      resolvedAt,
+      ignoredAt,
+      cancelledAt,
+      resolutionType: baseResolution,
+      disposition:
+        dispositionTime && baseResolution
+          ? {
+              resolutionType: baseResolution,
+              performedByUserId: nocAssignableUsers[idx % nocAssignableUsers.length]?.id ?? activeUserId,
+              performedAt: dispositionTime,
+              comment: "Synthetic case disposition from seeded workflow.",
+            }
+          : undefined,
       assignedToUserId: nocAssignableUsers[idx % nocAssignableUsers.length]?.id,
       createdAt,
       updatedAt,
     };
   });
 
-  const caseById = new Map(opsCases.map((row) => [row.id, row]));
   const opsRequests: OpsRequest[] = Array.from({ length: scenario.counts.opsRequests }).map((_, idx) => {
     const requestType = REQUEST_TYPES[idx % REQUEST_TYPES.length];
     const status = REQUEST_STATUSES[idx % REQUEST_STATUSES.length];
     const linkedCase = idx % 2 === 0 ? opsCases[idx % opsCases.length] : undefined;
-    const createdAt = addDaysToIso(baseNowIso, -Math.floor(idx / 2));
-    const updatedAt = new Date(new Date(createdAt).getTime() + (idx % 6 + 1) * 35 * 60 * 1000).toISOString();
+    const createdAt = withMinutes(baseNowIso, -(idx + 2) * 57);
+    const updatedAt = withMinutes(createdAt, (idx % 6 + 1) * 35);
     return {
       id: idFactory.next("opsRequest"),
       requestType,
       createdByUserId: users[idx % users.length]?.id ?? activeUserId,
       assignedToRole: requestAssignedRole(requestType),
-      priority: linkedCase?.severity ?? (idx % 7 === 0 ? "Urgent" : idx % 3 === 0 ? "High" : "Medium"),
+      priority: linkedCase?.severity ?? (idx % 7 === 0 ? "URGENT" : idx % 3 === 0 ? "HIGH" : "MEDIUM"),
       relatedCompanyId: linkedCase?.relatedCompanyId ?? companies[(idx + 3) % companies.length]?.id,
-      relatedTrack: linkedCase?.relatedTrack ?? trackValues[idx % trackValues.length],
+      relatedTrack: linkedCase?.track ?? trackValues[idx % trackValues.length],
       destination: {
         country: linkedCase?.relatedDestination ?? DESTINATIONS[idx % DESTINATIONS.length],
         operator: linkedCase?.relatedProvider ?? PROVIDERS[idx % PROVIDERS.length],
@@ -198,7 +383,6 @@ export function seedOps(params: {
     });
   };
 
-  // Case audit timeline
   opsCases.forEach((opsCase, idx) => {
     const actor = opsCase.assignedToUserId ?? users[idx % users.length]?.id ?? activeUserId;
     pushAudit({
@@ -206,7 +390,7 @@ export function seedOps(params: {
       parentId: opsCase.id,
       actionType: "CREATED_AUTO",
       performedByUserId: actor,
-      comment: "Case created from monitoring signal.",
+      comment: "Case auto-created from monitoring signal.",
       timestamp: opsCase.createdAt,
     });
     if (opsCase.assignedToUserId) {
@@ -216,37 +400,31 @@ export function seedOps(params: {
         actionType: "ASSIGN",
         performedByUserId: actor,
         comment: `Assigned to ${opsCase.assignedToUserId}.`,
-        timestamp: new Date(new Date(opsCase.createdAt).getTime() + 60 * 1000).toISOString(),
+        timestamp: withMinutes(opsCase.createdAt, 1),
       });
     }
-    if (opsCase.status === "InProgress" || opsCase.status === "Resolved" || opsCase.status === "Ignored" || opsCase.status === "Cancelled") {
+    if (opsCase.status === "IN_PROGRESS" || opsCase.status === "RESOLVED" || opsCase.status === "IGNORED" || opsCase.status === "CANCELLED") {
       pushAudit({
         parentType: "Case",
         parentId: opsCase.id,
         actionType: "START",
         performedByUserId: actor,
-        timestamp: new Date(new Date(opsCase.createdAt).getTime() + 2 * 60 * 1000).toISOString(),
+        comment: "Work started on this case.",
+        timestamp: withMinutes(opsCase.createdAt, 2),
       });
     }
-    if (opsCase.status === "Resolved") {
+    if (opsCase.status === "RESOLVED" || opsCase.status === "IGNORED") {
       pushAudit({
         parentType: "Case",
         parentId: opsCase.id,
-        actionType: "RESOLVE",
+        actionType: actionFromResolution(opsCase.resolutionType),
         performedByUserId: actor,
-        comment: "Synthetic resolution complete.",
-        timestamp: opsCase.resolvedAt ?? opsCase.updatedAt,
+        comment: "Synthetic case disposition complete.",
+        resolutionType: opsCase.resolutionType,
+        ttNumber: opsCase.ttNumber,
+        timestamp: opsCase.disposition?.performedAt ?? opsCase.updatedAt,
       });
-    } else if (opsCase.status === "Ignored") {
-      pushAudit({
-        parentType: "Case",
-        parentId: opsCase.id,
-        actionType: "IGNORE",
-        performedByUserId: actor,
-        comment: "Synthetic ignored case rationale.",
-        timestamp: opsCase.ignoredAt ?? opsCase.updatedAt,
-      });
-    } else if (opsCase.status === "Cancelled") {
+    } else if (opsCase.status === "CANCELLED") {
       pushAudit({
         parentType: "Case",
         parentId: opsCase.id,
@@ -258,24 +436,32 @@ export function seedOps(params: {
     }
   });
 
-  // Request audit timeline (request lifecycle actions only)
-  opsRequests.forEach((request) => {
-    const actor = request.createdByUserId;
-    if (request.status === "Draft") return;
+  opsRequests.forEach((request, idx) => {
+    const actor = request.createdByUserId || users[idx % users.length]?.id || activeUserId;
     pushAudit({
       parentType: "Request",
       parentId: request.id,
-      actionType: "SEND",
+      actionType: "CREATED_MANUAL",
       performedByUserId: actor,
-      timestamp: new Date(new Date(request.createdAt).getTime() + 60 * 1000).toISOString(),
+      comment: "Request created in seed workflow.",
+      timestamp: request.createdAt,
     });
+    if (request.status !== "Draft") {
+      pushAudit({
+        parentType: "Request",
+        parentId: request.id,
+        actionType: "SEND",
+        performedByUserId: actor,
+        timestamp: withMinutes(request.createdAt, 1),
+      });
+    }
     if (request.status === "InProgress" || request.status === "Done" || request.status === "Cancelled" || request.status === "Failed") {
       pushAudit({
         parentType: "Request",
         parentId: request.id,
         actionType: "START",
         performedByUserId: actor,
-        timestamp: new Date(new Date(request.createdAt).getTime() + 4 * 60 * 1000).toISOString(),
+        timestamp: withMinutes(request.createdAt, 2),
       });
     }
     if (request.status === "Done") {
@@ -292,7 +478,7 @@ export function seedOps(params: {
         parentId: request.id,
         actionType: "CANCELLED",
         performedByUserId: actor,
-        comment: "Synthetic cancellation note.",
+        comment: "Synthetic cancelled request.",
         timestamp: request.updatedAt,
       });
     } else if (request.status === "Failed") {
@@ -301,53 +487,36 @@ export function seedOps(params: {
         parentId: request.id,
         actionType: "MARK_FAILED",
         performedByUserId: actor,
-        comment: "Synthetic failure note.",
+        comment: "Synthetic failed request.",
         timestamp: request.updatedAt,
       });
     }
   });
 
-  // Link a subset of signals to cases.
-  const caseIds = opsCases.map((row) => row.id);
-  const linkedSignals = opsMonitoringSignals.map((signal, idx) => ({
-    ...signal,
-    createdCaseId: idx < caseIds.length && idx % 2 === 0 ? caseIds[idx] : undefined,
-  }));
-
-  const shiftTemplates: Array<{ startHour: number; endHour: number; track: OpsShift["track"] }> = [
-    { startHour: 0, endHour: 8, track: "Both" },
-    { startHour: 8, endHour: 16, track: "SMS" },
-    { startHour: 16, endHour: 24, track: "Voice" },
-  ];
-  const opsShifts: OpsShift[] = [];
-  const dayCount = Math.max(1, Math.ceil(scenario.counts.opsShifts / shiftTemplates.length));
-  for (let day = 0; day < dayCount; day += 1) {
-    shiftTemplates.forEach((template, idx) => {
-      if (opsShifts.length >= scenario.counts.opsShifts) return;
-      const startsAt = new Date("2026-03-20T00:00:00.000Z");
-      startsAt.setUTCDate(startsAt.getUTCDate() + day);
-      startsAt.setUTCHours(template.startHour, 0, 0, 0);
-      const endsAt = new Date(startsAt);
-      endsAt.setUTCHours(template.endHour === 24 ? 23 : template.endHour, template.endHour === 24 ? 59 : 0, 0, 0);
-      const firstUser = nocAssignableUsers[(day + idx) % nocAssignableUsers.length]?.id ?? activeUserId;
-      const secondUser = nocAssignableUsers[(day + idx + 1) % nocAssignableUsers.length]?.id ?? activeUserId;
-      opsShifts.push({
-        id: idFactory.next("opsShift"),
-        track: template.track,
-        startsAt: startsAt.toISOString(),
-        endsAt: endsAt.toISOString(),
-        userIds: Array.from(new Set([firstUser, secondUser])),
-        createdAt: startsAt.toISOString(),
-        updatedAt: startsAt.toISOString(),
-      });
-    });
-  }
+  const opsShifts: OpsShift[] = Array.from({ length: scenario.counts.opsShifts }).map((_, idx) => {
+    const startsAt = addDaysToIso(baseNowIso, -(idx + 1));
+    const endsAt = addDaysToIso(startsAt, 1);
+    const track: OpsShift["track"] = idx % 3 === 0 ? "BOTH" : idx % 2 === 0 ? "SMS" : "VOICE";
+    const userIds = [users[idx % users.length]?.id, users[(idx + 2) % users.length]?.id, users[(idx + 4) % users.length]?.id].filter(
+      (id): id is string => Boolean(id),
+    );
+    return {
+      id: idFactory.next("opsShift"),
+      track,
+      startsAt,
+      endsAt,
+      userIds: Array.from(new Set(userIds)),
+      createdAt: startsAt,
+      updatedAt: startsAt,
+    };
+  });
 
   return {
-    opsMonitoringSignals: linkedSignals.sort((left, right) => left.id.localeCompare(right.id)),
-    opsCases: opsCases.sort((left, right) => left.id.localeCompare(right.id)),
-    opsRequests: opsRequests.sort((left, right) => left.id.localeCompare(right.id)),
-    opsAuditLogs: opsAuditLogs.sort((left, right) => left.timestamp.localeCompare(right.timestamp) || left.id.localeCompare(right.id)),
-    opsShifts: opsShifts.sort((left, right) => left.id.localeCompare(right.id)),
+    opsMonitoringSignals,
+    opsCases,
+    opsRequests,
+    opsAuditLogs,
+    opsShifts,
+    opsSlaProfiles: OPS_SLA_PROFILES.map((profile) => ({ ...profile })),
   };
 }

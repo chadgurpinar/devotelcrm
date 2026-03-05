@@ -90,6 +90,7 @@ function buildCounts(db: DbState): Record<keyof DbState, number> {
     opsMonitoringSignals: db.opsMonitoringSignals.length,
     opsAuditLogs: db.opsAuditLogs.length,
     opsShifts: db.opsShifts.length,
+    opsSlaProfiles: db.opsSlaProfiles.length,
     outbox: db.outbox.length,
   };
 }
@@ -187,11 +188,11 @@ function evaluateCaseBreach(caseRow: OpsCase, nowIso: string): boolean {
   const detectedAtMs = new Date(caseRow.detectedAt).getTime();
   const dueAt = detectedAtMs + durationMs;
   const stopAtIso =
-    caseRow.status === "Resolved"
+    caseRow.status === "RESOLVED"
       ? caseRow.resolvedAt
-      : caseRow.status === "Ignored"
+      : caseRow.status === "IGNORED"
         ? caseRow.ignoredAt
-        : caseRow.status === "Cancelled"
+        : caseRow.status === "CANCELLED"
           ? caseRow.cancelledAt
           : nowIso;
   const stopAtMs = new Date(stopAtIso ?? nowIso).getTime();
@@ -217,7 +218,7 @@ function diagnosticsFromDb(db: DbState, scenario: ScenarioConfig): SeedDiagnosti
   });
   const nowIso = scenario.timeAnchor.baseNowIso;
   const breachedCount = db.opsCases.filter((opsCase) => evaluateCaseBreach(opsCase, nowIso)).length;
-  const pendingCount = db.opsCases.filter((opsCase) => opsCase.status === "New" || opsCase.status === "InProgress").length;
+  const pendingCount = db.opsCases.filter((opsCase) => opsCase.status === "NEW" || opsCase.status === "IN_PROGRESS").length;
   const rejected = db.companies.filter((company) => company.leadDisposition === "Rejected").length;
   return {
     counts: buildCounts(db),
@@ -275,6 +276,7 @@ function validateFkIntegrity(db: DbState, errors: string[]) {
   const hrSoftwareProductIds = new Set(db.hrSoftwareProducts.map((row) => row.id));
   const hrSoftwareSeatIds = new Set(db.hrSoftwareSeats.map((row) => row.id));
   const hrProvisionRequestIds = new Set(db.hrProvisionRequests.map((row) => row.id));
+  const opsSignalIds = new Set(db.opsMonitoringSignals.map((row) => row.id));
   const opsCaseIds = new Set(db.opsCases.map((row) => row.id));
   const opsRequestIds = new Set(db.opsRequests.map((row) => row.id));
   const legalEntityIds = new Set<OurEntity>(db.hrLegalEntities.map((row) => row.id));
@@ -469,6 +471,9 @@ function validateFkIntegrity(db: DbState, errors: string[]) {
   db.opsCases.forEach((row) => {
     if (row.relatedCompanyId && !companyIds.has(row.relatedCompanyId)) pushFkError(errors, "OpsCase.relatedCompanyId", row.relatedCompanyId);
     if (row.assignedToUserId && !userIds.has(row.assignedToUserId)) pushFkError(errors, "OpsCase.assignedToUserId", row.assignedToUserId);
+    row.linkedSignalIds.forEach((signalId) => {
+      if (!opsSignalIds.has(signalId)) pushFkError(errors, "OpsCase.linkedSignalIds", signalId);
+    });
   });
   db.opsRequests.forEach((row) => {
     if (!userIds.has(row.createdByUserId)) pushFkError(errors, "OpsRequest.createdByUserId", row.createdByUserId);
