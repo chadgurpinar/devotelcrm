@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { Card } from "../../components/ui";
 import { useAppStore } from "../../store/db";
+import { useOpsUiStore } from "../../store/uiOps";
 import { OpsCase } from "../../store/types";
 import { NocCaseFeed } from "./components/NocCaseFeed";
 import { NocCaseHistoryDrawer } from "./components/NocCaseHistoryDrawer";
+import { NocCaseListCompact } from "./components/NocCaseListCompact";
 import { OpsPortalFilterBar } from "./components/OpsPortalFilterBar";
+import { OpsViewModeToggle } from "./components/OpsViewModeToggle";
 import { computeOpsPerformanceMetrics } from "./domain/opsMetrics";
 import { OpsPortalFilters, selectCaseActions, selectCasesForPortal, selectLastCaseAction } from "./domain/opsSelectors";
 import { computeCaseSlaView, formatDurationMs } from "./domain/opsSla";
@@ -22,6 +25,8 @@ function closedAtIso(caseRow: OpsCase): string {
 export function NocPerformanceAuditPage() {
   const state = useAppStore();
   const config = PERFORMANCE_AUDIT_PORTAL_CONFIG;
+  const viewMode = useOpsUiStore((store) => store.viewModeByPortal[config.portalId] ?? "LARGE");
+  const setPortalViewMode = useOpsUiStore((store) => store.setPortalViewMode);
   const [filters, setFilters] = useState<OpsPortalFilters>({
     track: config.defaultTrack,
     severity: "ANY",
@@ -53,7 +58,10 @@ export function NocPerformanceAuditPage() {
 
   return (
     <div className="space-y-4">
-      <Card title={config.title}>
+      <Card
+        title={config.title}
+        actions={<OpsViewModeToggle value={viewMode} onChange={(mode) => setPortalViewMode(config.portalId, mode)} />}
+      >
         {config.subtitle && <p className="text-xs text-slate-600">{config.subtitle}</p>}
         <div className="mt-3">
           <OpsPortalFilterBar
@@ -142,16 +150,31 @@ export function NocPerformanceAuditPage() {
       <Card title="Recent closed cases (read-only)">
         <p className="text-xs text-slate-500">Latest resolved/ignored/cancelled cases for audit context. Use history to inspect action timelines.</p>
         <div className="mt-3">
-          <NocCaseFeed
-            rows={recentClosedCases}
-            getSla={(caseRow) => computeCaseSlaView(caseRow)}
-            getAvailableActions={() => []}
-            getLastAction={(caseRow) => selectLastCaseAction(state, caseRow.id)}
-            getActorName={(userId) => state.users.find((user) => user.id === userId)?.name}
-            currentActorName={state.users.find((user) => user.id === state.activeUserId)?.name}
-            onApplyAction={() => ({ ok: false, message: "Read-only audit view." })}
-            onOpenHistory={(caseRow) => setSelectedHistoryCase(caseRow)}
-          />
+          {viewMode === "COMPACT" ? (
+            <NocCaseListCompact
+              rows={recentClosedCases}
+              getSla={(caseRow) => computeCaseSlaView(caseRow)}
+              getAvailableActions={() => []}
+              getLastAction={(caseRow) => selectLastCaseAction(state, caseRow.id)}
+              getActorName={(userId) => state.users.find((user) => user.id === userId)?.name}
+              currentActorName={state.users.find((user) => user.id === state.activeUserId)?.name}
+              onApplyAction={() => ({ ok: false, message: "Read-only audit view." })}
+              onOpenHistory={(caseRow) => setSelectedHistoryCase(caseRow)}
+              enableActions={false}
+            />
+          ) : (
+            <NocCaseFeed
+              rows={recentClosedCases}
+              getSla={(caseRow) => computeCaseSlaView(caseRow)}
+              getAvailableActions={() => []}
+              getLastAction={(caseRow) => selectLastCaseAction(state, caseRow.id)}
+              getActorName={(userId) => state.users.find((user) => user.id === userId)?.name}
+              currentActorName={state.users.find((user) => user.id === state.activeUserId)?.name}
+              onApplyAction={() => ({ ok: false, message: "Read-only audit view." })}
+              onOpenHistory={(caseRow) => setSelectedHistoryCase(caseRow)}
+              enableActions={false}
+            />
+          )}
         </div>
       </Card>
 
