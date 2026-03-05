@@ -1,16 +1,6 @@
-import { OpsPortalPage } from "./OpsPortalPage";
+import { NocPortalPage } from "./OpsPortalPage";
+import { ACCOUNT_MANAGERS_PORTAL_CONFIG } from "./portalConfigs";
 
 export function AccountManagersPortalPage() {
-  return (
-    <OpsPortalPage
-      config={{
-        portalId: "account-managers",
-        title: "Account Managers Portal",
-        subtitle: "AM-focused request and operational case visibility for owned accounts.",
-        defaultTrack: "Any",
-        requestScope: "mine",
-        caseScope: "mine",
-      }}
-    />
-  );
+  return <NocPortalPage config={ACCOUNT_MANAGERS_PORTAL_CONFIG} />;
 }

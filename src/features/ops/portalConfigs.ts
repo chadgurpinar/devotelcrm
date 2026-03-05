@@ -89,9 +89,30 @@ export const AM_NOC_ROUTING_PORTAL_CONFIG: OpsPortalConfig = {
   showSignalsSection: true,
 };
 
+export const ACCOUNT_MANAGERS_PORTAL_CONFIG: OpsPortalConfig = {
+  portalId: "account-managers",
+  title: "Account Managers Portal",
+  subtitle: "AM-focused view for owned and watched customer accounts.",
+  defaultTrack: "ANY",
+  includedCategories: [
+    "PROVIDER_ISSUE",
+    "LOSSES",
+    "NEW_LOST_TRAFFIC",
+    "TRAFFIC_COMPARISON",
+    "SCHEDULE_TEST_RESULT",
+    "FAILED_SMS_CALL",
+  ],
+  showTrackFilter: true,
+  showScopeFilter: true,
+  defaultScope: "MINE",
+  showRequestsSection: false,
+  showSignalsSection: false,
+};
+
 export const OPS_PORTAL_CONFIGS = {
   "sms-noc": SMS_NOC_PORTAL_CONFIG,
   "voice-noc": VOICE_NOC_PORTAL_CONFIG,
   "routing-noc": ROUTING_NOC_PORTAL_CONFIG,
   "am-noc-routing": AM_NOC_ROUTING_PORTAL_CONFIG,
+  "account-managers": ACCOUNT_MANAGERS_PORTAL_CONFIG,
 } as const;

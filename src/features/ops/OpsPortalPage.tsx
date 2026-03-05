@@ -118,6 +118,13 @@ export function NocPortalPage({ config }: { config: OpsPortalConfig }) {
     });
     return map;
   }, [portalCases, state]);
+  const filteredLastActionById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof selectLastCaseAction>>();
+    filteredCases.forEach((caseRow) => {
+      map.set(caseRow.id, selectLastCaseAction(state, caseRow.id));
+    });
+    return map;
+  }, [filteredCases, state]);
 
   const routingTouchedOpenCount = portalCases.filter((caseRow) => {
     if (!isOpenCaseStatus(caseRow.status)) return false;
@@ -157,6 +164,15 @@ export function NocPortalPage({ config }: { config: OpsPortalConfig }) {
     const resolutionType = selectLastCaseAction(state, caseRow.id)?.resolutionType ?? caseRow.resolutionType;
     return resolutionType === "ACCOUNT_MANAGER_INFORMED";
   }).length;
+  const accountManagersOpenCount = filteredCases.filter((caseRow) => isOpenCaseStatus(caseRow.status)).length;
+  const accountManagersUrgentHighCount = filteredCases.filter(
+    (caseRow) => isOpenCaseStatus(caseRow.status) && (caseRow.severity === "URGENT" || caseRow.severity === "HIGH"),
+  ).length;
+  const accountManagersInformedCount = filteredCases.filter((caseRow) => {
+    const resolutionType = filteredLastActionById.get(caseRow.id)?.resolutionType ?? caseRow.resolutionType;
+    return resolutionType === "ACCOUNT_MANAGER_INFORMED";
+  }).length;
+  const scopeLabel = activeScope === "MINE" ? "Mine" : "All";
 
   const visibleRequests = useMemo(() => {
     const requestScope = showScopeFilter ? scope : config.requestScope === "mine" ? "MINE" : "ALL";
@@ -268,6 +284,21 @@ export function NocPortalPage({ config }: { config: OpsPortalConfig }) {
               <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                 <p className="text-[11px] uppercase tracking-wide text-slate-500">Urgent/High (mine)</p>
                 <p className="text-lg font-semibold text-rose-700">{mineUrgentHighCount}</p>
+              </div>
+            </>
+          ) : config.portalId === "account-managers" ? (
+            <>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Open ({scopeLabel})</p>
+                <p className="text-lg font-semibold text-slate-800">{accountManagersOpenCount}</p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">AM informed ({scopeLabel})</p>
+                <p className="text-lg font-semibold text-sky-700">{accountManagersInformedCount}</p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] uppercase tracking-wide text-slate-500">Urgent/High open ({scopeLabel})</p>
+                <p className="text-lg font-semibold text-rose-700">{accountManagersUrgentHighCount}</p>
               </div>
             </>
           ) : (
