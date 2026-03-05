@@ -2,9 +2,12 @@ import { useMemo, useState } from "react";
 import { Badge, Button, Card } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { OpsCase, OpsCaseActionType, OpsMonitoringSignalInput, OpsRequest, OpsTrack } from "../../store/types";
+import { useOpsUiStore } from "../../store/uiOps";
 import { NocCaseFeed } from "./components/NocCaseFeed";
 import { NocCaseHistoryDrawer } from "./components/NocCaseHistoryDrawer";
+import { NocCaseListCompact } from "./components/NocCaseListCompact";
 import { OpsPortalFilterBar } from "./components/OpsPortalFilterBar";
+import { OpsViewModeToggle } from "./components/OpsViewModeToggle";
 import { getAvailableActionsForCase } from "./domain/opsPolicies";
 import { OpsPortalFilters, OpsPortalScope, selectCaseActions, selectCasesForPortal, selectLastCaseAction } from "./domain/opsSelectors";
 import { computeCaseSlaView, isOpenCaseStatus } from "./domain/opsSla";
@@ -35,6 +38,8 @@ function formatDateTime(value?: string): string {
 
 export function NocPortalPage({ config }: { config: OpsPortalConfig }) {
   const state = useAppStore();
+  const viewMode = useOpsUiStore((store) => store.viewModeByPortal[config.portalId] ?? "LARGE");
+  const setPortalViewMode = useOpsUiStore((store) => store.setPortalViewMode);
   const defaultScope = resolveDefaultScope(config);
   const [filters, setFilters] = useState<OpsPortalFilters>({
     track: config.defaultTrack,
@@ -248,6 +253,7 @@ export function NocPortalPage({ config }: { config: OpsPortalConfig }) {
         title={config.title}
         actions={
           <div className="flex items-center gap-2">
+            <OpsViewModeToggle value={viewMode} onChange={(mode) => setPortalViewMode(config.portalId, mode)} />
             <Button size="sm" variant="secondary" onClick={syncSignals} disabled={syncBusy}>
               {syncBusy ? "Refreshing..." : "Refresh signals"}
             </Button>
@@ -333,16 +339,31 @@ export function NocPortalPage({ config }: { config: OpsPortalConfig }) {
           categoryOptions={config.includedCategories}
         />
         <div className="mt-3">
-          <NocCaseFeed
-            rows={filteredCases}
-            getSla={(caseRow) => caseSlaMap.get(caseRow.id) ?? computeCaseSlaView(caseRow)}
-            getAvailableActions={getAvailableActionsForCase}
-            getLastAction={(caseRow) => selectLastCaseAction(state, caseRow.id)}
-            getActorName={(userId) => state.users.find((user) => user.id === userId)?.name}
-            currentActorName={activeUserName}
-            onApplyAction={applyCaseAction}
-            onOpenHistory={(caseRow) => setSelectedHistoryCase(caseRow)}
-          />
+          {viewMode === "COMPACT" ? (
+            <NocCaseListCompact
+              rows={filteredCases}
+              getSla={(caseRow) => caseSlaMap.get(caseRow.id) ?? computeCaseSlaView(caseRow)}
+              getAvailableActions={getAvailableActionsForCase}
+              getLastAction={(caseRow) => selectLastCaseAction(state, caseRow.id)}
+              getActorName={(userId) => state.users.find((user) => user.id === userId)?.name}
+              currentActorName={activeUserName}
+              onApplyAction={applyCaseAction}
+              onOpenHistory={(caseRow) => setSelectedHistoryCase(caseRow)}
+              enableActions
+            />
+          ) : (
+            <NocCaseFeed
+              rows={filteredCases}
+              getSla={(caseRow) => caseSlaMap.get(caseRow.id) ?? computeCaseSlaView(caseRow)}
+              getAvailableActions={getAvailableActionsForCase}
+              getLastAction={(caseRow) => selectLastCaseAction(state, caseRow.id)}
+              getActorName={(userId) => state.users.find((user) => user.id === userId)?.name}
+              currentActorName={activeUserName}
+              onApplyAction={applyCaseAction}
+              onOpenHistory={(caseRow) => setSelectedHistoryCase(caseRow)}
+              enableActions
+            />
+          )}
         </div>
       </Card>
 
