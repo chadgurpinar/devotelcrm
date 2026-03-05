@@ -176,9 +176,41 @@ interface DbActions {
   createHrExpense: (
     payload: Omit<
       HrExpense,
-      "id" | "convertedAmountEUR" | "status" | "managerApprovedAt" | "financeApprovedAt" | "paidAt" | "createdAt" | "updatedAt"
+      | "id"
+      | "convertedAmountEUR"
+      | "status"
+      | "managerApprovedAt"
+      | "financeApprovedAt"
+      | "paidAt"
+      | "rejectedAt"
+      | "cancelledAt"
+      | "reconciledAt"
+      | "reconciledWithClaimIds"
+      | "createdAt"
+      | "updatedAt"
     >,
-  ) => string;
+  ) => { ok: boolean; id?: string; message?: string };
+  updateHrExpenseDraft: (
+    expenseId: string,
+    payload: Omit<
+      HrExpense,
+      | "id"
+      | "employeeId"
+      | "convertedAmountEUR"
+      | "status"
+      | "managerApprovedAt"
+      | "financeApprovedAt"
+      | "paidAt"
+      | "rejectedAt"
+      | "cancelledAt"
+      | "reconciledAt"
+      | "reconciledWithClaimIds"
+      | "createdAt"
+      | "updatedAt"
+    >,
+  ) => { ok: boolean; message?: string };
+  cancelHrExpense: (expenseId: string, comment?: string) => { ok: boolean; message?: string };
+  addHrExpenseComment: (expenseId: string, comment: string) => { ok: boolean; message?: string };
   applyHrExpenseAction: (expenseId: string, actionType: HrExpenseActionType, comment?: string) => { ok: boolean; message?: string };
   generateHrPayrollSnapshot: (payload: { month: string; filters?: HrPayrollFilters; notes?: string }) => string;
   startInterconnectionProcess: (companyId: string, track: InterconnectionTrack) => void;
@@ -860,10 +892,6 @@ function appendHrAudit(
 
 function requiresLeaveComment(actionType: HrLeaveActionType): boolean {
   return actionType === "MANAGER_REJECT" || actionType === "HR_REJECT";
-}
-
-function requiresExpenseComment(actionType: HrExpenseActionType): boolean {
-  return actionType === "MANAGER_REJECT" || actionType === "FINANCE_REJECT";
 }
 
 function normalizePayrollMonth(value: string): string {
@@ -2567,24 +2595,246 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       return result;
     },
     createHrExpense: (payload) => {
-      const id = uid("hrex");
-      const now = new Date().toISOString();
-      const convertedAmountEUR = convertCurrency(payload.amount, payload.currency, "EUR", get().hrFxRates, now) ?? payload.amount;
-      set((state) => ({
-        ...state,
-        hrExpenses: [
-          ...state.hrExpenses,
-          {
-            ...payload,
-            id,
-            convertedAmountEUR: Math.round(convertedAmountEUR * 100) / 100,
-            status: "PendingManager",
-            createdAt: now,
-            updatedAt: now,
-          },
-        ],
-      }));
-      return id;
+      let result: { ok: boolean; id?: string; message?: string } = { ok: false, message: "Unable to create claim." };
+      set((state) => {
+        const claimant = state.hrEmployees.find((employee) => employee.id === payload.employeeId);
+        if (!claimant) {
+          result = { ok: false, message: "Employee not found." };
+          return state;
+        }
+        if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
+          result = { ok: false, message: "Amount must be greater than zero." };
+          return state;
+        }
+        const trimmedDescription = payload.description.trim();
+        if (!trimmedDescription) {
+          result = { ok: false, message: "Description is required." };
+          return state;
+        }
+        const trimmedCategory = payload.category.trim();
+        if (payload.claimType === "Reimbursement" && !trimmedCategory) {
+          result = { ok: false, message: "Category is required for reimbursement claims." };
+          return state;
+        }
+        if (payload.claimType === "Advance" && !payload.advanceType) {
+          result = { ok: false, message: "Advance type is required for advance requests." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        const converted = convertCurrency(payload.amount, payload.currency, "EUR", state.hrFxRates, now);
+        if (payload.currency !== "EUR" && converted === undefined) {
+          result = { ok: false, message: "Missing FX rate for the selected currency." };
+          return state;
+        }
+        const receiptUrl = payload.receiptUrl?.trim() || undefined;
+        const attachmentUrl = payload.attachmentMeta?.url?.trim();
+        const attachmentMeta = attachmentUrl
+          ? {
+              ...payload.attachmentMeta,
+              url: attachmentUrl,
+              fileName: payload.attachmentMeta?.fileName?.trim() || undefined,
+              mimeType: payload.attachmentMeta?.mimeType?.trim() || undefined,
+              uploadedAt: payload.attachmentMeta?.uploadedAt ?? now,
+            }
+          : undefined;
+        const id = uid("hrex");
+        const hasManager =
+          Boolean(claimant.managerId) && state.hrEmployees.some((employee) => employee.id === claimant.managerId);
+        const initialStatus: HrExpense["status"] = hasManager ? "PendingManager" : "PendingFinance";
+        const next: HrExpense = {
+          ...payload,
+          id,
+          category: trimmedCategory || (payload.claimType === "Advance" ? "Advance" : "Other"),
+          amount: Math.round(payload.amount * 100) / 100,
+          description: trimmedDescription,
+          receiptUrl,
+          attachmentMeta,
+          advancePurpose: payload.advancePurpose?.trim() || undefined,
+          convertedAmountEUR: Math.round(((converted ?? payload.amount) * 100)) / 100,
+          status: initialStatus,
+          managerApprovedAt: hasManager ? undefined : now,
+          financeApprovedAt: undefined,
+          rejectedAt: undefined,
+          paidAt: undefined,
+          cancelledAt: undefined,
+          createdAt: now,
+          updatedAt: now,
+        };
+        result = { ok: true, id };
+        return {
+          ...state,
+          hrExpenses: [...state.hrExpenses, next],
+          hrAuditLogs: hasManager
+            ? appendHrAudit(state, {
+                parentType: "Expense",
+                parentId: id,
+                actionType: "SUBMIT",
+                comment: payload.claimType === "Advance" ? "Advance request submitted." : "Reimbursement claim submitted.",
+                timestamp: now,
+              })
+            : appendHrAudit(
+                {
+                  ...state,
+                  hrAuditLogs: appendHrAudit(state, {
+                    parentType: "Expense",
+                    parentId: id,
+                    actionType: "SUBMIT",
+                    comment: payload.claimType === "Advance" ? "Advance request submitted." : "Reimbursement claim submitted.",
+                    timestamp: now,
+                  }),
+                },
+                {
+                  parentType: "Expense",
+                  parentId: id,
+                  actionType: "MANAGER_APPROVE",
+                  comment: "No manager assigned; routed directly to finance queue.",
+                  timestamp: now,
+                },
+              ),
+        };
+      });
+      return result;
+    },
+    updateHrExpenseDraft: (expenseId, payload) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Expense not found." };
+      set((state) => {
+        const target = state.hrExpenses.find((row) => row.id === expenseId);
+        if (!target) {
+          result = { ok: false, message: "Expense not found." };
+          return state;
+        }
+        if (target.status !== "PendingManager") {
+          result = { ok: false, message: "Only PendingManager claims can be edited." };
+          return state;
+        }
+        if (!Number.isFinite(payload.amount) || payload.amount <= 0) {
+          result = { ok: false, message: "Amount must be greater than zero." };
+          return state;
+        }
+        const trimmedDescription = payload.description.trim();
+        if (!trimmedDescription) {
+          result = { ok: false, message: "Description is required." };
+          return state;
+        }
+        const trimmedCategory = payload.category.trim();
+        if (payload.claimType === "Reimbursement" && !trimmedCategory) {
+          result = { ok: false, message: "Category is required for reimbursement claims." };
+          return state;
+        }
+        if (payload.claimType === "Advance" && !payload.advanceType) {
+          result = { ok: false, message: "Advance type is required for advance requests." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        const converted = convertCurrency(payload.amount, payload.currency, "EUR", state.hrFxRates, now);
+        if (payload.currency !== "EUR" && converted === undefined) {
+          result = { ok: false, message: "Missing FX rate for the selected currency." };
+          return state;
+        }
+        const receiptUrl = payload.receiptUrl?.trim() || undefined;
+        const attachmentUrl = payload.attachmentMeta?.url?.trim();
+        const attachmentMeta = attachmentUrl
+          ? {
+              ...payload.attachmentMeta,
+              url: attachmentUrl,
+              fileName: payload.attachmentMeta?.fileName?.trim() || undefined,
+              mimeType: payload.attachmentMeta?.mimeType?.trim() || undefined,
+              uploadedAt: payload.attachmentMeta?.uploadedAt ?? now,
+            }
+          : undefined;
+        const next: HrExpense = {
+          ...target,
+          ...payload,
+          category: trimmedCategory || (payload.claimType === "Advance" ? "Advance" : "Other"),
+          amount: Math.round(payload.amount * 100) / 100,
+          description: trimmedDescription,
+          receiptUrl,
+          attachmentMeta,
+          advancePurpose: payload.advancePurpose?.trim() || undefined,
+          convertedAmountEUR: Math.round(((converted ?? payload.amount) * 100)) / 100,
+          updatedAt: now,
+        };
+        result = { ok: true };
+        return {
+          ...state,
+          hrExpenses: state.hrExpenses.map((entry) => (entry.id === expenseId ? next : entry)),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "Expense",
+            parentId: expenseId,
+            actionType: "EDIT",
+            comment: "Employee updated claim details.",
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    cancelHrExpense: (expenseId, comment) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Expense not found." };
+      set((state) => {
+        const target = state.hrExpenses.find((row) => row.id === expenseId);
+        if (!target) {
+          result = { ok: false, message: "Expense not found." };
+          return state;
+        }
+        if (target.status !== "PendingManager") {
+          result = { ok: false, message: "Only PendingManager claims can be cancelled." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        const trimmedComment = comment?.trim();
+        result = { ok: true };
+        return {
+          ...state,
+          hrExpenses: state.hrExpenses.map((entry) =>
+            entry.id === expenseId
+              ? {
+                  ...entry,
+                  status: "Cancelled",
+                  cancelledAt: now,
+                  updatedAt: now,
+                }
+              : entry,
+          ),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "Expense",
+            parentId: expenseId,
+            actionType: "CANCEL",
+            comment: trimmedComment || "Claim cancelled by employee.",
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
+    },
+    addHrExpenseComment: (expenseId, comment) => {
+      let result: { ok: boolean; message?: string } = { ok: false, message: "Expense not found." };
+      set((state) => {
+        const target = state.hrExpenses.find((row) => row.id === expenseId);
+        if (!target) {
+          result = { ok: false, message: "Expense not found." };
+          return state;
+        }
+        const trimmedComment = comment.trim();
+        if (!trimmedComment) {
+          result = { ok: false, message: "Comment cannot be empty." };
+          return state;
+        }
+        const now = new Date().toISOString();
+        result = { ok: true };
+        return {
+          ...state,
+          hrExpenses: state.hrExpenses.map((entry) => (entry.id === expenseId ? { ...entry, updatedAt: now } : entry)),
+          hrAuditLogs: appendHrAudit(state, {
+            parentType: "Expense",
+            parentId: expenseId,
+            actionType: "COMMENT",
+            comment: trimmedComment,
+            timestamp: now,
+          }),
+        };
+      });
+      return result;
     },
     applyHrExpenseAction: (expenseId, actionType, comment) => {
       let result: { ok: boolean; message?: string } = { ok: false, message: "Expense not found." };
@@ -2594,21 +2844,47 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           result = { ok: false, message: "Expense not found." };
           return state;
         }
-        const trimmedComment = comment?.trim();
-        if (requiresExpenseComment(actionType) && !trimmedComment) {
-          result = { ok: false, message: "Comment is mandatory for reject actions." };
+        if (!["MANAGER_APPROVE", "MANAGER_REJECT", "FINANCE_APPROVE", "FINANCE_REJECT", "MARK_PAID"].includes(actionType)) {
+          result = { ok: false, message: "Unsupported action for workflow transition." };
           return state;
         }
+        const trimmedComment = comment?.trim() || undefined;
         const now = new Date().toISOString();
         let next: HrExpense | null = null;
         if (actionType === "MANAGER_APPROVE" && target.status === "PendingManager") {
-          next = { ...target, status: "PendingFinance", managerApprovedAt: now, updatedAt: now };
+          next = {
+            ...target,
+            status: "PendingFinance",
+            managerApprovedAt: now,
+            rejectedAt: undefined,
+            cancelledAt: undefined,
+            updatedAt: now,
+          };
         } else if (actionType === "MANAGER_REJECT" && target.status === "PendingManager") {
-          next = { ...target, status: "Rejected", managerApprovedAt: now, updatedAt: now };
+          next = {
+            ...target,
+            status: "Rejected",
+            rejectedAt: now,
+            cancelledAt: undefined,
+            updatedAt: now,
+          };
         } else if (actionType === "FINANCE_APPROVE" && target.status === "PendingFinance") {
-          next = { ...target, status: "Approved", financeApprovedAt: now, updatedAt: now };
+          next = {
+            ...target,
+            status: "Approved",
+            financeApprovedAt: now,
+            rejectedAt: undefined,
+            cancelledAt: undefined,
+            updatedAt: now,
+          };
         } else if (actionType === "FINANCE_REJECT" && target.status === "PendingFinance") {
-          next = { ...target, status: "Rejected", financeApprovedAt: now, updatedAt: now };
+          next = {
+            ...target,
+            status: "Rejected",
+            rejectedAt: now,
+            cancelledAt: undefined,
+            updatedAt: now,
+          };
         } else if (actionType === "MARK_PAID" && target.status === "Approved") {
           next = { ...target, status: "Paid", paidAt: now, updatedAt: now };
         }
@@ -2619,7 +2895,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         result = { ok: true };
         return {
           ...state,
-          hrExpenses: state.hrExpenses.map((entry) => (entry.id === expenseId ? next! : entry)),
+          hrExpenses: state.hrExpenses.map((entry) => (entry.id === expenseId ? next : entry)),
           hrAuditLogs: appendHrAudit(state, {
             parentType: "Expense",
             parentId: expenseId,
@@ -4429,7 +4705,91 @@ export const useAppStore = create<AppStore>()(
       const hrProvisionRequests = Array.isArray(state.hrProvisionRequests)
         ? (state.hrProvisionRequests as unknown as HrProvisionRequest[])
         : fallback.hrProvisionRequests;
-      const hrExpenses = Array.isArray(state.hrExpenses) ? (state.hrExpenses as unknown as HrExpense[]) : fallback.hrExpenses;
+      const hrExpenses = Array.isArray(state.hrExpenses)
+        ? (state.hrExpenses as unknown as Array<Record<string, unknown>>).map((row, idx) => {
+            const createdAt = typeof row.createdAt === "string" ? row.createdAt : new Date().toISOString();
+            const currency: HrExpense["currency"] =
+              row.currency === "EUR" || row.currency === "USD" || row.currency === "GBP" || row.currency === "TRY"
+                ? row.currency
+                : "EUR";
+            const amount = typeof row.amount === "number" && Number.isFinite(row.amount) ? row.amount : 0;
+            const convertedAmountEUR =
+              typeof row.convertedAmountEUR === "number" && Number.isFinite(row.convertedAmountEUR)
+                ? row.convertedAmountEUR
+                : convertCurrency(amount, currency, "EUR", hrFxRates, createdAt) ?? amount;
+            const status: HrExpense["status"] =
+              row.status === "PendingManager" ||
+              row.status === "PendingFinance" ||
+              row.status === "Approved" ||
+              row.status === "Rejected" ||
+              row.status === "Paid" ||
+              row.status === "Cancelled"
+                ? row.status
+                : "PendingManager";
+            const claimType: HrExpense["claimType"] = row.claimType === "Advance" ? "Advance" : "Reimbursement";
+            const attachmentMetaRaw = row.attachmentMeta;
+            const attachmentMeta =
+              attachmentMetaRaw && typeof attachmentMetaRaw === "object" && typeof (attachmentMetaRaw as { url?: unknown }).url === "string"
+                ? {
+                    url: ((attachmentMetaRaw as { url: string }).url || "").trim(),
+                    fileName:
+                      typeof (attachmentMetaRaw as { fileName?: unknown }).fileName === "string"
+                        ? ((attachmentMetaRaw as { fileName: string }).fileName || "").trim() || undefined
+                        : undefined,
+                    mimeType:
+                      typeof (attachmentMetaRaw as { mimeType?: unknown }).mimeType === "string"
+                        ? ((attachmentMetaRaw as { mimeType: string }).mimeType || "").trim() || undefined
+                        : undefined,
+                    sizeBytes:
+                      typeof (attachmentMetaRaw as { sizeBytes?: unknown }).sizeBytes === "number"
+                        ? (attachmentMetaRaw as { sizeBytes: number }).sizeBytes
+                        : undefined,
+                    uploadedAt:
+                      typeof (attachmentMetaRaw as { uploadedAt?: unknown }).uploadedAt === "string"
+                        ? (attachmentMetaRaw as { uploadedAt: string }).uploadedAt
+                        : undefined,
+                  }
+                : undefined;
+            return {
+              id: typeof row.id === "string" ? row.id : `hrex-migrated-${idx + 1}`,
+              employeeId: typeof row.employeeId === "string" ? row.employeeId : hrEmployees[0]?.id ?? "hre-migrated-1",
+              claimType,
+              advanceType: row.advanceType === "TravelAdvance" || row.advanceType === "PerDiem" ? row.advanceType : undefined,
+              category:
+                typeof row.category === "string" && row.category.trim()
+                  ? row.category.trim()
+                  : claimType === "Advance"
+                    ? "Advance"
+                    : "Other",
+              amount: Math.round(amount * 100) / 100,
+              currency,
+              convertedAmountEUR: Math.round(convertedAmountEUR * 100) / 100,
+              description: typeof row.description === "string" ? row.description : "",
+              receiptUrl:
+                typeof row.receiptUrl === "string"
+                  ? row.receiptUrl
+                  : typeof row.receiptAttachmentUrl === "string"
+                    ? row.receiptAttachmentUrl
+                    : undefined,
+              attachmentMeta: attachmentMeta?.url ? attachmentMeta : undefined,
+              travelStartDate: typeof row.travelStartDate === "string" ? row.travelStartDate : undefined,
+              travelEndDate: typeof row.travelEndDate === "string" ? row.travelEndDate : undefined,
+              advancePurpose: typeof row.advancePurpose === "string" ? row.advancePurpose : undefined,
+              status,
+              managerApprovedAt: typeof row.managerApprovedAt === "string" ? row.managerApprovedAt : undefined,
+              financeApprovedAt: typeof row.financeApprovedAt === "string" ? row.financeApprovedAt : undefined,
+              rejectedAt: typeof row.rejectedAt === "string" ? row.rejectedAt : undefined,
+              paidAt: typeof row.paidAt === "string" ? row.paidAt : undefined,
+              cancelledAt: typeof row.cancelledAt === "string" ? row.cancelledAt : undefined,
+              reconciledAt: typeof row.reconciledAt === "string" ? row.reconciledAt : undefined,
+              reconciledWithClaimIds: Array.isArray(row.reconciledWithClaimIds)
+                ? row.reconciledWithClaimIds.filter((entry): entry is string => typeof entry === "string")
+                : undefined,
+              createdAt,
+              updatedAt: typeof row.updatedAt === "string" ? row.updatedAt : createdAt,
+            } as HrExpense;
+          })
+        : fallback.hrExpenses;
       const hrAuditLogs = Array.isArray(state.hrAuditLogs) ? (state.hrAuditLogs as unknown as HrAuditLogEntry[]) : fallback.hrAuditLogs;
 
       return {

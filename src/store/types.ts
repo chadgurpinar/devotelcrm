@@ -387,7 +387,16 @@ export type HrMaritalStatus = "Single" | "Married" | "Other";
 export type HrSalaryDistributionMode = "Percent" | "Fixed";
 export type HrLeaveType = "Annual" | "Sick" | "Other";
 export type HrLeaveStatus = "PendingManager" | "PendingHR" | "Approved" | "Rejected";
-export type HrExpenseStatus = "PendingManager" | "PendingFinance" | "Approved" | "Rejected" | "Paid";
+export type HrExpenseStatus = "PendingManager" | "PendingFinance" | "Approved" | "Rejected" | "Paid" | "Cancelled";
+export type HrExpenseClaimType = "Reimbursement" | "Advance";
+export type HrAdvanceType = "TravelAdvance" | "PerDiem";
+export interface HrAttachmentMeta {
+  url: string;
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  uploadedAt?: string;
+}
 export type HrAssetCategory = "Laptop" | "Phone" | "Accessory" | "Monitor" | "Other";
 export type HrAssetStatus = "Available" | "Assigned" | "Returned" | "Retired";
 export type HrAssetAcceptanceStatus = "Pending" | "Accepted";
@@ -398,6 +407,10 @@ export type HrProvisionRequestPriority = "Low" | "Medium" | "High";
 export type HrProvisionRequestStatus = "PendingManager" | "PendingHR" | "Fulfilled" | "Rejected" | "Cancelled";
 export type HrLeaveActionType = "MANAGER_APPROVE" | "MANAGER_REJECT" | "HR_APPROVE" | "HR_REJECT";
 export type HrExpenseActionType =
+  | "SUBMIT"
+  | "EDIT"
+  | "CANCEL"
+  | "COMMENT"
   | "MANAGER_APPROVE"
   | "MANAGER_REJECT"
   | "FINANCE_APPROVE"
@@ -714,16 +727,26 @@ export interface HrProvisionRequest {
 export interface HrExpense {
   id: string;
   employeeId: string;
+  claimType: HrExpenseClaimType;
+  advanceType?: HrAdvanceType;
   category: string;
   amount: number;
   currency: HrCurrencyCode;
   convertedAmountEUR: number;
   description: string;
   receiptUrl?: string;
+  attachmentMeta?: HrAttachmentMeta;
+  travelStartDate?: string;
+  travelEndDate?: string;
+  advancePurpose?: string;
+  rejectedAt?: string;
   status: HrExpenseStatus;
   managerApprovedAt?: string;
   financeApprovedAt?: string;
   paidAt?: string;
+  cancelledAt?: string;
+  reconciledAt?: string;
+  reconciledWithClaimIds?: string[];
   createdAt: string;
   updatedAt: string;
 }

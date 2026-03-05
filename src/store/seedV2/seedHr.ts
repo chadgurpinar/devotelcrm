@@ -782,36 +782,79 @@ export function seedHr(params: {
     const employee = hrEmployees[idx % hrEmployees.length];
     const currency = currencyByCountry(employee.countryOfEmployment);
     const createdAt = addDaysToIso("2026-02-01T09:00:00.000Z", idx);
+    const claimType: HrExpense["claimType"] = idx % 4 === 0 ? "Advance" : "Reimbursement";
     const amount = currency === "TRY" ? 2500 + (idx % 10) * 420 : 60 + (idx % 8) * 24;
     const convertedAmountEUR = convertCurrency(amount, currency, "EUR", hrFxRates, createdAt) ?? amount;
     const status: HrExpense["status"] =
-      idx % 5 === 0
+      idx % 6 === 0
         ? "PendingManager"
-        : idx % 5 === 1
+        : idx % 6 === 1
           ? "PendingFinance"
-          : idx % 5 === 2
+          : idx % 6 === 2
             ? "Approved"
-            : idx % 5 === 3
+            : idx % 6 === 3
               ? "Rejected"
-              : "Paid";
+              : idx % 6 === 4
+                ? "Paid"
+                : "Cancelled";
+    const rejectedByFinance = status === "Rejected" && idx % 2 === 0;
+    const managerApprovedAt =
+      status === "PendingFinance" || status === "Approved" || status === "Paid" || rejectedByFinance
+        ? addDaysToIso(createdAt, 1)
+        : undefined;
+    const financeApprovedAt = status === "Approved" || status === "Paid" ? addDaysToIso(createdAt, 2) : undefined;
+    const rejectedAt = status === "Rejected" ? (rejectedByFinance ? addDaysToIso(createdAt, 2) : addDaysToIso(createdAt, 1)) : undefined;
+    const paidAt = status === "Paid" ? addDaysToIso(createdAt, 4) : undefined;
+    const cancelledAt = status === "Cancelled" ? addDaysToIso(createdAt, 1) : undefined;
+    const receiptUrl = claimType === "Reimbursement" && idx % 9 !== 0 ? `upload://seed/expense/${idx + 1}/receipt.pdf` : undefined;
+    const attachmentMeta =
+      claimType === "Advance"
+        ? idx % 3 === 0
+          ? {
+              url: `upload://seed/advance/${idx + 1}/supporting.pdf`,
+              fileName: `advance-support-${idx + 1}.pdf`,
+              mimeType: "application/pdf",
+              sizeBytes: 48_000 + idx * 120,
+              uploadedAt: createdAt,
+            }
+          : undefined
+        : receiptUrl
+          ? {
+              url: receiptUrl,
+              fileName: `expense-receipt-${idx + 1}.pdf`,
+              mimeType: "application/pdf",
+              sizeBytes: 36_000 + idx * 90,
+              uploadedAt: createdAt,
+            }
+          : undefined;
     return {
       id: idFactory.next("hrExpense"),
       employeeId: employee.id,
-      category: EXPENSE_CATEGORIES[idx % EXPENSE_CATEGORIES.length],
+      claimType,
+      advanceType: claimType === "Advance" ? (idx % 2 === 0 ? "TravelAdvance" : "PerDiem") : undefined,
+      category: claimType === "Advance" ? "Travel" : EXPENSE_CATEGORIES[idx % EXPENSE_CATEGORIES.length],
       amount: Math.round(amount * 100) / 100,
       currency,
       convertedAmountEUR: Math.round(convertedAmountEUR * 100) / 100,
-      description: idx % 2 === 0 ? "Synthetic client travel reimbursement." : "Synthetic operational reimbursement.",
-      receiptUrl: idx % 9 === 0 ? undefined : `upload://seed/expense/${idx + 1}/receipt.pdf`,
+      description:
+        claimType === "Advance"
+          ? "Synthetic advance request for travel-related upfront costs."
+          : idx % 2 === 0
+            ? "Synthetic client travel reimbursement."
+            : "Synthetic operational reimbursement.",
+      receiptUrl,
+      attachmentMeta,
+      travelStartDate: claimType === "Advance" ? addDaysToIso(createdAt, 14).slice(0, 10) : undefined,
+      travelEndDate: claimType === "Advance" ? addDaysToIso(createdAt, 17).slice(0, 10) : undefined,
+      advancePurpose: claimType === "Advance" ? "Conference travel advance request." : undefined,
       status,
-      managerApprovedAt:
-        status === "PendingFinance" || status === "Approved" || status === "Rejected" || status === "Paid"
-          ? addDaysToIso(createdAt, 1)
-          : undefined,
-      financeApprovedAt: status === "Approved" || status === "Paid" ? addDaysToIso(createdAt, 2) : undefined,
-      paidAt: status === "Paid" ? addDaysToIso(createdAt, 4) : undefined,
+      managerApprovedAt,
+      financeApprovedAt,
+      rejectedAt,
+      paidAt,
+      cancelledAt,
       createdAt,
-      updatedAt: status === "Paid" ? addDaysToIso(createdAt, 4) : createdAt,
+      updatedAt: paidAt ?? rejectedAt ?? cancelledAt ?? financeApprovedAt ?? managerApprovedAt ?? createdAt,
     };
   });
 
@@ -854,18 +897,63 @@ export function seedHr(params: {
       id: idFactory.next("hrAudit"),
       parentType: "Expense",
       parentId: expense.id,
-      actionType:
-        expense.status === "Rejected"
-          ? "FINANCE_REJECT"
-          : expense.status === "Paid"
-            ? "MARK_PAID"
-            : expense.status === "PendingManager"
-              ? "MANAGER_APPROVE"
-              : "FINANCE_APPROVE",
+      actionType: "SUBMIT",
       performedByUserId: activeUserId,
-      comment: "Synthetic expense workflow audit.",
-      timestamp: expense.updatedAt,
+      comment: expense.claimType === "Advance" ? "Synthetic advance submitted." : "Synthetic reimbursement submitted.",
+      timestamp: expense.createdAt,
     });
+    if (expense.managerApprovedAt) {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "Expense",
+        parentId: expense.id,
+        actionType: "MANAGER_APPROVE",
+        performedByUserId: activeUserId,
+        timestamp: expense.managerApprovedAt,
+      });
+    }
+    if (expense.status === "Rejected") {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "Expense",
+        parentId: expense.id,
+        actionType: expense.managerApprovedAt ? "FINANCE_REJECT" : "MANAGER_REJECT",
+        performedByUserId: activeUserId,
+        comment: "Synthetic rejection in workflow.",
+        timestamp: expense.rejectedAt ?? expense.updatedAt,
+      });
+    }
+    if (expense.financeApprovedAt) {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "Expense",
+        parentId: expense.id,
+        actionType: "FINANCE_APPROVE",
+        performedByUserId: activeUserId,
+        timestamp: expense.financeApprovedAt,
+      });
+    }
+    if (expense.status === "Cancelled") {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "Expense",
+        parentId: expense.id,
+        actionType: "CANCEL",
+        performedByUserId: activeUserId,
+        comment: "Synthetic employee cancellation.",
+        timestamp: expense.cancelledAt ?? expense.updatedAt,
+      });
+    }
+    if (expense.status === "Paid") {
+      hrAuditLogs.push({
+        id: idFactory.next("hrAudit"),
+        parentType: "Expense",
+        parentId: expense.id,
+        actionType: "MARK_PAID",
+        performedByUserId: activeUserId,
+        timestamp: expense.paidAt ?? expense.updatedAt,
+      });
+    }
   });
   hrAssets.slice(0, 40).forEach((asset) => {
     hrAuditLogs.push({

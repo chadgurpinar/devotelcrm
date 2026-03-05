@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { HrCurrencyCode, HrExpenseStatus } from "../../store/types";
+import { HrExpensesPageRoleBased } from "./HrExpensesPageRoleBased";
 
 const currencyOptions: HrCurrencyCode[] = ["EUR", "USD", "GBP", "TRY"];
 const categories = ["Travel", "Meal", "Taxi", "Hotel", "Office", "Training", "Other"];
@@ -10,7 +11,7 @@ function employeeName(firstName: string, lastName: string): string {
   return `${firstName} ${lastName}`.trim();
 }
 
-export function HrExpensesPage() {
+function HrExpensesPageLegacy() {
   const state = useAppStore();
   const [form, setForm] = useState({
     employeeId: state.hrEmployees.find((employee) => employee.active)?.id ?? "",
@@ -40,6 +41,7 @@ export function HrExpensesPage() {
     if (!form.employeeId || !form.amount || Number(form.amount) <= 0 || !form.description.trim()) return;
     state.createHrExpense({
       employeeId: form.employeeId,
+      claimType: "Reimbursement",
       category: form.category,
       amount: Number(form.amount),
       currency: form.currency,
@@ -274,3 +276,5 @@ export function HrExpensesPage() {
     </div>
   );
 }
+
+export { HrExpensesPageRoleBased as HrExpensesPage } from "./HrExpensesPageRoleBased";
