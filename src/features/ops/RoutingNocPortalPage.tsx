@@ -1,16 +1,6 @@
-import { OpsPortalPage } from "./OpsPortalPage";
+import { NocPortalPage } from "./OpsPortalPage";
+import { ROUTING_NOC_PORTAL_CONFIG } from "./portalConfigs";
 
 export function RoutingNocPortalPage() {
-  return (
-    <OpsPortalPage
-      config={{
-        portalId: "routing-noc",
-        title: "Routing & NOC Portal",
-        subtitle: "Routing and NOC collaboration workspace with shared request queue.",
-        defaultTrack: "Any",
-        moduleFocus: ["TrafficComparison", "NewAndLostTraffics", "Losses", "ProviderIssues"],
-        requestRoleFocus: ["Routing", "NOC"],
-      }}
-    />
-  );
+  return <NocPortalPage config={ROUTING_NOC_PORTAL_CONFIG} />;
 }

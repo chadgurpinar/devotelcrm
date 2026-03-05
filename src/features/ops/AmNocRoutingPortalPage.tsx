@@ -1,17 +1,6 @@
-import { OpsPortalPage } from "./OpsPortalPage";
+import { NocPortalPage } from "./OpsPortalPage";
+import { AM_NOC_ROUTING_PORTAL_CONFIG } from "./portalConfigs";
 
 export function AmNocRoutingPortalPage() {
-  return (
-    <OpsPortalPage
-      config={{
-        portalId: "am-noc-routing",
-        title: "AM & NOC & Routing Portal",
-        subtitle: "Cross-functional operational collaboration between AM, NOC, and Routing.",
-        defaultTrack: "Any",
-        requestRoleFocus: ["NOC", "Routing"],
-        includeCreatedByMe: true,
-        caseScope: "mine",
-      }}
-    />
-  );
+  return <NocPortalPage config={AM_NOC_ROUTING_PORTAL_CONFIG} />;
 }
