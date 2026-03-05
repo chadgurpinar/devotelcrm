@@ -51,6 +51,7 @@ export const router = createBrowserRouter([
       { path: "/ops/routing-noc", element: <RoutingNocPortalPage /> },
       { path: "/ops/am-noc-routing", element: <AmNocRoutingPortalPage /> },
       { path: "/ops/account-managers", element: <AccountManagersPortalPage /> },
+      { path: "/ops/noc-performance-audit", element: <NocPerformanceAuditPage /> },
       { path: "/ops/performance-audit", element: <NocPerformanceAuditPage /> },
       { path: "/hr/dashboard", element: <HrDashboardPage /> },
       { path: "/hr/people", element: <HrPeoplePage /> },

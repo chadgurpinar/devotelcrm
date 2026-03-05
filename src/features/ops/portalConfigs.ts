@@ -109,10 +109,30 @@ export const ACCOUNT_MANAGERS_PORTAL_CONFIG: OpsPortalConfig = {
   showSignalsSection: false,
 };
 
+export const PERFORMANCE_AUDIT_PORTAL_CONFIG: OpsPortalConfig = {
+  portalId: "performance-audit",
+  title: "NOC Performance / Audit",
+  subtitle: "Read-only KPI and audit analytics over OPS case and action streams.",
+  defaultTrack: "ANY",
+  includedCategories: [
+    "PROVIDER_ISSUE",
+    "LOSSES",
+    "NEW_LOST_TRAFFIC",
+    "TRAFFIC_COMPARISON",
+    "SCHEDULE_TEST_RESULT",
+    "FAILED_SMS_CALL",
+  ],
+  showTrackFilter: true,
+  showScopeFilter: false,
+  showRequestsSection: false,
+  showSignalsSection: false,
+};
+
 export const OPS_PORTAL_CONFIGS = {
   "sms-noc": SMS_NOC_PORTAL_CONFIG,
   "voice-noc": VOICE_NOC_PORTAL_CONFIG,
   "routing-noc": ROUTING_NOC_PORTAL_CONFIG,
   "am-noc-routing": AM_NOC_ROUTING_PORTAL_CONFIG,
   "account-managers": ACCOUNT_MANAGERS_PORTAL_CONFIG,
+  "performance-audit": PERFORMANCE_AUDIT_PORTAL_CONFIG,
 } as const;

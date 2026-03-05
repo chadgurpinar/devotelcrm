@@ -26,7 +26,7 @@ const navGroups = [
       { to: "/ops/routing-noc", label: "Routing & NOC Portal", icon: "R" },
       { to: "/ops/am-noc-routing", label: "AM & NOC & Routing Portal", icon: "A" },
       { to: "/ops/account-managers", label: "Account Managers Portal", icon: "M" },
-      { to: "/ops/performance-audit", label: "NOC Performance / Audit", icon: "P" },
+      { to: "/ops/noc-performance-audit", label: "NOC Performance / Audit", icon: "P" },
     ],
   },
   {
@@ -64,7 +64,7 @@ export function AppShell() {
   const interconnectionCount = useAppStore((s) => s.companies.filter((c) => c.companyStatus === "INTERCONNECTION").length);
   const tasksOpenCount = useAppStore((s) => s.tasks.filter((t) => t.status !== "Done").length);
   const opsUrgentCount = useAppStore(
-    (s) => s.opsCases.filter((entry) => (entry.status === "New" || entry.status === "InProgress") && entry.severity === "Urgent").length,
+    (s) => s.opsCases.filter((entry) => (entry.status === "NEW" || entry.status === "IN_PROGRESS") && entry.severity === "URGENT").length,
   );
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [newLeadForm, setNewLeadForm] = useState({
