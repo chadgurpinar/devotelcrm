@@ -301,6 +301,7 @@ export function ProjectGovernanceV2() {
   const [isProjectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string>("");
   const [projectForm, setProjectForm] = useState<ProjectFormState>(() => emptyProjectForm(state.activeUserId));
+  const [weekPageByProject, setWeekPageByProject] = useState<Record<string, number>>({});
   const [roleDrafts, setRoleDrafts] = useState<Record<string, RoleDraft>>({});
   const [managerDrafts, setManagerDrafts] = useState<Record<string, ManagerDraft>>({});
 
@@ -975,9 +976,14 @@ export function ProjectGovernanceV2() {
       <Card
         title="Projects / Governance"
         actions={
-          <Button size="sm" onClick={openCreateDrawer}>
-            + Create Project
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => navigate("/reports/timeline")}>
+              Monthly Timeline →
+            </Button>
+            <Button size="sm" onClick={openCreateDrawer}>
+              + Create Project
+            </Button>
+          </div>
         }
       >
         <div className="mb-3 grid gap-2 md:grid-cols-6">
@@ -1108,64 +1114,87 @@ export function ProjectGovernanceV2() {
                   </p>
                 )}
 
-                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                  {weekTimeline.map((weekStartDate) => {
-                    const weekReport = reportByProjectWeek.get(project.id)?.get(weekStartDate);
-                    const missing = getMissingRoles(weekReport);
-                    const selected = openWeek?.projectId === project.id && openWeek.weekStartDate === weekStartDate;
-                    const blockersCount = getReportBlockers(weekReport).length;
-                    const riskLevel = getReportRisk(weekReport);
-                    const weekSummary = getWeekAiSummaryShort(weekReport);
-                    const deadline = fridayDeadline(weekStartDate);
-                    const missingTooltip =
-                      missing.length > 0
-                        ? [
-                            ...missing.map((role) => {
-                              if (role === "manager") {
-                                return `Manager: ${getUserName(state, project.ownerUserId)}`;
-                              }
-                              return `${capitalizeRole(role)}: ${getUserName(state, getRoleResponsibleUserId(project, role))}`;
-                            }),
-                            `Due: ${new Date(deadline).toLocaleString()}`,
-                          ].join("\n")
-                        : undefined;
-                    return (
-                      <button
-                        key={`${project.id}-${weekStartDate}`}
-                        className={`min-w-[250px] rounded-lg border p-2 text-left transition ${
-                          selected ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:bg-slate-50"
-                        }`}
-                        onClick={() => openWeekModal(project.id, weekStartDate)}
-                        title={missingTooltip}
-                      >
-                        <div className="mb-1 flex items-center justify-between gap-1">
-                          <p className="text-[11px] font-semibold text-slate-700">Week {weekStartDate}</p>
-                          <Badge className={riskBadgeClass(riskLevel)}>{riskLevel}</Badge>
-                        </div>
-                        <p className="text-[11px] text-slate-500">Blockers: {blockersCount}</p>
-                        <p className="mt-1 line-clamp-2 text-[11px] text-slate-600">{weekSummary}</p>
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          Tech {isRoleSubmitted(weekReport, "technical") ? "✅" : "❌"} · Sales{" "}
-                          {isRoleSubmitted(weekReport, "sales") ? "✅" : "❌"} · Product{" "}
-                          {isRoleSubmitted(weekReport, "product") ? "✅" : "❌"} · Manager{" "}
-                          {isManagerSubmitted(weekReport) ? "✅" : "❌"}
-                        </p>
-                        {missing.length > 0 && (
-                          <p className="mt-1 text-[11px] text-rose-600">
-                            Missing:{" "}
-                            {missing
-                              .map((role) => {
-                                if (role === "manager") return getUserName(state, project.ownerUserId);
-                                return getUserName(state, getRoleResponsibleUserId(project, role));
-                              })
-                              .join(", ")}
-                          </p>
-                        )}
-                        <p className="mt-1 text-[10px] text-slate-400">Deadline: {new Date(deadline).toLocaleString()}</p>
-                      </button>
-                    );
-                  })}
-                </div>
+                {(() => {
+                  const WEEKS_PER_PAGE = 4;
+                  const weekPage = weekPageByProject[project.id] ?? 0;
+                  const setWeekPage = (page: number) => setWeekPageByProject((prev) => ({ ...prev, [project.id]: page }));
+                  const pagedWeeks = weekTimeline.slice(weekPage * WEEKS_PER_PAGE, (weekPage + 1) * WEEKS_PER_PAGE);
+                  const totalPages = Math.ceil(weekTimeline.length / WEEKS_PER_PAGE);
+
+                  return (
+                    <div className="mt-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Button size="sm" variant="ghost" disabled={weekPage === 0} onClick={() => setWeekPage(weekPage - 1)}>
+                          ← Prev
+                        </Button>
+                        <span className="text-xs text-slate-500">
+                          Weeks {weekPage * WEEKS_PER_PAGE + 1}–{Math.min((weekPage + 1) * WEEKS_PER_PAGE, weekTimeline.length)} of {weekTimeline.length}
+                        </span>
+                        <Button size="sm" variant="ghost" disabled={(weekPage + 1) >= totalPages} onClick={() => setWeekPage(weekPage + 1)}>
+                          Next →
+                        </Button>
+                      </div>
+                      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${WEEKS_PER_PAGE}, minmax(0, 1fr))` }}>
+                        {pagedWeeks.map((weekStartDate) => {
+                          const weekReport = reportByProjectWeek.get(project.id)?.get(weekStartDate);
+                          const missing = getMissingRoles(weekReport);
+                          const selected = openWeek?.projectId === project.id && openWeek.weekStartDate === weekStartDate;
+                          const blockersCount = getReportBlockers(weekReport).length;
+                          const riskLevel = getReportRisk(weekReport);
+                          const weekSummary = getWeekAiSummaryShort(weekReport);
+                          const deadline = fridayDeadline(weekStartDate);
+                          const missingTooltip =
+                            missing.length > 0
+                              ? [
+                                  ...missing.map((role) => {
+                                    if (role === "manager") {
+                                      return `Manager: ${getUserName(state, project.ownerUserId)}`;
+                                    }
+                                    return `${capitalizeRole(role)}: ${getUserName(state, getRoleResponsibleUserId(project, role))}`;
+                                  }),
+                                  `Due: ${new Date(deadline).toLocaleString()}`,
+                                ].join("\n")
+                              : undefined;
+                          return (
+                            <button
+                              key={`${project.id}-${weekStartDate}`}
+                              className={`rounded-lg border p-2 text-left transition ${
+                                selected ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:bg-slate-50"
+                              }`}
+                              onClick={() => openWeekModal(project.id, weekStartDate)}
+                              title={missingTooltip}
+                            >
+                              <div className="mb-1 flex items-center justify-between gap-1">
+                                <p className="text-[11px] font-semibold text-slate-700">Week {weekStartDate}</p>
+                                <Badge className={riskBadgeClass(riskLevel)}>{riskLevel}</Badge>
+                              </div>
+                              <p className="text-[11px] text-slate-500">Blockers: {blockersCount}</p>
+                              <p className="mt-1 line-clamp-2 text-[11px] text-slate-600">{weekSummary}</p>
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                Tech {isRoleSubmitted(weekReport, "technical") ? "✅" : "❌"} · Sales{" "}
+                                {isRoleSubmitted(weekReport, "sales") ? "✅" : "❌"} · Product{" "}
+                                {isRoleSubmitted(weekReport, "product") ? "✅" : "❌"} · Manager{" "}
+                                {isManagerSubmitted(weekReport) ? "✅" : "❌"}
+                              </p>
+                              {missing.length > 0 && (
+                                <p className="mt-1 text-[11px] text-rose-600">
+                                  Missing:{" "}
+                                  {missing
+                                    .map((role) => {
+                                      if (role === "manager") return getUserName(state, project.ownerUserId);
+                                      return getUserName(state, getRoleResponsibleUserId(project, role));
+                                    })
+                                    .join(", ")}
+                                </p>
+                              )}
+                              <p className="mt-1 text-[10px] text-slate-400">Deadline: {new Date(deadline).toLocaleString()}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
               </article>
             );

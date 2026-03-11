@@ -1054,6 +1054,48 @@ export interface TrafficAdapter {
   fetchTestResults: () => Promise<OpsMonitoringSignalInput[]>;
 }
 
+export type WeeklyReportStatus = "Draft" | "Submitted";
+export type WorkloadRating = 1 | 2 | 3 | 4 | 5;
+export type ProductivityRating = 1 | 2 | 3 | 4 | 5;
+
+export interface WeeklyStaffReport {
+  id: string;
+  employeeId: string;
+  weekStartDate: string;
+  status: WeeklyReportStatus;
+  reportText: string;
+  highlights: string[];
+  workloadRating: WorkloadRating;
+  productivityRating: ProductivityRating;
+  calendarScreenshotUrl?: string;
+  calendarConnected?: boolean;
+  submittedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WeeklyReportManagerComment {
+  id: string;
+  reportId: string;
+  managerUserId: string;
+  commentText: string;
+  aiGenerated: boolean;
+  createdAt: string;
+}
+
+export interface WeeklyReportAiSummary {
+  reportId?: string;
+  scope: "individual" | "team" | "company";
+  scopeId: string;
+  weekStartDate?: string;
+  monthKey?: string;
+  workloadAssessment: string;
+  productivityAssessment: string;
+  overallVerdict: string;
+  flags: string[];
+  generatedAt: string;
+}
+
 export interface DbState {
   version: number;
   activeUserId: string;
@@ -1094,6 +1136,9 @@ export interface DbState {
   opsAuditLogs: OpsAuditLogEntry[];
   opsShifts: OpsShift[];
   opsSlaProfiles: OpsSlaProfile[];
+  weeklyStaffReports: WeeklyStaffReport[];
+  weeklyReportManagerComments: WeeklyReportManagerComment[];
+  weeklyReportAiSummaries: WeeklyReportAiSummary[];
   outbox: string[];
 }
 

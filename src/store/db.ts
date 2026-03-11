@@ -53,6 +53,9 @@ import {
   Task,
   TaskComment,
   TaskLabel,
+  WeeklyReportAiSummary,
+  WeeklyReportManagerComment,
+  WeeklyStaffReport,
 } from "./types";
 import {
   computePayrollPreview,
@@ -113,6 +116,19 @@ interface DbActions {
   createProjectWeeklyReport: (payload: Omit<ProjectWeeklyReport, "id" | "createdAt" | "updatedAt">) => string;
   updateProjectWeeklyReport: (report: ProjectWeeklyReport) => void;
   generateProjectAiSummary: (projectId: string, weekStartDate: string) => void;
+  upsertWeeklyStaffReport: (
+    payload: Omit<WeeklyStaffReport, "id" | "createdAt" | "updatedAt"> & { id?: string },
+  ) => string;
+  submitWeeklyStaffReport: (reportId: string) => { ok: boolean; message?: string };
+  addWeeklyReportManagerComment: (
+    payload: Omit<WeeklyReportManagerComment, "id" | "createdAt">,
+  ) => string;
+  generateWeeklyReportAiSummary: (
+    scope: WeeklyReportAiSummary["scope"],
+    scopeId: string,
+    weekStartDate?: string,
+    monthKey?: string,
+  ) => string;
   createContract: (
     payload: Omit<Contract, "id" | "createdAt" | "updatedAt" | "signedAt"> & Partial<Pick<Contract, "signedAt">>,
   ) => string;
@@ -1534,6 +1550,144 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           ),
         };
       }),
+    upsertWeeklyStaffReport: (payload) => {
+      const now = new Date().toISOString();
+      const state = get();
+      const existing = payload.id
+        ? state.weeklyStaffReports.find((r) => r.id === payload.id)
+        : state.weeklyStaffReports.find(
+            (r) => r.employeeId === payload.employeeId && r.weekStartDate === payload.weekStartDate,
+          );
+      if (existing) {
+        if (existing.status === "Submitted") return existing.id;
+        const { id: _dropId, ...rest } = payload;
+        set((s) => ({
+          ...s,
+          weeklyStaffReports: s.weeklyStaffReports.map((r) =>
+            r.id === existing.id ? { ...r, ...rest, updatedAt: now } : r,
+          ),
+        }));
+        return existing.id;
+      }
+      const id = uid("wsr");
+      const { id: _dropId, ...rest } = payload;
+      set((s) => ({
+        ...s,
+        weeklyStaffReports: [
+          ...s.weeklyStaffReports,
+          { ...rest, id, createdAt: now, updatedAt: now },
+        ],
+      }));
+      return id;
+    },
+    submitWeeklyStaffReport: (reportId) => {
+      const state = get();
+      const report = state.weeklyStaffReports.find((r) => r.id === reportId);
+      if (!report) return { ok: false, message: "Report not found" };
+      if (report.status === "Submitted") return { ok: false, message: "Already submitted" };
+      if (!report.reportText.trim()) return { ok: false, message: "Report text is required" };
+      const now = new Date().toISOString();
+      set((s) => ({
+        ...s,
+        weeklyStaffReports: s.weeklyStaffReports.map((r) =>
+          r.id === reportId ? { ...r, status: "Submitted" as const, submittedAt: now, updatedAt: now } : r,
+        ),
+      }));
+      return { ok: true };
+    },
+    addWeeklyReportManagerComment: (payload) => {
+      const id = uid("wrmc");
+      const now = new Date().toISOString();
+      set((s) => ({
+        ...s,
+        weeklyReportManagerComments: [
+          ...s.weeklyReportManagerComments,
+          { ...payload, id, createdAt: now },
+        ],
+      }));
+      return id;
+    },
+    generateWeeklyReportAiSummary: (scope, scopeId, weekStartDate, monthKey) => {
+      const state = get();
+      const id = uid("wras");
+      const now = new Date().toISOString();
+
+      function assessWorkload(rating: number): string {
+        if (rating <= 2) return "Light week \u2013 capacity available";
+        if (rating === 3) return "Moderate workload";
+        if (rating === 4) return "Heavy week \u2013 close to capacity";
+        return "Extremely heavy week \u2013 potential burnout risk";
+      }
+
+      function assessProductivity(rating: number): string {
+        if (rating <= 2) return "Low productivity reported";
+        if (rating === 3) return "Average productivity";
+        return "High productivity week";
+      }
+
+      function assessVerdict(wl: number, pr: number): string {
+        if (wl >= 4 && pr >= 4) return "High-output high-intensity week";
+        if (wl >= 4 && pr <= 2) return "Heavy load, low output \u2013 needs attention";
+        if (wl <= 2 && pr >= 4) return "Efficient light week";
+        if (wl <= 2 && pr <= 2) return "Low activity week";
+        return "Balanced week";
+      }
+
+      function buildFlags(report: WeeklyStaffReport): string[] {
+        const flags: string[] = [];
+        if (report.highlights.length === 0) flags.push("No highlights submitted");
+        if (report.reportText.length < 50) flags.push("Very short report \u2013 may be incomplete");
+        if (report.workloadRating === 5) flags.push("Burnout risk flagged");
+        if (report.productivityRating === 1) flags.push("Critically low productivity");
+        return flags;
+      }
+
+      if (scope === "individual") {
+        const report = state.weeklyStaffReports.find(
+          (r) => r.employeeId === scopeId && r.status === "Submitted" && r.weekStartDate === weekStartDate,
+        );
+        const wl = report?.workloadRating ?? 3;
+        const pr = report?.productivityRating ?? 3;
+        const summary: WeeklyReportAiSummary = {
+          reportId: report?.id,
+          scope,
+          scopeId,
+          weekStartDate,
+          monthKey,
+          workloadAssessment: assessWorkload(wl),
+          productivityAssessment: assessProductivity(pr),
+          overallVerdict: assessVerdict(wl, pr),
+          flags: report ? buildFlags(report) : ["No report submitted"],
+          generatedAt: now,
+        };
+        set((s) => ({ ...s, weeklyReportAiSummaries: [...s.weeklyReportAiSummaries, { ...summary }] }));
+      } else {
+        const reports = state.weeklyStaffReports.filter((r) => {
+          if (r.status !== "Submitted") return false;
+          if (weekStartDate && r.weekStartDate !== weekStartDate) return false;
+          if (monthKey && !r.weekStartDate.startsWith(monthKey)) return false;
+          return true;
+        });
+        const count = reports.length || 1;
+        const avgWl = Math.round(reports.reduce((s, r) => s + r.workloadRating, 0) / count);
+        const avgPr = Math.round(reports.reduce((s, r) => s + r.productivityRating, 0) / count);
+        const allFlags: string[] = [];
+        reports.forEach((r) => buildFlags(r).forEach((f) => { if (!allFlags.includes(f)) allFlags.push(f); }));
+        const summary: WeeklyReportAiSummary = {
+          scope,
+          scopeId,
+          weekStartDate,
+          monthKey,
+          workloadAssessment: assessWorkload(avgWl),
+          productivityAssessment: assessProductivity(avgPr),
+          overallVerdict: assessVerdict(avgWl, avgPr),
+          flags: reports.length === 0 ? ["No submitted reports found"] : allFlags,
+          generatedAt: now,
+        };
+        set((s) => ({ ...s, weeklyReportAiSummaries: [...s.weeklyReportAiSummaries, { ...summary }] }));
+      }
+      return id;
+    },
     createContract: (payload) => {
       const id = uid("ct");
       const now = new Date().toISOString();
@@ -3905,7 +4059,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 19,
+    version: 21,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -5235,6 +5389,15 @@ export const useAppStore = create<AppStore>()(
         opsAuditLogs: Array.isArray(state.opsAuditLogs) ? opsAuditLogs : fallback.opsAuditLogs,
         opsShifts: Array.isArray(state.opsShifts) ? opsShifts : fallback.opsShifts,
         opsSlaProfiles: Array.isArray(state.opsSlaProfiles) ? opsSlaProfiles : fallback.opsSlaProfiles,
+        weeklyStaffReports: Array.isArray((state as Record<string, unknown>).weeklyStaffReports)
+          ? (state as Record<string, unknown>).weeklyStaffReports as WeeklyStaffReport[]
+          : [],
+        weeklyReportManagerComments: Array.isArray((state as Record<string, unknown>).weeklyReportManagerComments)
+          ? (state as Record<string, unknown>).weeklyReportManagerComments as WeeklyReportManagerComment[]
+          : [],
+        weeklyReportAiSummaries: Array.isArray((state as Record<string, unknown>).weeklyReportAiSummaries)
+          ? (state as Record<string, unknown>).weeklyReportAiSummaries as WeeklyReportAiSummary[]
+          : [],
       } as unknown as AppStore;
     },
   }),

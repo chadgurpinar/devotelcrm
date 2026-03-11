@@ -6,6 +6,14 @@ import { CompanyType, InterconnectionType, OurEntity, Workscope } from "../../st
 
 const navGroups = [
   {
+    title: "Daily Management",
+    items: [
+      { to: "/tasks", label: "Tasks", icon: "T" },
+      { to: "/reports", label: "Projects", icon: "P" },
+      { to: "/management-reports", label: "Management Reports", icon: "R" },
+    ],
+  },
+  {
     title: "CRM",
     items: [
       { to: "/events", label: "Events", icon: "E" },
@@ -14,8 +22,6 @@ const navGroups = [
       { to: "/accounts", label: "Clients", icon: "C" },
       { to: "/contracts", label: "Contracts", icon: "K" },
       { to: "/notes", label: "Notes", icon: "N" },
-      { to: "/tasks", label: "Tasks", icon: "T" },
-      { to: "/reports", label: "Projects", icon: "P" },
     ],
   },
   {

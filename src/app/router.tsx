@@ -10,6 +10,7 @@ import { InterconnectionPage } from "../features/interconnection/Interconnection
 import { TasksPage } from "../features/tasks/TasksPage";
 import { NotesPage } from "../features/notes/NotesPage";
 import { ReportsPage } from "../features/reports/ReportsPage";
+import { ProjectTimelinePage } from "../features/reports/ProjectTimelinePage";
 import { FinancePage } from "../features/finance/FinancePage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { ContractsPage } from "../features/contracts/ContractsPage";
@@ -27,6 +28,7 @@ import { HrLeavePage } from "../features/hr/HrLeavePage";
 import { HrAssetsPage } from "../features/hr/HrAssetsPage";
 import { HrExpensesPage } from "../features/hr/HrExpensesPage";
 import { HrSettingsPage } from "../features/hr/HrSettingsPage";
+import { ManagementReportsPage } from "../features/management-reports/ManagementReportsPage";
 
 export const router = createBrowserRouter([
   {
@@ -44,6 +46,8 @@ export const router = createBrowserRouter([
       { path: "/tasks", element: <TasksPage /> },
       { path: "/notes", element: <NotesPage /> },
       { path: "/reports", element: <ReportsPage /> },
+      { path: "/reports/timeline", element: <ProjectTimelinePage /> },
+      { path: "/management-reports", element: <ManagementReportsPage /> },
       { path: "/finance", element: <FinancePage /> },
       { path: "/settings", element: <SettingsPage /> },
       { path: "/ops/sms-noc", element: <SmsNocPortalPage /> },
