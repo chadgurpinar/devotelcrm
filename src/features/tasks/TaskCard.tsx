@@ -100,7 +100,7 @@ export function TaskCard({
       </div>
       {variant === "kanban" && showActions && onMoveToStage && task.status !== "Done" && (
         <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
-          {task.kanbanStage !== "Backlog" && task.status !== "Done" && (
+          {task.kanbanStage !== "Backlog" && (
             <Button
               size="sm"
               variant="ghost"
