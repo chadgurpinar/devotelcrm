@@ -779,15 +779,20 @@ export function seedCrmCore(params: {
   };
 }
 
-const SEED_LABEL_DEFS: { name: string; color: string }[] = [
-  { name: "Compliance", color: "bg-amber-500" },
-  { name: "Technical", color: "bg-sky-500" },
-  { name: "Commercial", color: "bg-emerald-500" },
-  { name: "Onboarding", color: "bg-violet-500" },
-  { name: "Regulatory", color: "bg-rose-500" },
-  { name: "Testing", color: "bg-teal-500" },
-  { name: "Documentation", color: "bg-indigo-500" },
-  { name: "Partner", color: "bg-orange-500" },
+const SEED_LABEL_DEFS: { id: string; name: string; color: string }[] = [
+  { id: "tl-bug",      name: "Bug",      color: "bg-rose-500" },
+  { id: "tl-feature",  name: "Feature",  color: "bg-blue-500" },
+  { id: "tl-infra",    name: "Infra",    color: "bg-slate-500" },
+  { id: "tl-urgent",   name: "Urgent",   color: "bg-amber-500" },
+  { id: "tl-review",   name: "Review",   color: "bg-violet-500" },
+  { id: "tl-blocked",  name: "Blocked",  color: "bg-rose-700" },
+  { id: "tl-research", name: "Research", color: "bg-cyan-500" },
+  { id: "tl-docs",     name: "Docs",     color: "bg-emerald-500" },
+];
+
+const PROJECT_LABEL_COLORS = [
+  "bg-violet-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500",
+  "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-pink-500",
 ];
 
 const RICH_TASK_TITLES = [
@@ -873,12 +878,18 @@ export function seedCrmTasks(params: {
   const total = scenario.counts.tasks;
 
   const taskLabels: TaskLabel[] = SEED_LABEL_DEFS.map((def) => ({
-    id: idFactory.next("taskLabel"),
+    id: def.id,
     name: def.name,
     color: def.color,
   }));
 
-  const kanbanStages: Array<"Backlog" | "InProgress" | "Done"> = ["Backlog", "InProgress", "Done"];
+  projects.forEach((project, idx) => {
+    taskLabels.push({
+      id: `tl-proj-${project.id}`,
+      name: project.name,
+      color: PROJECT_LABEL_COLORS[idx % PROJECT_LABEL_COLORS.length],
+    });
+  });
 
   for (let idx = 0; idx < total; idx += 1) {
     const note = notes[idx % notes.length];
@@ -921,9 +932,14 @@ export function seedCrmTasks(params: {
 
     const labelCount = idx % 5 === 0 ? 3 : idx % 3 === 0 ? 2 : idx % 2 === 0 ? 1 : 0;
     const labelIds: string[] = [];
+    const genericLabels = taskLabels.filter((l) => !l.id.startsWith("tl-proj-"));
     for (let li = 0; li < labelCount; li += 1) {
-      const label = taskLabels[(idx + li * 3) % taskLabels.length];
+      const label = genericLabels[(idx + li * 3) % genericLabels.length];
       if (!labelIds.includes(label.id)) labelIds.push(label.id);
+    }
+    if (projectLinkStrategy) {
+      const projLabelId = `tl-proj-${projectLinkStrategy.id}`;
+      if (!labelIds.includes(projLabelId)) labelIds.push(projLabelId);
     }
 
     const priority: Task["priority"] =
@@ -1162,9 +1178,12 @@ function buildExtraProjectTasks(params: {
       const createdAt = addDaysToIso(baseNow, -(30 - defIdx * 2));
       const updatedAt = addDaysToIso(createdAt, 2 + (defIdx % 3));
 
+      const genericLabels = taskLabels.filter((l) => !l.id.startsWith("tl-proj-"));
       const labelIds = def.labelIndices
-        .map((li) => taskLabels[li % taskLabels.length]?.id)
+        .map((li) => genericLabels[li % genericLabels.length]?.id)
         .filter(Boolean) as string[];
+      const projLabelId = `tl-proj-${project.id}`;
+      if (!labelIds.includes(projLabelId)) labelIds.push(projLabelId);
 
       const task: Task = {
         id: idFactory.next("task"),
