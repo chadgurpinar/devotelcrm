@@ -4059,7 +4059,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 22,
+    version: 23,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
