@@ -12,6 +12,7 @@ import {
   Project,
   Task,
   TaskComment,
+  TaskLabel,
   User,
   Workscope,
 } from "../types";
@@ -79,6 +80,7 @@ export interface SeedCrmCoreResult {
 export interface SeedTaskResult {
   tasks: Task[];
   taskComments: TaskComment[];
+  taskLabels: TaskLabel[];
 }
 
 function stringHash(input: string): number {
@@ -777,6 +779,86 @@ export function seedCrmCore(params: {
   };
 }
 
+const SEED_LABEL_DEFS: { name: string; color: string }[] = [
+  { name: "Compliance", color: "bg-amber-500" },
+  { name: "Technical", color: "bg-sky-500" },
+  { name: "Commercial", color: "bg-emerald-500" },
+  { name: "Onboarding", color: "bg-violet-500" },
+  { name: "Regulatory", color: "bg-rose-500" },
+  { name: "Testing", color: "bg-teal-500" },
+  { name: "Documentation", color: "bg-indigo-500" },
+  { name: "Partner", color: "bg-orange-500" },
+];
+
+const RICH_TASK_TITLES = [
+  "Share updated pricing pack",
+  "Confirm test window",
+  "Prepare partner onboarding checklist",
+  "Collect compliance documents",
+  "Validate routing matrix",
+  "Schedule AM alignment call",
+  "Review interconnection SLA terms",
+  "Finalize bilateral test plan",
+  "Obtain regulatory sign-off for new route",
+  "Update partner contact directory",
+  "Submit capacity forecast to NOC",
+  "Prepare go-live readiness report",
+  "Configure monitoring alerts for new trunk",
+  "Draft commercial proposal for voice termination",
+  "Coordinate firewall rule changes with partner",
+  "Verify CLI pass-through test results",
+  "Collect signed NDA from partner",
+  "Send test call samples for quality review",
+  "Create escalation matrix document",
+  "Complete traffic projection spreadsheet",
+  "Schedule executive sponsor intro call",
+  "Align billing system configuration",
+  "Review and approve contract redlines",
+  "Prepare MWC follow-up action items",
+  "Upload signed LOI to document repository",
+  "Run end-to-end codec compatibility test",
+  "Update project status deck for steering committee",
+  "Coordinate UAT schedule with QA team",
+  "Send rate deck revision to finance team",
+  "Finalize interconnection topology diagram",
+];
+
+const RICH_TASK_DESCRIPTIONS = [
+  "High-priority deliverable tied to partner go-live timeline. Ensure all stakeholders are aligned before submission.",
+  "Requires coordination with technical and commercial teams. Deadline is firm due to regulatory window.",
+  "Dependency on partner response. Follow up daily until confirmation received.",
+  "Linked to the interconnection onboarding workflow. Must be completed before test phase starts.",
+  "Internal alignment task. Gather inputs from sales, product, and NOC before consolidating.",
+  "Blocking item for project milestone. Escalate if not resolved within 48 hours.",
+  "Routine recurring task. Update documentation and notify watchers on completion.",
+  "Cross-functional deliverable spanning multiple departments. Weekly sync required.",
+  "Partner-facing deliverable. Quality and accuracy are critical before external sharing.",
+  "Administrative follow-up from recent event meeting. Low effort but time-sensitive.",
+];
+
+const RICH_COMMENT_TEXTS = [
+  "Initial task created based on meeting action items.",
+  "Partner confirmed availability for the proposed window.",
+  "Waiting for internal legal review before proceeding.",
+  "Updated the routing matrix with latest carrier data.",
+  "Escalated to management due to approaching deadline.",
+  "Test results look good. Moving to next phase.",
+  "Finance team requested additional documentation.",
+  "Blocked by pending NDA signature from partner side.",
+  "Completed my portion. Handing off to technical team.",
+  "Revised timeline shared with all stakeholders.",
+  "NOC confirmed capacity is sufficient for launch.",
+  "Commercial terms approved by VP. Ready to proceed.",
+  "Compliance flagged a minor issue. Under review.",
+  "Partner requested a 3-day extension. Approved.",
+  "All prerequisite tasks are now complete.",
+  "Quality check passed. Scheduling production cutover.",
+  "Updated the project deck with this week's progress.",
+  "Coordinating with 3 external partners simultaneously.",
+  "Rate deck revision submitted to finance for approval.",
+  "Executive sponsor briefed. No blockers from leadership.",
+];
+
 export function seedCrmTasks(params: {
   idFactory: SeedIdFactory;
   scenario: ScenarioConfig;
@@ -789,59 +871,337 @@ export function seedCrmTasks(params: {
   const tasks: Task[] = [];
   const taskComments: TaskComment[] = [];
   const total = scenario.counts.tasks;
+
+  const taskLabels: TaskLabel[] = SEED_LABEL_DEFS.map((def) => ({
+    id: idFactory.next("taskLabel"),
+    name: def.name,
+    color: def.color,
+  }));
+
+  const kanbanStages: Array<"Backlog" | "InProgress" | "Done"> = ["Backlog", "InProgress", "Done"];
+
   for (let idx = 0; idx < total; idx += 1) {
     const note = notes[idx % notes.length];
     const creator = users[idx % users.length] ?? users[0];
     const assignee = users[(idx + 2) % users.length] ?? creator;
-    const status: Task["status"] = idx % 3 === 0 ? "Open" : idx % 3 === 1 ? "InProgress" : "Done";
+
+    const statusRoll = idx % 7;
+    const status: Task["status"] =
+      statusRoll <= 2 ? "Open" : statusRoll <= 4 ? "InProgress" : "Done";
+
+    const kanbanStage: "Backlog" | "InProgress" | "Done" =
+      status === "Done" ? "Done" :
+      status === "InProgress" ? "InProgress" :
+      (idx % 5 === 0 ? "InProgress" : "Backlog");
+
     const createdAt = addDaysToIso("2026-03-20T09:00:00.000Z", -(idx + 1));
-    const updatedAt = addDaysToIso(createdAt, 1);
-    const linkedProcess = idx % 4 === 0 ? interconnectionProcesses[idx % interconnectionProcesses.length] : undefined;
-    const linkedProject = idx % 3 === 0 ? projects[idx % projects.length] : undefined;
+    const updatedAt = addDaysToIso(createdAt, 1 + (idx % 3));
+
+    const linkedProcess = idx % 3 === 0
+      ? interconnectionProcesses[idx % interconnectionProcesses.length]
+      : undefined;
+
+    const projectLinkStrategy = idx < 20
+      ? projects[idx % projects.length]
+      : idx % 2 === 0
+        ? projects[idx % projects.length]
+        : undefined;
+
+    const isUrgent =
+      idx === 0 || idx === 3 || idx === 7 || idx === 12 || idx === 18 ||
+      idx === 25 || idx === 33 || idx === 42 || idx === 50;
+
+    const hasDueDate = idx % 2 === 0 || isUrgent;
+    const dueOffset = isUrgent
+      ? (idx % 3 === 0 ? -2 : idx % 3 === 1 ? 1 : 3)
+      : (idx % 4 === 0 ? -5 : idx % 4 === 1 ? 2 : idx % 4 === 2 ? 7 : 14);
+    const dueAt = hasDueDate
+      ? addDaysToIso("2026-03-20T12:00:00.000Z", dueOffset + (idx % 5))
+      : undefined;
+
+    const labelCount = idx % 5 === 0 ? 3 : idx % 3 === 0 ? 2 : idx % 2 === 0 ? 1 : 0;
+    const labelIds: string[] = [];
+    for (let li = 0; li < labelCount; li += 1) {
+      const label = taskLabels[(idx + li * 3) % taskLabels.length];
+      if (!labelIds.includes(label.id)) labelIds.push(label.id);
+    }
+
+    const priority: Task["priority"] =
+      isUrgent ? "Critical" :
+      idx % 7 === 0 ? "Critical" :
+      idx % 4 === 0 ? "High" :
+      idx % 3 === 0 ? "Medium" : "Low";
+
     const task: Task = {
       id: idFactory.next("task"),
-      title: TASK_TITLES[idx % TASK_TITLES.length],
-      description: `Synthetic task generated from note ${note.id}.`,
+      title: RICH_TASK_TITLES[idx % RICH_TASK_TITLES.length],
+      description: RICH_TASK_DESCRIPTIONS[idx % RICH_TASK_DESCRIPTIONS.length],
       status,
-      priority: idx % 8 === 0 ? "Critical" : idx % 3 === 0 ? "High" : idx % 3 === 1 ? "Medium" : "Low",
-      dueAt: idx % 5 === 0 ? addDaysToIso(createdAt, 5) : undefined,
+      priority,
+      dueAt,
       createdByUserId: creator.id,
       assigneeUserId: assignee.id,
-      watcherUserIds: Array.from(new Set([creator.id, assignee.id, users[(idx + 5) % users.length]?.id].filter(Boolean) as string[])),
-      visibility: creator.id === assignee.id ? "Private" : "Shared",
+      watcherUserIds: Array.from(
+        new Set(
+          [creator.id, assignee.id, users[(idx + 5) % users.length]?.id, users[(idx + 7) % users.length]?.id].filter(
+            Boolean,
+          ) as string[],
+        ),
+      ),
+      visibility: idx % 4 === 0 ? "Private" : "Shared",
       companyId: note.companyId,
       eventId: note.relatedEventId,
       interconnectionProcessId: linkedProcess?.id,
-      projectId: linkedProject?.id,
+      projectId: projectLinkStrategy?.id,
       meetingId: note.relatedMeetingId,
       noteId: note.id,
       createdAt,
       updatedAt,
       completedAt: status === "Done" ? addDaysToIso(updatedAt, 1) : undefined,
-      archivedAt: status === "Done" && idx % 6 === 0 ? addDaysToIso(updatedAt, 2) : undefined,
+      archivedAt: status === "Done" && idx % 9 === 0 ? addDaysToIso(updatedAt, 2) : undefined,
+      isUrgent: isUrgent || undefined,
+      kanbanStage,
+      labelIds: labelIds.length > 0 ? labelIds : undefined,
     };
+
     tasks.push(task);
+
     taskComments.push({
       id: idFactory.next("taskComment"),
       taskId: task.id,
       authorUserId: creator.id,
-      content: "Initial deterministic task entry.",
+      content: RICH_COMMENT_TEXTS[idx % RICH_COMMENT_TEXTS.length],
       kind: "Comment",
       createdAt,
     });
+
     if (idx % 2 === 0) {
       taskComments.push({
         id: idFactory.next("taskComment"),
         taskId: task.id,
         authorUserId: assignee.id,
-        content: idx % 5 === 0 ? "Waiting for partner input." : "Progress updated by assignee.",
+        content: RICH_COMMENT_TEXTS[(idx + 7) % RICH_COMMENT_TEXTS.length],
         kind: idx % 9 === 0 && task.status !== "Done" ? "Blocker" : "Comment",
         createdAt: updatedAt,
       });
     }
+
+    if (idx % 3 === 0) {
+      const thirdUser = users[(idx + 4) % users.length] ?? creator;
+      taskComments.push({
+        id: idFactory.next("taskComment"),
+        taskId: task.id,
+        authorUserId: thirdUser.id,
+        content: RICH_COMMENT_TEXTS[(idx + 13) % RICH_COMMENT_TEXTS.length],
+        kind: isUrgent ? "Blocker" : "Comment",
+        createdAt: addDaysToIso(updatedAt, 1),
+      });
+    }
   }
+
+  const extraProjectTasks = buildExtraProjectTasks({
+    idFactory,
+    users,
+    projects,
+    taskLabels,
+    taskComments,
+  });
+  tasks.push(...extraProjectTasks);
+
   return {
     tasks: tasks.sort((left, right) => left.id.localeCompare(right.id)),
     taskComments: taskComments.sort((left, right) => left.id.localeCompare(right.id)),
+    taskLabels,
   };
+}
+
+interface ExtraProjectTaskDef {
+  titleSuffix: string;
+  description: string;
+  status: Task["status"];
+  kanbanStage: "Backlog" | "InProgress" | "Done";
+  priority: Task["priority"];
+  isUrgent?: boolean;
+  dueDaysFromNow: number | null;
+  labelIndices: number[];
+  commentTexts: string[];
+}
+
+const PER_PROJECT_TASK_DEFS: ExtraProjectTaskDef[] = [
+  {
+    titleSuffix: "Kick-off meeting preparation",
+    description: "Prepare agenda, invite stakeholders, and distribute pre-read materials for the project kick-off.",
+    status: "Done",
+    kanbanStage: "Done",
+    priority: "High",
+    dueDaysFromNow: -14,
+    labelIndices: [2, 6],
+    commentTexts: ["Kick-off scheduled for next Monday.", "All materials distributed. Ready to go."],
+  },
+  {
+    titleSuffix: "Technical architecture review",
+    description: "Review proposed technical architecture with NOC and partner engineering teams.",
+    status: "InProgress",
+    kanbanStage: "InProgress",
+    priority: "Critical",
+    isUrgent: true,
+    dueDaysFromNow: 2,
+    labelIndices: [1, 5],
+    commentTexts: ["Architecture doc v2 uploaded.", "NOC raised concerns about failover design. Addressing.", "Revised diagram shared with partner."],
+  },
+  {
+    titleSuffix: "Compliance documentation collection",
+    description: "Gather all required compliance and regulatory documents from the partner before interconnection.",
+    status: "Open",
+    kanbanStage: "Backlog",
+    priority: "High",
+    dueDaysFromNow: 5,
+    labelIndices: [0, 4],
+    commentTexts: ["Sent initial request to partner compliance team.", "Reminder sent. Still waiting for 2 of 5 documents."],
+  },
+  {
+    titleSuffix: "Rate deck negotiation",
+    description: "Negotiate and finalize rate deck with partner commercial team. Finance approval required.",
+    status: "InProgress",
+    kanbanStage: "InProgress",
+    priority: "High",
+    dueDaysFromNow: 3,
+    labelIndices: [2, 7],
+    commentTexts: ["First round of negotiations complete.", "Partner requested revised rates for 3 destinations.", "Finance reviewing final numbers."],
+  },
+  {
+    titleSuffix: "End-to-end testing plan",
+    description: "Create and execute bilateral testing plan covering voice quality, CLI pass-through, and failover scenarios.",
+    status: "Open",
+    kanbanStage: "Backlog",
+    priority: "Medium",
+    dueDaysFromNow: 10,
+    labelIndices: [1, 5],
+    commentTexts: ["Test plan template prepared.", "Coordinating test window with partner NOC."],
+  },
+  {
+    titleSuffix: "Go-live readiness checklist",
+    description: "Complete all go-live prerequisites including monitoring setup, escalation paths, and capacity verification.",
+    status: "Open",
+    kanbanStage: "Backlog",
+    priority: "Medium",
+    dueDaysFromNow: 15,
+    labelIndices: [1, 3],
+    commentTexts: ["Checklist created with 12 items.", "3 items still pending partner confirmation."],
+  },
+  {
+    titleSuffix: "Weekly status report",
+    description: "Compile and distribute weekly project status report to all stakeholders and steering committee.",
+    status: "InProgress",
+    kanbanStage: "InProgress",
+    priority: "Low",
+    dueDaysFromNow: 1,
+    labelIndices: [6],
+    commentTexts: ["Report template updated with new KPIs.", "Draft sent to PM for review."],
+  },
+  {
+    titleSuffix: "Partner SLA review and sign-off",
+    description: "Review SLA terms with partner, negotiate any deviations, and obtain mutual sign-off.",
+    status: "Open",
+    kanbanStage: "Backlog",
+    priority: "High",
+    isUrgent: true,
+    dueDaysFromNow: -1,
+    labelIndices: [0, 2, 4],
+    commentTexts: [
+      "SLA document sent to partner legal.",
+      "Partner legal requested changes to penalty clause.",
+      "Escalated to VP for approval on revised terms.",
+      "URGENT: Deadline passed. Need immediate resolution.",
+    ],
+  },
+  {
+    titleSuffix: "Capacity planning forecast",
+    description: "Prepare 6-month traffic capacity forecast and share with NOC for infrastructure planning.",
+    status: "InProgress",
+    kanbanStage: "InProgress",
+    priority: "Medium",
+    dueDaysFromNow: 7,
+    labelIndices: [1],
+    commentTexts: ["Historical data pulled. Building projection model.", "Draft forecast ready for review."],
+  },
+  {
+    titleSuffix: "Billing integration setup",
+    description: "Configure billing system integration for automated invoicing and reconciliation with the partner.",
+    status: "Open",
+    kanbanStage: "Backlog",
+    priority: "Low",
+    dueDaysFromNow: 20,
+    labelIndices: [1, 3],
+    commentTexts: ["Billing team briefed on requirements."],
+  },
+];
+
+function buildExtraProjectTasks(params: {
+  idFactory: SeedIdFactory;
+  users: User[];
+  projects: Project[];
+  taskLabels: TaskLabel[];
+  taskComments: TaskComment[];
+}): Task[] {
+  const { idFactory, users, projects, taskLabels, taskComments } = params;
+  const extraTasks: Task[] = [];
+  const baseNow = "2026-03-20T12:00:00.000Z";
+
+  projects.forEach((project, projectIdx) => {
+    const teamUsers = [
+      users[projectIdx % users.length],
+      users[(projectIdx + 1) % users.length],
+      users[(projectIdx + 3) % users.length],
+      users[(projectIdx + 5) % users.length],
+    ].filter(Boolean) as User[];
+
+    PER_PROJECT_TASK_DEFS.forEach((def, defIdx) => {
+      const creator = teamUsers[defIdx % teamUsers.length];
+      const assignee = teamUsers[(defIdx + 1) % teamUsers.length];
+      const createdAt = addDaysToIso(baseNow, -(30 - defIdx * 2));
+      const updatedAt = addDaysToIso(createdAt, 2 + (defIdx % 3));
+
+      const labelIds = def.labelIndices
+        .map((li) => taskLabels[li % taskLabels.length]?.id)
+        .filter(Boolean) as string[];
+
+      const task: Task = {
+        id: idFactory.next("task"),
+        title: `[${project.name}] ${def.titleSuffix}`,
+        description: def.description,
+        status: def.status,
+        priority: def.priority,
+        dueAt: def.dueDaysFromNow != null ? addDaysToIso(baseNow, def.dueDaysFromNow) : undefined,
+        createdByUserId: creator.id,
+        assigneeUserId: assignee.id,
+        watcherUserIds: Array.from(new Set(teamUsers.map((u) => u.id))),
+        visibility: "Shared",
+        projectId: project.id,
+        createdAt,
+        updatedAt,
+        completedAt: def.status === "Done" ? addDaysToIso(updatedAt, 1) : undefined,
+        archivedAt: undefined,
+        isUrgent: def.isUrgent || undefined,
+        kanbanStage: def.kanbanStage,
+        labelIds: labelIds.length > 0 ? labelIds : undefined,
+      };
+
+      extraTasks.push(task);
+
+      def.commentTexts.forEach((text, commentIdx) => {
+        const commentAuthor = teamUsers[(defIdx + commentIdx) % teamUsers.length];
+        taskComments.push({
+          id: idFactory.next("taskComment"),
+          taskId: task.id,
+          authorUserId: commentAuthor.id,
+          content: text,
+          kind: def.isUrgent && commentIdx === def.commentTexts.length - 1 ? "Blocker" : "Comment",
+          createdAt: addDaysToIso(createdAt, commentIdx),
+        });
+      });
+    });
+  });
+
+  return extraTasks;
 }

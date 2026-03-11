@@ -9,7 +9,10 @@ import {
   ProjectRoleKey,
   ProjectSubmissionKey,
   ProjectWeeklyReport,
+  Task,
 } from "../../store/types";
+import { TaskDrawer } from "../tasks/TaskDrawer";
+import { TaskKanbanBoard } from "../tasks/TaskKanbanBoard";
 
 type RiskFilter = "Any" | ProjectRiskLevel;
 type StatusFilter = "Any" | Project["status"];
@@ -288,6 +291,11 @@ export function ProjectGovernanceV2() {
   const [drilldown, setDrilldown] = useState<KpiDrilldown>("none");
   const [openWeek, setOpenWeek] = useState<{ projectId: string; weekStartDate: string } | null>(null);
   const [weekView, setWeekView] = useState<WeekView>("overview");
+  const [openProjectTasksId, setOpenProjectTasksId] = useState<string | null>(null);
+  const [selectedTaskIdInProject, setSelectedTaskIdInProject] = useState<string | null>(null);
+  const [isProjectCreateTaskOpen, setIsProjectCreateTaskOpen] = useState(false);
+  const [projectCreateTaskTitle, setProjectCreateTaskTitle] = useState("");
+  const [projectCreateTaskAssignee, setProjectCreateTaskAssignee] = useState("");
   const [isProjectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string>("");
   const [projectForm, setProjectForm] = useState<ProjectFormState>(() => emptyProjectForm(state.activeUserId));
@@ -1072,12 +1080,17 @@ export function ProjectGovernanceV2() {
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  <div className="flex flex-col items-end gap-2 text-right">
                     <p className="text-xs text-slate-500">Latest submission</p>
                     <p className="text-xs font-semibold text-slate-700">{formatDateTime(meta?.latestSubmissionAt)}</p>
-                    <Button size="sm" variant="secondary" className="mt-2" onClick={() => openEditDrawer(project)}>
-                      Edit
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="secondary" onClick={() => setOpenProjectTasksId(project.id)}>
+                        Tasks
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => openEditDrawer(project)}>
+                        Edit
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
@@ -1335,6 +1348,104 @@ export function ProjectGovernanceV2() {
           </div>
         </div>
       )}
+
+      {openProjectTasksId && (() => {
+        const project = state.projects.find((p) => p.id === openProjectTasksId);
+        const projectTasks = state.tasks.filter((t) => t.projectId === openProjectTasksId && !t.archivedAt);
+        const selectedTask = selectedTaskIdInProject ? state.tasks.find((t) => t.id === selectedTaskIdInProject) : null;
+        const commentsByTaskId = (() => {
+          const map = new Map<string, typeof state.taskComments>();
+          state.taskComments.forEach((c) => {
+            const list = map.get(c.taskId) ?? [];
+            list.push(c);
+            map.set(c.taskId, list);
+          });
+          return map;
+        })();
+
+        if (!project) return null;
+        return (
+          <div className="fixed inset-0 z-40 bg-slate-900/30" onClick={() => { setOpenProjectTasksId(null); setSelectedTaskIdInProject(null); }}>
+            <aside
+              className="absolute right-0 top-0 h-full w-full max-w-3xl overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800">Tasks: {project.name}</h3>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      state.createTask({
+                        title: `New task for ${project.name}`,
+                        description: "",
+                        status: "Open",
+                        priority: "Medium",
+                        createdByUserId: state.activeUserId,
+                        assigneeUserId: state.activeUserId,
+                        visibility: "Private",
+                        projectId: project.id,
+                        kanbanStage: "Backlog",
+                      });
+                    }}
+                  >
+                    New Task
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setOpenProjectTasksId(null); setSelectedTaskIdInProject(null); }}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+              {selectedTask ? (
+                <TaskDrawer
+                  task={selectedTask}
+                  comments={commentsByTaskId.get(selectedTask.id) ?? []}
+                  users={state.users}
+                  labels={state.taskLabels}
+                  getUserName={(userId) => getUserName(state, userId)}
+                  onSave={(task, draft) => {
+                    state.updateTask({
+                      ...task,
+                      title: draft.title.trim(),
+                      description: draft.description.trim(),
+                      status: draft.status,
+                      priority: draft.priority,
+                      dueAt: draft.dueAt ? new Date(`${draft.dueAt}T12:00:00`).toISOString() : undefined,
+                      assigneeUserId: draft.assigneeUserId,
+                      visibility: draft.visibility,
+                      watcherUserIds: draft.watcherUserIds,
+                      isUrgent: draft.isUrgent,
+                      labelIds: draft.labelIds,
+                    });
+                  }}
+                  onClose={() => setSelectedTaskIdInProject(null)}
+                  onArchive={(task) =>
+                    state.updateTask({
+                      ...task,
+                      status: "Done",
+                      archivedAt: new Date().toISOString(),
+                    })
+                  }
+                  onUnarchive={(task) => state.updateTask({ ...task, archivedAt: undefined })}
+                  onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
+                />
+              ) : (
+                <TaskKanbanBoard
+                  tasks={projectTasks}
+                  users={state.users}
+                  labels={state.taskLabels}
+                  onUpdateTask={(id, patch) => {
+                    const task = state.tasks.find((t) => t.id === id);
+                    if (task) state.updateTask({ ...task, ...patch });
+                  }}
+                  onOpenTask={(task) => setSelectedTaskIdInProject(task.id)}
+                  getUserName={(userId) => getUserName(state, userId)}
+                />
+              )}
+            </aside>
+          </div>
+        );
+      })()}
 
       {isProjectDrawerOpen && (
         <div className="fixed inset-0 z-40 bg-slate-900/30" onClick={() => setProjectDrawerOpen(false)}>

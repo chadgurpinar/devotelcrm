@@ -52,6 +52,7 @@ import {
   ProjectWeeklyReport,
   Task,
   TaskComment,
+  TaskLabel,
 } from "./types";
 import {
   computePayrollPreview,
@@ -102,6 +103,7 @@ interface DbActions {
     },
   ) => string;
   addTaskComment: (taskId: string, text: string, kind?: TaskComment["kind"]) => void;
+  addTaskLabel: (payload: Omit<TaskLabel, "id">) => string;
   updateTask: (task: Task) => void;
   createProject: (payload: Omit<Project, "id" | "createdAt" | "updatedAt">) => string;
   updateProject: (project: Project) => void;
@@ -1299,6 +1301,14 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             : task,
         ),
       })),
+    addTaskLabel: (payload) => {
+      const labelId = uid("tl");
+      set((state) => ({
+        ...state,
+        taskLabels: [...state.taskLabels, { ...payload, id: labelId }],
+      }));
+      return labelId;
+    },
     updateTask: (task) =>
       set((state) => {
         const existing = state.tasks.find((row) => row.id === task.id);
@@ -3845,7 +3855,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 17,
+    version: 18,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -4131,6 +4141,14 @@ export const useAppStore = create<AppStore>()(
                 status === "Done" && typeof raw.archivedAt === "string"
                   ? raw.archivedAt
                   : undefined,
+              isUrgent: typeof raw.isUrgent === "boolean" ? raw.isUrgent : undefined,
+              kanbanStage:
+                raw.kanbanStage === "Backlog" || raw.kanbanStage === "InProgress" || raw.kanbanStage === "Done"
+                  ? raw.kanbanStage
+                  : undefined,
+              labelIds: Array.isArray(raw.labelIds)
+                ? raw.labelIds.filter((id): id is string => typeof id === "string")
+                : undefined,
             } as Task;
           })
         : fallback.tasks;
@@ -5101,6 +5119,9 @@ export const useAppStore = create<AppStore>()(
         meetings,
         eventStaff,
         tasks,
+        taskLabels: Array.isArray(state.taskLabels)
+          ? (state.taskLabels as unknown as TaskLabel[])
+          : fallback.taskLabels,
         taskComments,
         projects: Array.isArray(state.projects) ? projects : fallback.projects,
         projectWeeklyReports: Array.isArray(state.projectWeeklyReports)

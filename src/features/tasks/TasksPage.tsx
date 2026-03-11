@@ -1,9 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getCompanyName, getEventName, getProjectName, getUserName } from "../../store/selectors";
-import { Task, TaskPriority, TaskStatus, TaskVisibility } from "../../store/types";
+import { Task, TaskLabel, TaskPriority, TaskStatus, TaskVisibility } from "../../store/types";
+import { TaskDrawer } from "./TaskDrawer";
+import { TaskKanbanBoard } from "./TaskKanbanBoard";
+
+const TASKS_VIEW_MODE_KEY = "tasks-view-mode";
+type TasksViewMode = "LIST" | "KANBAN";
+
+const LABEL_COLOR_PRESETS = [
+  "bg-rose-500",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-blue-500",
+  "bg-violet-500",
+  "bg-cyan-500",
+  "bg-slate-500",
+  "bg-pink-500",
+];
 
 type TaskSection = "MyPersonalTasks" | "AssignedToMe" | "AssignedByMe" | "Completed" | "Archive";
 type DueFilter = "Any" | "DueSoon" | "Overdue" | "NoDueDate";
@@ -20,6 +36,8 @@ type CreateTaskForm = {
   linkedType: "None" | "Company" | "Event" | "Interconnection" | "Project";
   linkedId: string;
   initialComment: string;
+  isUrgent: boolean;
+  labelIds: string[];
 };
 
 const priorityWeight: Record<TaskPriority, number> = {
@@ -53,11 +71,24 @@ function emptyCreateTaskForm(activeUserId: string): CreateTaskForm {
     linkedType: "None",
     linkedId: "",
     initialComment: "",
+    isUrgent: false,
+    labelIds: [],
   };
+}
+
+function getStoredViewMode(): TasksViewMode {
+  try {
+    const stored = localStorage.getItem(TASKS_VIEW_MODE_KEY);
+    if (stored === "LIST" || stored === "KANBAN") return stored;
+  } catch {
+    /* ignore */
+  }
+  return "LIST";
 }
 
 export function TasksPage() {
   const state = useAppStore();
+  const [viewMode, setViewMode] = useState<TasksViewMode>(getStoredViewMode);
   const [section, setSection] = useState<TaskSection>("MyPersonalTasks");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "Any">("Any");
@@ -66,20 +97,19 @@ export function TasksPage() {
   const [linkedFilter, setLinkedFilter] = useState<LinkedFilter>("Any");
   const [sortBy, setSortBy] = useState<SortBy>("LastActivityDesc");
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
-  const [newCommentText, setNewCommentText] = useState("");
-  const [newCommentKind, setNewCommentKind] = useState<"Comment" | "Blocker">("Comment");
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [form, setForm] = useState<CreateTaskForm>(() => emptyCreateTaskForm(state.activeUserId));
-  const [detailDraft, setDetailDraft] = useState<{
-    title: string;
-    description: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueAt: string;
-    assigneeUserId: string;
-    visibility: TaskVisibility;
-    watcherUserIds: string[];
-  } | null>(null);
+  const [addLabelPopoverOpen, setAddLabelPopoverOpen] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState(LABEL_COLOR_PRESETS[0]);
+  const setViewModePersisted = useCallback((mode: TasksViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(TASKS_VIEW_MODE_KEY, mode);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const commentsByTaskId = useMemo(() => {
     const map = new Map<string, typeof state.taskComments>();
@@ -98,23 +128,6 @@ export function TasksPage() {
     () => state.tasks.find((task) => task.id === selectedTaskId) ?? null,
     [selectedTaskId, state.tasks],
   );
-
-  useEffect(() => {
-    if (!selectedTask) {
-      setDetailDraft(null);
-      return;
-    }
-    setDetailDraft({
-      title: selectedTask.title,
-      description: selectedTask.description,
-      status: selectedTask.status,
-      priority: selectedTask.priority,
-      dueAt: selectedTask.dueAt ? selectedTask.dueAt.slice(0, 10) : "",
-      assigneeUserId: selectedTask.assigneeUserId,
-      visibility: selectedTask.visibility,
-      watcherUserIds: selectedTask.watcherUserIds,
-    });
-  }, [selectedTask]);
 
   const linkedOptions = useMemo(() => {
     switch (form.linkedType) {
@@ -216,6 +229,8 @@ export function TasksPage() {
     }
 
     return dataset.slice().sort((left, right) => {
+      if (left.isUrgent && !right.isUrgent) return -1;
+      if (!left.isUrgent && right.isUrgent) return 1;
       if (sortBy === "DueDateAsc") {
         if (!left.dueAt && !right.dueAt) return 0;
         if (!left.dueAt) return 1;
@@ -258,6 +273,9 @@ export function TasksPage() {
       createdByUserId: state.activeUserId,
       assigneeUserId: form.assigneeUserId || state.activeUserId,
       visibility: form.visibility,
+      isUrgent: form.isUrgent,
+      kanbanStage: "Backlog",
+      labelIds: form.labelIds.length > 0 ? form.labelIds : undefined,
       ...linkedFields,
       initialComment: form.initialComment.trim() || undefined,
     });
@@ -265,20 +283,24 @@ export function TasksPage() {
     setCreateModalOpen(false);
   }
 
-  function saveTaskDetail() {
-    if (!selectedTask || !detailDraft) return;
-    state.updateTask({
-      ...selectedTask,
-      title: detailDraft.title.trim(),
-      description: detailDraft.description.trim(),
-      status: detailDraft.status,
-      priority: detailDraft.priority,
-      dueAt: detailDraft.dueAt ? new Date(`${detailDraft.dueAt}T12:00:00`).toISOString() : undefined,
-      assigneeUserId: detailDraft.assigneeUserId,
-      visibility: detailDraft.visibility,
-      watcherUserIds: detailDraft.watcherUserIds,
-    });
-  }
+  const saveTaskDetail = useCallback(
+    (task: Task, draft: { title: string; description: string; status: TaskStatus; priority: TaskPriority; dueAt: string; assigneeUserId: string; visibility: TaskVisibility; watcherUserIds: string[]; isUrgent?: boolean; labelIds?: string[] }) => {
+      state.updateTask({
+        ...task,
+        title: draft.title.trim(),
+        description: draft.description.trim(),
+        status: draft.status,
+        priority: draft.priority,
+        dueAt: draft.dueAt ? new Date(`${draft.dueAt}T12:00:00`).toISOString() : undefined,
+        assigneeUserId: draft.assigneeUserId,
+        visibility: draft.visibility,
+        watcherUserIds: draft.watcherUserIds,
+        isUrgent: draft.isUrgent,
+        labelIds: draft.labelIds,
+      });
+    },
+    [state],
+  );
 
   function archiveTaskDirectly(task: Task) {
     state.updateTask({
@@ -288,32 +310,82 @@ export function TasksPage() {
     });
   }
 
-  function toggleWatcher(userId: string) {
-    if (!detailDraft || !selectedTask) return;
-    const mustKeep = userId === selectedTask.createdByUserId || userId === detailDraft.assigneeUserId;
-    if (mustKeep) return;
-    setDetailDraft((draft) => {
-      if (!draft) return draft;
-      const exists = draft.watcherUserIds.includes(userId);
-      const next = exists ? draft.watcherUserIds.filter((id) => id !== userId) : [...draft.watcherUserIds, userId];
-      return { ...draft, watcherUserIds: next };
-    });
-  }
+  const handleAddLabel = () => {
+    const name = newLabelName.trim();
+    if (!name) return;
+    state.addTaskLabel({ name, color: newLabelColor });
+    setNewLabelName("");
+    setNewLabelColor(LABEL_COLOR_PRESETS[0]);
+    setAddLabelPopoverOpen(false);
+  };
 
   return (
     <div className="space-y-4">
       <Card
         title="Operational Tasks"
         actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              setForm(emptyCreateTaskForm(state.activeUserId));
-              setCreateModalOpen(true);
-            }}
-          >
-            Create task
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-1">
+              <Button
+                size="sm"
+                variant={viewMode === "LIST" ? "primary" : "secondary"}
+                onClick={() => setViewModePersisted("LIST")}
+              >
+                List
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === "KANBAN" ? "primary" : "secondary"}
+                onClick={() => setViewModePersisted("KANBAN")}
+              >
+                Kanban
+              </Button>
+            </div>
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setAddLabelPopoverOpen((v) => !v)}
+              >
+                + Add label
+              </Button>
+              {addLabelPopoverOpen && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setAddLabelPopoverOpen(false)} />
+                  <div className="absolute right-0 top-full z-40 mt-1 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+                    <input
+                      className="mb-2 w-full rounded border border-slate-200 px-2 py-1 text-xs"
+                      placeholder="Label name"
+                      value={newLabelName}
+                      onChange={(e) => setNewLabelName(e.target.value)}
+                    />
+                    <div className="mb-2 flex flex-wrap gap-1">
+                      {LABEL_COLOR_PRESETS.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          className={`h-5 w-5 rounded-full ${c} ${newLabelColor === c ? "ring-2 ring-slate-400 ring-offset-1" : ""}`}
+                          onClick={() => setNewLabelColor(c)}
+                        />
+                      ))}
+                    </div>
+                    <Button size="sm" onClick={handleAddLabel} disabled={!newLabelName.trim()}>
+                      Create
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+            <Button
+              size="sm"
+              onClick={() => {
+                setForm(emptyCreateTaskForm(state.activeUserId));
+                setCreateModalOpen(true);
+              }}
+            >
+              Create task
+            </Button>
+          </div>
         }
       >
         <div className="mb-3 flex flex-wrap gap-2">
@@ -388,6 +460,19 @@ export function TasksPage() {
           </div>
         </div>
 
+        {viewMode === "KANBAN" ? (
+          <TaskKanbanBoard
+            tasks={rows}
+            users={state.users}
+            labels={state.taskLabels}
+            onUpdateTask={(id, patch) => {
+              const task = state.tasks.find((t) => t.id === id);
+              if (task) state.updateTask({ ...task, ...patch });
+            }}
+            onOpenTask={(task) => setSelectedTaskId(task.id)}
+            getUserName={(userId) => getUserName(state, userId)}
+          />
+        ) : (
         <div className="mt-3 overflow-x-auto">
           <table>
             <thead>
@@ -408,16 +493,27 @@ export function TasksPage() {
                 const lastComment = (commentsByTaskId.get(task.id) ?? []).slice(-1)[0];
                 const linkTarget = getTaskLinkTarget(task);
                 const overdue = isOverdue(task);
+                const isUrgent = task.isUrgent === true;
+                const rowClass = isUrgent ? "bg-rose-50 border-l-4 border-l-rose-400" : overdue ? "bg-rose-50/60" : "";
                 return (
-                  <tr key={task.id} className={overdue ? "bg-rose-50/60" : ""}>
+                  <tr key={task.id} className={rowClass}>
                     <td>
                       <p className="font-semibold text-slate-700">{task.title}</p>
                       <p className="text-xs text-slate-500">{task.description || "-"}</p>
                       <div className="mt-1 flex flex-wrap gap-1">
+                        {isUrgent && <Badge className="bg-rose-100 text-rose-700">URGENT</Badge>}
                         <Badge className="bg-slate-100 text-slate-700">{task.visibility}</Badge>
                         <Badge className="bg-slate-100 text-slate-700">{task.watcherUserIds.length} watchers</Badge>
                         {task.archivedAt && <Badge className="bg-violet-100 text-violet-700">Archived</Badge>}
                         {overdue && <Badge className="bg-rose-100 text-rose-700">Overdue</Badge>}
+                        {(task.labelIds ?? []).map((lid) => {
+                          const label = state.taskLabels.find((l) => l.id === lid);
+                          return label ? (
+                            <span key={label.id} className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${label.color}`}>
+                              {label.name}
+                            </span>
+                          ) : null;
+                        })}
                       </div>
                     </td>
                     <td>
@@ -426,7 +522,16 @@ export function TasksPage() {
                       </Badge>
                     </td>
                     <td>{task.priority}</td>
-                    <td>{task.dueAt ? new Date(task.dueAt).toLocaleDateString() : "-"}</td>
+                    <td className={overdue && task.status !== "Done" ? "font-semibold text-rose-600" : ""}>
+                      {task.dueAt ? (
+                        <>
+                          {overdue && task.status !== "Done" && "⚠ "}
+                          {new Date(task.dueAt).toLocaleDateString()}
+                        </>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
                     <td>{new Date(task.updatedAt).toLocaleString()}</td>
                     <td className="text-xs">
                       <p>By: {getUserName(state, task.createdByUserId)}</p>
@@ -493,6 +598,7 @@ export function TasksPage() {
             </tbody>
           </table>
         </div>
+        )}
       </Card>
 
       {isCreateModalOpen && (
@@ -583,6 +689,43 @@ export function TasksPage() {
                 <FieldLabel>Initial comment</FieldLabel>
                 <input value={form.initialComment} onChange={(e) => setForm((prev) => ({ ...prev, initialComment: e.target.value }))} />
               </div>
+              <div className="md:col-span-4 flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={form.isUrgent}
+                    onChange={(e) => setForm((prev) => ({ ...prev, isUrgent: e.target.checked }))}
+                  />
+                  Mark as Urgent
+                </label>
+              </div>
+              {state.taskLabels.length > 0 && (
+                <div className="md:col-span-4 rounded-md border border-slate-200 p-2">
+                  <FieldLabel>Labels</FieldLabel>
+                  <div className="flex flex-wrap gap-2">
+                    {state.taskLabels.map((label) => {
+                      const checked = form.labelIds.includes(label.id);
+                      return (
+                        <label key={label.id} className="flex items-center gap-2 text-xs text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                labelIds: checked ? prev.labelIds.filter((id) => id !== label.id) : [...prev.labelIds, label.id],
+                              }))
+                            }
+                          />
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${label.color}`}>
+                            {label.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="mt-3 flex items-center justify-end gap-2">
               <Button size="sm" variant="secondary" onClick={() => setCreateModalOpen(false)}>
@@ -596,172 +739,25 @@ export function TasksPage() {
         </div>
       )}
 
-      {selectedTask && detailDraft && (
-        <Card
-          title={`Task detail: ${selectedTask.title}`}
-          actions={
-            <Button size="sm" variant="secondary" onClick={() => setSelectedTaskId("")}>
-              Close
-            </Button>
+      {selectedTask && (
+        <TaskDrawer
+          task={selectedTask}
+          comments={commentsByTaskId.get(selectedTask.id) ?? []}
+          users={state.users}
+          labels={state.taskLabels}
+          getUserName={(userId) => getUserName(state, userId)}
+          onSave={saveTaskDetail}
+          onClose={() => setSelectedTaskId("")}
+          onArchive={(task) =>
+            state.updateTask({
+              ...task,
+              status: "Done",
+              archivedAt: new Date().toISOString(),
+            })
           }
-        >
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="md:col-span-2">
-              <FieldLabel>Title</FieldLabel>
-              <input value={detailDraft.title} onChange={(e) => setDetailDraft((prev) => (prev ? { ...prev, title: e.target.value } : prev))} />
-            </div>
-            <div>
-              <FieldLabel>Status</FieldLabel>
-              <select
-                value={detailDraft.status}
-                onChange={(e) => setDetailDraft((prev) => (prev ? { ...prev, status: e.target.value as TaskStatus } : prev))}
-              >
-                <option value="Open">Open</option>
-                <option value="InProgress">InProgress</option>
-                <option value="Done">Done</option>
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Priority</FieldLabel>
-              <select
-                value={detailDraft.priority}
-                onChange={(e) => setDetailDraft((prev) => (prev ? { ...prev, priority: e.target.value as TaskPriority } : prev))}
-              >
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
-                <option value="Critical">Critical</option>
-              </select>
-            </div>
-            <div className="md:col-span-2">
-              <FieldLabel>Description</FieldLabel>
-              <input
-                value={detailDraft.description}
-                onChange={(e) => setDetailDraft((prev) => (prev ? { ...prev, description: e.target.value } : prev))}
-              />
-            </div>
-            <div>
-              <FieldLabel>Assignee</FieldLabel>
-              <select
-                value={detailDraft.assigneeUserId}
-                onChange={(e) =>
-                  setDetailDraft((prev) => {
-                    if (!prev) return prev;
-                    const nextAssignee = e.target.value;
-                    const nextWatchers = Array.from(new Set([...prev.watcherUserIds, selectedTask.createdByUserId, nextAssignee]));
-                    return { ...prev, assigneeUserId: nextAssignee, watcherUserIds: nextWatchers };
-                  })
-                }
-              >
-                {state.users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>Due date</FieldLabel>
-              <input
-                type="date"
-                value={detailDraft.dueAt}
-                onChange={(e) => setDetailDraft((prev) => (prev ? { ...prev, dueAt: e.target.value } : prev))}
-              />
-            </div>
-            <div>
-              <FieldLabel>Visibility</FieldLabel>
-              <select
-                value={detailDraft.visibility}
-                onChange={(e) => setDetailDraft((prev) => (prev ? { ...prev, visibility: e.target.value as TaskVisibility } : prev))}
-              >
-                <option value="Private">Private</option>
-                <option value="Shared">Shared</option>
-              </select>
-            </div>
-            <div className="md:col-span-4 rounded-md border border-slate-200 p-2">
-              <FieldLabel>Watchers</FieldLabel>
-              <div className="grid gap-1 md:grid-cols-3">
-                {state.users.map((user) => {
-                  const forced = user.id === selectedTask.createdByUserId || user.id === detailDraft.assigneeUserId;
-                  const checked = detailDraft.watcherUserIds.includes(user.id) || forced;
-                  return (
-                    <label key={user.id} className="flex items-center gap-2 text-xs text-slate-600">
-                      <input type="checkbox" checked={checked} disabled={forced} onChange={() => toggleWatcher(user.id)} />
-                      <span>{user.name}</span>
-                      {forced && <span className="text-[10px] text-slate-400">(required)</span>}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <Button onClick={saveTaskDetail}>Save task</Button>
-            {selectedTask.status !== "Done" && (
-              <Button variant="secondary" onClick={() => archiveTaskDirectly(selectedTask)}>
-                Complete and archive
-              </Button>
-            )}
-            {selectedTask.status === "Done" && !selectedTask.archivedAt && (
-              <Button
-                variant="secondary"
-                onClick={() => state.updateTask({ ...selectedTask, archivedAt: new Date().toISOString() })}
-              >
-                Move to archive
-              </Button>
-            )}
-            {selectedTask.status === "Done" && selectedTask.archivedAt && (
-              <Button variant="secondary" onClick={() => state.updateTask({ ...selectedTask, archivedAt: undefined })}>
-                Remove from archive
-              </Button>
-            )}
-          </div>
-
-          <div className="mt-4 rounded-md border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Comments</p>
-            <div className="space-y-2">
-              {(commentsByTaskId.get(selectedTask.id) ?? []).map((comment) => (
-                <div key={comment.id} className="rounded-md border border-slate-100 bg-slate-50 p-2 text-xs">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <span className="font-semibold text-slate-700">{getUserName(state, comment.authorUserId)}</span>
-                    <div className="flex items-center gap-2">
-                      <Badge className={comment.kind === "Blocker" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-700"}>
-                        {comment.kind}
-                      </Badge>
-                      <span className="text-[11px] text-slate-500">{new Date(comment.createdAt).toLocaleString()}</span>
-                    </div>
-                  </div>
-                  <p className="text-slate-600">{comment.content}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-6">
-              <div className="md:col-span-4">
-                <input value={newCommentText} onChange={(e) => setNewCommentText(e.target.value)} placeholder="Add comment or blocker..." />
-              </div>
-              <div>
-                <select value={newCommentKind} onChange={(e) => setNewCommentKind(e.target.value as "Comment" | "Blocker")}>
-                  <option value="Comment">Comment</option>
-                  <option value="Blocker">Blocker</option>
-                </select>
-              </div>
-              <div>
-                <Button
-                  onClick={() => {
-                    const text = newCommentText.trim();
-                    if (!text) return;
-                    state.addTaskComment(selectedTask.id, text, newCommentKind);
-                    setNewCommentText("");
-                    setNewCommentKind("Comment");
-                  }}
-                  disabled={!newCommentText.trim()}
-                >
-                  Add
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Card>
+          onUnarchive={(task) => state.updateTask({ ...task, archivedAt: undefined })}
+          onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
+        />
       )}
     </div>
   );

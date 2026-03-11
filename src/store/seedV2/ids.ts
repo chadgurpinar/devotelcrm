@@ -8,6 +8,7 @@ type EntityKey =
   | "note"
   | "task"
   | "taskComment"
+  | "taskLabel"
   | "interconnectionProcess"
   | "contract"
   | "contractFile"
@@ -45,6 +46,7 @@ const PREFIX: Record<EntityKey, string> = {
   note: "n",
   task: "t",
   taskComment: "tc",
+  taskLabel: "tl",
   interconnectionProcess: "ip",
   contract: "ct",
   contractFile: "cf",

@@ -184,6 +184,12 @@ export interface TaskComment {
   createdAt: string;
 }
 
+export interface TaskLabel {
+  id: string;
+  name: string;
+  color: string; // tailwind bg color token e.g. "bg-rose-500"
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -205,6 +211,9 @@ export interface Task {
   updatedAt: string;
   completedAt?: string;
   archivedAt?: string;
+  isUrgent?: boolean; // deadline-independent urgent flag → always floats to top, red highlight
+  kanbanStage?: "Backlog" | "InProgress" | "Done"; // Kanban board stage (separate from status)
+  labelIds?: string[]; // references to TaskLabel.id
 }
 
 export interface Project {
@@ -1056,6 +1065,7 @@ export interface DbState {
   meetings: Meeting[];
   notes: Note[];
   tasks: Task[];
+  taskLabels: TaskLabel[];
   taskComments: TaskComment[];
   interconnectionProcesses: InterconnectionProcess[];
   projects: Project[];
