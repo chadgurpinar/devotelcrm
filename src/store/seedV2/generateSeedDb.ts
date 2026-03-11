@@ -150,30 +150,74 @@ function seedWeek(weeksAgo: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const REPORT_TEXTS = [
-  "Strong week overall. Finalized the Q1 pipeline review with the sales team, joined three carrier negotiation calls, and closed a routing deal with a tier-2 partner. Also helped onboard the new junior analyst \u2014 took about half a day but went smoothly.",
-  "Tough week. The NOC alert storm on Tuesday consumed most of Wednesday too. Wrote the full post-mortem, coordinated with three teams, and presented findings to management by Friday. Exhausting but the team held up well.",
-  "Mostly internal work this week \u2014 updated the interconnection process documentation, ran the monthly carrier quality audit, and responded to a backlog of emails. No major fires, just steady execution.",
-  "Big sales push. Sent 5 proposals, had 8 follow-up calls, and closed 2 deals. One was the Acme Telecom contract we\u2019ve been chasing for 6 weeks. Very satisfying week despite the pressure.",
-  "Platform migration prep dominated the week. Two all-hands alignment sessions, updated the technical runbook, and ran a dry-run with the engineering team. We\u2019re on track for the Q2 cutover.",
-  "Mixed week. Good progress on the voice routing optimisation project (delivered the analysis report), but got pulled into a last-minute compliance review that took two full days unexpectedly.",
-  "Light week by design \u2014 used the time to clear the backlog: expense reports, HR forms, contract renewals, and cleaning up the CRM. Also did a 1-on-1 catch-up with each team member.",
-  "Intensive sprint to hit the monthly KPI targets. Lots of short calls, dashboard updates, and coordinating between sales and technical. Hit targets by Thursday, so Friday was more relaxed.",
+const REPORT_POOL: { text: string; highlights: string[] }[] = [
+  { text: "Strong week overall. Finalized the Q1 pipeline review with the sales team, joined three carrier negotiation calls, and closed a routing deal with a tier-2 partner. Also helped onboard the new junior analyst which took about half a day but went smoothly.", highlights: ["Closed routing deal with tier-2 partner", "Q1 pipeline review completed", "New analyst onboarded"] },
+  { text: "Tough week. The NOC alert storm on Tuesday consumed most of Wednesday as well. Wrote the full post-mortem report, coordinated with three cross-functional teams, and presented findings to management by Friday. Exhausting but the team held up remarkably well under pressure.", highlights: ["NOC post-mortem delivered to management", "Alert storm contained within 36 hours", "Cross-team coordination successful"] },
+  { text: "Mostly internal work this week. Updated the interconnection process documentation, ran the monthly carrier quality audit, and responded to a significant backlog of vendor emails. No major fires, just steady and reliable execution across the board.", highlights: ["Carrier quality audit completed", "Interconnection docs updated", "Email backlog cleared"] },
+  { text: "Big sales push. Sent five proposals, had eight follow-up calls, and closed two deals. One was the Acme Telecom contract we have been chasing for six weeks. Very satisfying week despite the relentless pace and back-to-back meetings.", highlights: ["Closed Acme Telecom contract", "5 proposals sent", "2 deals closed this week"] },
+  { text: "Platform migration prep dominated the week. Two all-hands alignment sessions, updated the technical runbook, and ran a full dry-run with the engineering team. We are on track for the Q2 cutover and the team confidence is high after the rehearsal.", highlights: ["Technical runbook updated", "Dry-run completed on schedule", "Q2 migration on track"] },
+  { text: "Mixed week. Good progress on the voice routing optimisation project where I delivered the analysis report ahead of schedule, but got pulled into a last-minute compliance review that consumed two full days unexpectedly. Need to discuss resource allocation for these ad-hoc requests.", highlights: ["Voice routing analysis report delivered", "Compliance review completed", "Resource allocation discussion needed"] },
+  { text: "Light week by design. Used the time to clear the administrative backlog: expense reports, HR forms, contract renewals, and cleaning up outdated CRM records. Also did one-on-one catch-ups with each team member to check on morale and priorities.", highlights: ["Full backlog cleared", "1-on-1s with all team members", "CRM data cleaned up"] },
+  { text: "Intensive sprint to hit the monthly KPI targets. Lots of short coordination calls, real-time dashboard updates, and tight orchestration between sales and technical teams. Hit all targets by Thursday, so Friday was a well-deserved lighter day for the team.", highlights: ["Monthly KPI targets hit by Thursday", "Sales-technical coordination smooth", "Team morale boosted"] },
+  { text: "Customer escalation week. Two major accounts flagged SLA breaches on Monday, so the entire week was spent diagnosing the root cause, implementing fixes, and running executive status calls every afternoon. Both issues are now resolved but it was draining.", highlights: ["Two SLA breach escalations resolved", "Root cause analysis completed", "Executive status cadence established"] },
+  { text: "Focused heavily on carrier negotiations this week. Had four calls with potential partners in the MENA region and prepared the commercial terms for two new interconnection agreements. Also reviewed three inbound rate sheets and updated our pricing model accordingly.", highlights: ["4 MENA carrier negotiation calls", "2 interconnection agreements drafted", "Pricing model updated"] },
+  { text: "Training and knowledge transfer week. Ran two internal workshops on the new billing system for the finance team, prepared updated onboarding materials for the next cohort of hires, and documented the SMS gateway failover procedure that was missing from our runbooks.", highlights: ["2 billing system workshops delivered", "Onboarding materials updated", "Failover procedure documented"] },
+  { text: "Budget review season hit hard. Spent three days preparing the quarterly forecast with finance, reconciling actual vs. projected spend across all carrier contracts, and building the business case for the headcount increase we need in Q3. Important but tedious work.", highlights: ["Quarterly forecast prepared", "Carrier spend reconciled", "Q3 headcount business case drafted"] },
+  { text: "Product demo marathon. Presented our new routing dashboard to four different client groups this week, incorporating feedback after each session. The engineering team pushed a hotfix mid-week that improved load times by forty percent, which made the Thursday demo noticeably smoother.", highlights: ["4 product demos delivered", "Client feedback incorporated", "40% load time improvement shipped"] },
+  { text: "Cross-team coordination was the theme of the week. Facilitated alignment between sales, product, and engineering on the roadmap for Q2. Three departments, five meetings, one shared Gantt chart that everyone finally agrees on. Also squeezed in a contract renewal with VodaConnect.", highlights: ["Q2 roadmap alignment achieved", "VodaConnect contract renewed", "Cross-department Gantt chart finalized"] },
+  { text: "Compliance-heavy week. The annual regulatory audit preparation kicked off and I spent most of the week gathering documentation, updating our data processing records, and coordinating with legal on two outstanding items. Necessary work but it stalled my other projects.", highlights: ["Regulatory audit prep started", "Data processing records updated", "Legal coordination on 2 items"] },
+  { text: "Great momentum this week. Closed the TelcoHub partnership that has been in the pipeline for three months. Also onboarded two new team members, ran their orientation sessions, and paired them with mentors. The team is growing and the energy is positive.", highlights: ["TelcoHub partnership closed", "2 new team members onboarded", "Mentor pairing completed"] },
+  { text: "Infrastructure focus. Worked closely with the DevOps team to migrate our monitoring stack to the new observability platform. Spent two days writing Terraform configs and another day validating alert thresholds. Everything is live and working as expected.", highlights: ["Monitoring stack migrated", "Terraform configs written", "Alert thresholds validated"] },
+  { text: "Quiet week on the client front which I used to catch up on internal process improvements. Redesigned the weekly reporting template, automated three manual data pulls using scripts, and updated the team wiki with the latest process changes from last quarter.", highlights: ["Reporting template redesigned", "3 data pulls automated", "Team wiki updated"] },
+  { text: "Stressful week. A critical route went down on Wednesday affecting a top-five customer. Led the war room for eight hours, coordinated with two external carriers, and had the route restored by Thursday morning. Wrote the incident report and started the vendor review process.", highlights: ["Critical route restored within 18 hours", "War room led successfully", "Incident report and vendor review initiated"] },
+  { text: "Balanced week with a good mix of strategic and operational work. Finalized the market entry analysis for Southeast Asia, reviewed two vendor proposals for the new SMS hub, and conducted three performance reviews with team members. Felt productive without being overwhelmed.", highlights: ["Southeast Asia market analysis finalized", "2 vendor proposals reviewed", "3 performance reviews conducted"] },
+  { text: "Spent the week deep in contract negotiations with GlobalCarrier Ltd. Four rounds of redlines on the service agreement, two pricing model iterations, and a final alignment call on Friday that got us to a handshake deal. Legal will formalize next week.", highlights: ["GlobalCarrier deal reached handshake", "4 rounds of contract redlines", "Pricing model finalized"] },
+  { text: "Week dominated by the quarterly business review preparation. Built the executive deck, consolidated KPIs from five departments, and rehearsed the presentation twice. The actual QBR on Thursday went well and leadership approved our expansion proposal.", highlights: ["QBR deck built and presented", "KPIs consolidated from 5 departments", "Expansion proposal approved"] },
+  { text: "Customer success focus. Ran health checks on our top ten accounts, identified two at risk of churn, and initiated retention plans for both. Also conducted a satisfaction survey follow-up with three accounts that had flagged issues last quarter. All three are now green.", highlights: ["Top 10 account health checks completed", "2 at-risk accounts identified with retention plans", "3 previously flagged accounts moved to green"] },
+  { text: "Technical deep-dive week. Investigated the intermittent latency issues on our European routes, identified a misconfigured load balancer as the culprit, and worked with the network team to deploy the fix. Also benchmarked three alternative CDN providers for the Q3 evaluation.", highlights: ["European route latency issue resolved", "Load balancer misconfiguration fixed", "3 CDN providers benchmarked"] },
+  { text: "Relatively calm week. Used the breathing room to plan the team offsite for next month, update our OKRs for the quarter, and write a process document for the new escalation workflow. Also had a productive strategy session with the head of product about our integration roadmap.", highlights: ["Team offsite planned", "Quarterly OKRs updated", "Escalation workflow documented", "Integration roadmap discussed"] },
+  { text: "Heavy travel week. Visited the Istanbul office Monday through Wednesday for the regional sync, then flew to London for two client meetings on Thursday. Managed to squeeze in a partner dinner Friday evening. Productive but physically exhausting with the back-to-back flights.", highlights: ["Istanbul regional sync completed", "2 London client meetings", "Partner dinner relationship building"] },
+  { text: "Sprint planning and execution. Kicked off the new development cycle with the engineering team, defined acceptance criteria for twelve user stories, and reviewed the QA test plan. Also handled an urgent pricing request from the APAC sales team that needed same-day turnaround.", highlights: ["Sprint planning completed with 12 stories", "QA test plan reviewed", "Urgent APAC pricing delivered same-day"] },
+  { text: "Focused on team development this week. Ran a skills assessment workshop, identified three training gaps across the team, and enrolled two team members in external certification programs. Also conducted mid-year career development conversations with everyone on the team.", highlights: ["Skills assessment workshop completed", "3 training gaps identified", "2 certifications initiated", "Career conversations held"] },
+  { text: "End-of-month crunch. Finalized all outstanding invoices with finance, reconciled three disputed billing items with carriers, and submitted the monthly operations report. Also squeezed in preparation for the board meeting next week, which required pulling data from six different systems.", highlights: ["Monthly invoices finalized", "3 billing disputes reconciled", "Board meeting prep completed"] },
+  { text: "Innovation day plus regular duties. Spent Wednesday at the internal hackathon where our team prototyped an AI-powered route optimization tool. Won second place. The rest of the week was standard operations: carrier calls, ticket reviews, and a vendor performance meeting.", highlights: ["Hackathon: 2nd place for AI route optimizer", "Vendor performance review conducted", "Standard operations maintained"] },
 ];
 
-const REPORT_HIGHLIGHTS = [
-  ["Closed routing deal with tier-2 partner", "Q1 pipeline review completed", "New analyst onboarded"],
-  ["NOC post-mortem delivered to management", "Alert storm contained within 36h", "Cross-team coordination successful"],
-  ["Carrier quality audit completed", "Interconnection docs updated", "Email backlog cleared"],
-  ["Closed Acme Telecom contract", "5 proposals sent", "2 deals closed this week"],
-  ["Technical runbook updated", "Dry-run completed on schedule", "Q2 migration on track"],
-  ["Voice routing analysis report delivered", "Compliance review completed"],
-  ["Full backlog cleared", "1-on-1s with all team members", "CRM data cleaned up"],
-  ["Monthly KPI targets hit by Thursday", "Sales-technical coordination smooth"],
+const WL_GRID: WorkloadRating[][] = [
+  [4, 3, 5, 3, 4, 2],
+  [5, 4, 3, 5, 4, 3],
+  [3, 2, 3, 4, 3, 2],
+  [4, 5, 4, 3, 2, 4],
+  [4, 3, 4, 5, 3, 3],
+  [3, 4, 2, 3, 4, 3],
+  [2, 3, 2, 2, 3, 2],
+  [5, 4, 5, 4, 3, 5],
+  [3, 3, 4, 3, 2, 3],
+  [4, 5, 3, 4, 4, 3],
+  [3, 4, 3, 2, 3, 4],
+  [4, 3, 4, 5, 4, 3],
+  [2, 3, 3, 3, 2, 2],
+  [5, 4, 4, 3, 5, 4],
+  [3, 2, 3, 4, 3, 3],
 ];
 
-const SEED_WL: WorkloadRating[] = [4, 5, 3, 4, 4, 3, 2, 5, 3, 4];
-const SEED_PR: ProductivityRating[] = [4, 3, 3, 5, 4, 3, 4, 4, 3, 5];
+const PR_GRID: ProductivityRating[][] = [
+  [4, 4, 3, 4, 5, 3],
+  [3, 3, 4, 2, 3, 4],
+  [3, 4, 3, 3, 4, 4],
+  [5, 4, 5, 4, 3, 5],
+  [4, 4, 3, 3, 4, 4],
+  [3, 3, 4, 4, 3, 3],
+  [4, 5, 4, 3, 4, 5],
+  [4, 3, 3, 4, 4, 3],
+  [3, 4, 3, 3, 3, 4],
+  [5, 4, 4, 5, 3, 4],
+  [4, 3, 4, 4, 5, 3],
+  [3, 4, 3, 2, 3, 4],
+  [4, 4, 5, 4, 3, 4],
+  [3, 2, 3, 4, 4, 3],
+  [4, 3, 4, 3, 4, 5],
+];
 
 interface SeedReportResult {
   weeklyStaffReports: WeeklyStaffReport[];
@@ -185,97 +229,195 @@ function seedManagementReports(
   hrEmployees: DbState["hrEmployees"],
   managerUserId: string,
 ): SeedReportResult {
-  const active = hrEmployees.filter((e) => e.active).slice(0, 10);
+  const active = hrEmployees.filter((e) => e.active).slice(0, 15);
   const reports: WeeklyStaffReport[] = [];
   const comments: WeeklyReportManagerComment[] = [];
 
-  active.forEach((emp, empIdx) => {
-    for (let weeksAgo = 0; weeksAgo < 4; weeksAgo++) {
-      const weekStart = seedWeek(weeksAgo);
-      const textIdx = (empIdx + weeksAgo) % REPORT_TEXTS.length;
-      const wl = SEED_WL[empIdx % SEED_WL.length];
-      const pr = SEED_PR[empIdx % SEED_PR.length];
-      const status: WeeklyReportStatus = weeksAgo > 0 ? "Submitted" : "Draft";
+  active.forEach((emp, ei) => {
+    for (let w = 0; w < 6; w++) {
+      const ws = seedWeek(w);
+      const pool = REPORT_POOL[(ei * 6 + w) % REPORT_POOL.length];
+      const wl = WL_GRID[ei % WL_GRID.length][w % 6];
+      const pr = PR_GRID[ei % PR_GRID.length][w % 6];
+      const status: WeeklyReportStatus = w > 0 ? "Submitted" : "Draft";
       reports.push({
-        id: `seed-wr-${emp.id}-w${weeksAgo}`,
+        id: `seed-wr-${emp.id}-w${w}`,
         employeeId: emp.id,
-        weekStartDate: weekStart,
+        weekStartDate: ws,
         status,
-        reportText: REPORT_TEXTS[textIdx],
-        highlights: REPORT_HIGHLIGHTS[textIdx],
+        reportText: pool.text,
+        highlights: pool.highlights,
         workloadRating: wl,
         productivityRating: pr,
         calendarScreenshotUrl: undefined,
-        submittedAt: status === "Submitted" ? weekStart + "T17:30:00Z" : undefined,
-        createdAt: weekStart + "T09:00:00Z",
-        updatedAt: weekStart + "T17:30:00Z",
+        submittedAt: status === "Submitted" ? ws + "T17:30:00Z" : undefined,
+        createdAt: ws + "T09:00:00Z",
+        updatedAt: ws + "T17:30:00Z",
       });
     }
   });
 
-  const COMMENT_POOL: { text: string; ai: boolean }[] = [
-    { text: "Great work this week. The pipeline review output was exactly what we needed for the board deck.", ai: false },
-    { text: "Workload: Heavy week \u2013 close to capacity. Productivity: High productivity week. Overall: High-output high-intensity week. Well done on managing the incident.", ai: true },
-    { text: "Good steady execution. Make sure to flag the compliance backlog earlier next time so we can resource it properly.", ai: false },
-    { text: "Workload: Moderate. Productivity: Average. Overall: Balanced week. No flags.", ai: true },
-    { text: "Excellent result on the Acme deal. Let\u2019s discuss the pipeline strategy in our next 1-on-1.", ai: false },
-    { text: "Workload: Heavy. Productivity: High. Overall: High-output high-intensity week. Flags: Consistently in top quartile.", ai: true },
+  const HUMAN_COMMENTS = [
+    "The pipeline review output was exactly what we needed for the board deck. Great initiative pulling in the carrier data without being asked.",
+    "The Acme escalation you handled was exactly the right approach. Let us document that process so the wider team can follow it next time.",
+    "Good steady execution this week. Make sure to flag compliance-related blockers earlier so we can allocate resources before they become urgent.",
+    "Excellent result on closing that deal. I want to discuss the negotiation tactics you used in our next one-on-one so we can share them with the team.",
+    "Your cross-team coordination this week was outstanding. The Gantt chart alignment alone probably saved us two weeks of misalignment down the road.",
+    "Appreciate the deep-dive on the latency issue. The root cause analysis was thorough and the fix was deployed quickly. Well done.",
+    "The training workshops you ran were well received by the finance team. Consider doing a recorded version for future hires to watch during onboarding.",
+    "The incident response on Wednesday was textbook. Eight-hour war room sessions are never fun but the outcome speaks for itself. Make sure you take some recovery time.",
+    "Budget review work is thankless but critical. The forecast you put together was clean and the headcount business case was compelling. Leadership noticed.",
+    "Your customer health checks identified real risks early. The retention plans for the two at-risk accounts are solid. Let us review progress in two weeks.",
+    "The product demos went well based on client feedback. Keep iterating on the messaging for the mid-market segment, it resonated less than the enterprise pitch.",
+    "Team development is one of your strengths. The skills assessment workshop was well-structured and the certification investments are the right call.",
+    "Good job clearing the backlog. Administrative work piles up fast and tackling it proactively keeps the team running smoothly. Solid week.",
+    "The QBR presentation was one of the best we have delivered. The data consolidation from five departments was seamless. Great preparation.",
+    "Your hackathon project was impressive. Let us explore whether the AI route optimizer prototype can become a real roadmap item for Q3.",
+    "Carrier negotiations are always a grind but four rounds of redlines to a handshake in one week is exceptional. Well managed.",
+    "The monitoring stack migration was a big lift. Appreciate you taking ownership of the Terraform configs end-to-end without needing hand-holding.",
+    "Sprint planning was efficient this week. Twelve stories with clear acceptance criteria is a good pace. Keep an eye on the APAC pricing workflow, it keeps coming up as urgent.",
+    "The Southeast Asia market analysis was thorough and will directly inform our expansion strategy. Good balance of data and narrative.",
+    "Strong week of customer relationship building. The partner dinner was a smart investment of time. Travel is tiring but these face-to-face moments matter.",
   ];
 
-  const commentAssignments: number[][] = [[0, 1], [2, 3], [4], [5], [0]];
-  const w1Start = seedWeek(1);
+  const AI_COMMENTS = [
+    "Workload: Heavy week at 4/5, close to capacity. Productivity: High at 4/5, output matched the effort. Overall verdict: High-output, high-intensity week. No flags raised.",
+    "Workload: Extreme at 5/5, potential burnout risk. Productivity: Moderate at 3/5, output did not match the heavy effort invested. Overall verdict: Heavy load with moderate output, needs attention. Flags: Burnout risk flagged, consider workload redistribution.",
+    "Workload: Moderate at 3/5, standard operating rhythm. Productivity: Average at 3/5, steady but not exceptional. Overall verdict: Balanced and sustainable week. No flags.",
+    "Workload: Heavy at 4/5, near capacity. Productivity: Very high at 5/5, exceptional output relative to effort. Overall verdict: Efficient high-performer week. Flags: Consistently in top quartile, consider for expanded responsibilities.",
+    "Workload: Light at 2/5, well below capacity. Productivity: High at 4/5, used downtime effectively. Overall verdict: Efficient light week with good use of available time. No flags.",
+    "Workload: Extreme at 5/5, significant strain. Productivity: High at 4/5, maintained output despite pressure. Overall verdict: Resilient performance under heavy load. Flags: Burnout risk, two consecutive heavy weeks detected.",
+    "Workload: Moderate at 3/5. Productivity: High at 4/5. Overall verdict: Good productive week at a sustainable pace. No flags. Recommendation: Maintain this rhythm.",
+    "Workload: Heavy at 4/5. Productivity: Low at 2/5, output significantly below expected for this workload level. Overall verdict: Heavy load, low output, needs manager attention. Flags: Critically low productivity relative to effort, possible blockers or burnout.",
+    "Workload: Light at 2/5, deliberately reduced. Productivity: Very high at 5/5, excellent use of focused time. Overall verdict: Strategic light week with exceptional productivity. Recommendation: This pattern is healthy when alternated with heavier weeks.",
+    "Workload: Moderate at 3/5. Productivity: Moderate at 3/5. Overall verdict: Standard balanced week. No flags. Report is detailed and well-structured.",
+  ];
 
-  commentAssignments.forEach((indices, empIdx) => {
-    if (empIdx >= active.length) return;
-    const emp = active[empIdx];
-    const reportId = `seed-wr-${emp.id}-w1`;
-    indices.forEach((ci, commentIdx) => {
-      const c = COMMENT_POOL[ci];
+  let commentId = 0;
+  for (let ei = 0; ei < Math.min(10, active.length); ei++) {
+    const emp = active[ei];
+    for (let w = 1; w <= 3; w++) {
+      const reportId = `seed-wr-${emp.id}-w${w}`;
+      const ws = seedWeek(w);
+      const hIdx = (ei * 3 + w) % HUMAN_COMMENTS.length;
       comments.push({
-        id: `seed-mc-${emp.id}-${commentIdx}`,
+        id: `seed-mc-${commentId++}`,
         reportId,
         managerUserId,
-        commentText: c.text,
-        aiGenerated: c.ai,
-        createdAt: w1Start + "T18:30:00Z",
+        commentText: HUMAN_COMMENTS[hIdx],
+        aiGenerated: false,
+        createdAt: ws + "T18:30:00Z",
       });
-    });
-  });
+      if ((ei + w) % 2 === 0) {
+        const aIdx = (ei * 3 + w) % AI_COMMENTS.length;
+        comments.push({
+          id: `seed-mc-${commentId++}`,
+          reportId,
+          managerUserId,
+          commentText: AI_COMMENTS[aIdx],
+          aiGenerated: true,
+          createdAt: ws + "T19:00:00Z",
+        });
+      }
+    }
+  }
+
+  const summaries: WeeklyReportAiSummary[] = [];
+  for (let ei = 0; ei < Math.min(5, active.length); ei++) {
+    const emp = active[ei];
+    for (const w of [1, 2]) {
+      const ws = seedWeek(w);
+      const wl = WL_GRID[ei][w];
+      const pr = PR_GRID[ei][w];
+      const wlText = wl >= 4 ? "Heavy week, close to or at capacity. The employee reported sustained high effort throughout the period." : wl <= 2 ? "Light week with available capacity. The employee had room for additional responsibilities or strategic work." : "Moderate and sustainable workload. The employee operated within normal parameters with no strain indicators.";
+      const prText = pr >= 4 ? "High productivity reported. Output was strong relative to effort and the employee delivered meaningful results across multiple workstreams." : pr <= 2 ? "Below-average productivity. Output did not match the effort invested, which may indicate blockers, context-switching overhead, or fatigue." : "Average productivity. The employee maintained a steady output pace consistent with typical weekly performance.";
+      const verdict = wl >= 4 && pr >= 4 ? "High-output, high-intensity week. Strong results under pressure but sustainability should be monitored." : wl >= 4 && pr <= 2 ? "Heavy load with low output. This pattern needs immediate attention to identify and remove blockers." : wl <= 2 && pr >= 4 ? "Efficient light week. Excellent use of available time to deliver meaningful results." : wl <= 2 && pr <= 2 ? "Low-activity week. Consider whether the employee had sufficient work allocated or is disengaged." : "Balanced week with proportionate effort and output. No immediate concerns.";
+      const flags: string[] = [];
+      if (wl === 5) flags.push("Burnout risk: workload rated at maximum");
+      if (pr <= 2) flags.push("Low productivity flagged for follow-up");
+      if (wl >= 4 && pr <= 2) flags.push("Effort-output mismatch requires manager discussion");
+      summaries.push({
+        reportId: `seed-wr-${emp.id}-w${w}`,
+        scope: "individual",
+        scopeId: emp.id,
+        weekStartDate: ws,
+        workloadAssessment: wlText,
+        productivityAssessment: prText,
+        overallVerdict: verdict,
+        flags,
+        generatedAt: ws + "T19:00:00Z",
+      });
+    }
+  }
 
   const emp0Id = active[0]?.id ?? "unknown";
-  const summaries: WeeklyReportAiSummary[] = [
-    {
-      reportId: `seed-wr-${emp0Id}-w1`,
-      scope: "individual",
-      scopeId: emp0Id,
-      weekStartDate: seedWeek(1),
-      workloadAssessment: "Heavy week \u2013 close to capacity",
-      productivityAssessment: "High productivity week",
-      overallVerdict: "High-output high-intensity week",
-      flags: [],
-      generatedAt: seedWeek(1) + "T19:00:00Z",
-    },
-    {
+  for (const w of [1, 2, 3]) {
+    const ws = seedWeek(w);
+    const weekReports = reports.filter((r) => r.weekStartDate === ws && r.status === "Submitted");
+    const cnt = weekReports.length || 1;
+    const avgWl = (weekReports.reduce((s, r) => s + r.workloadRating, 0) / cnt).toFixed(1);
+    const avgPr = (weekReports.reduce((s, r) => s + r.productivityRating, 0) / cnt).toFixed(1);
+    const burnout = weekReports.filter((r) => r.workloadRating === 5).length;
+    const lowPr = weekReports.filter((r) => r.productivityRating <= 2).length;
+    const tFlags: string[] = [];
+    if (burnout > 0) tFlags.push(`Burnout risk: ${burnout} employee${burnout > 1 ? "s" : ""} at maximum workload`);
+    if (lowPr > 0) tFlags.push(`${lowPr} employee${lowPr > 1 ? "s" : ""} reported low productivity, follow-up recommended`);
+    const missing = active.length - weekReports.length;
+    if (missing > 0) tFlags.push(`${missing} report${missing > 1 ? "s" : ""} not yet submitted for this period`);
+    summaries.push({
       scope: "team",
       scopeId: emp0Id,
-      weekStartDate: seedWeek(1),
-      workloadAssessment: "Team avg workload: 3.8/5 \u2013 Heavy week across the team",
-      productivityAssessment: "Team avg productivity: 3.6/5 \u2013 Above average performance",
-      overallVerdict: "High-output week with some capacity pressure",
-      flags: ["Burnout risk: 1 employee at max workload", "2 reports missing submission"],
-      generatedAt: seedWeek(1) + "T20:00:00Z",
-    },
-    {
+      weekStartDate: ws,
+      workloadAssessment: `Team average workload: ${avgWl}/5. ${Number(avgWl) >= 4 ? "The team is operating near capacity this week with elevated strain across multiple members." : Number(avgWl) <= 2.5 ? "The team had a relatively light week with available capacity for additional work." : "The team maintained a moderate and sustainable pace this week."}`,
+      productivityAssessment: `Team average productivity: ${avgPr}/5. ${Number(avgPr) >= 4 ? "Strong collective output this week with most team members delivering at or above expectations." : Number(avgPr) <= 2.5 ? "Below-average team productivity. Several members underperformed relative to their workload." : "Solid team productivity overall, consistent with recent weekly averages."}`,
+      overallVerdict: Number(avgWl) >= 4 && Number(avgPr) >= 4 ? "High-intensity, high-output week across the team. Results are strong but the pace may not be sustainable if maintained." : Number(avgWl) >= 4 && Number(avgPr) < 3 ? "The team worked hard but output was disappointing. Investigate systemic blockers or process inefficiencies." : "Balanced team performance this week. Workload and productivity are aligned and within healthy ranges.",
+      flags: tFlags,
+      generatedAt: ws + "T20:00:00Z",
+    });
+  }
+
+  for (const w of [1, 2, 3]) {
+    const ws = seedWeek(w);
+    const weekReports = reports.filter((r) => r.weekStartDate === ws && r.status === "Submitted");
+    const cnt = weekReports.length || 1;
+    const avgWl = (weekReports.reduce((s, r) => s + r.workloadRating, 0) / cnt).toFixed(1);
+    const avgPr = (weekReports.reduce((s, r) => s + r.productivityRating, 0) / cnt).toFixed(1);
+    const burnout = weekReports.filter((r) => r.workloadRating === 5).length;
+    const cFlags: string[] = [];
+    if (burnout > 0) cFlags.push(`Company-wide burnout risk: ${burnout} employee${burnout > 1 ? "s" : ""} at maximum workload`);
+    const subRate = ((weekReports.length / active.length) * 100).toFixed(0);
+    if (Number(subRate) < 80) cFlags.push(`Submission rate at ${subRate}%, below the 80% target`);
+    summaries.push({
       scope: "company",
       scopeId: "all",
-      weekStartDate: seedWeek(1),
-      workloadAssessment: "Team avg workload: 3.7/5 \u2013 Moderately heavy company-wide",
-      productivityAssessment: "Team avg productivity: 3.8/5 \u2013 Good overall output",
-      overallVerdict: "Solid execution week \u2013 company performing above average",
-      flags: ["Burnout risk: 2 employees at max workload", "Less than half of team submitted reports"],
-      generatedAt: seedWeek(1) + "T21:00:00Z",
-    },
-  ];
+      weekStartDate: ws,
+      workloadAssessment: `Company average workload: ${avgWl}/5. ${Number(avgWl) >= 3.5 ? "The organization is running at elevated capacity. Resource planning should be reviewed to prevent sustained overload." : "Workload levels are within normal operating range across the company."}`,
+      productivityAssessment: `Company average productivity: ${avgPr}/5. ${Number(avgPr) >= 3.5 ? "Strong organizational output this week. The company is executing well against its objectives." : "Productivity is at acceptable levels but there is room for improvement in several departments."}`,
+      overallVerdict: `Solid execution week across the organization. ${weekReports.length} of ${active.length} employees submitted reports. ${Number(avgWl) >= 4 ? "Capacity pressure is building and should be addressed in the next planning cycle." : "The overall rhythm is healthy and sustainable."}`,
+      flags: cFlags,
+      generatedAt: ws + "T21:00:00Z",
+    });
+  }
+
+  const monthKey = seedWeek(1).slice(0, 7);
+  const monthReports = reports.filter((r) => r.weekStartDate.startsWith(monthKey) && r.status === "Submitted");
+  const mCnt = monthReports.length || 1;
+  const mAvgWl = (monthReports.reduce((s, r) => s + r.workloadRating, 0) / mCnt).toFixed(1);
+  const mAvgPr = (monthReports.reduce((s, r) => s + r.productivityRating, 0) / mCnt).toFixed(1);
+  const mBurnout = monthReports.filter((r) => r.workloadRating === 5).length;
+  const mFlags: string[] = [];
+  if (mBurnout > 0) mFlags.push(`${mBurnout} burnout-risk report${mBurnout > 1 ? "s" : ""} detected this month`);
+  if (monthReports.length < active.length * 3) mFlags.push("Monthly submission rate below expected volume");
+  summaries.push({
+    scope: "company",
+    scopeId: "all",
+    monthKey,
+    workloadAssessment: `Monthly company average workload: ${mAvgWl}/5. ${Number(mAvgWl) >= 3.5 ? "The month saw sustained elevated workload across the organization, suggesting resource constraints." : "Monthly workload remained within sustainable levels."}`,
+    productivityAssessment: `Monthly company average productivity: ${mAvgPr}/5. ${Number(mAvgPr) >= 3.5 ? "Strong month for output. Most teams delivered at or above their targets." : "Average monthly productivity. Performance was steady but not exceptional."}`,
+    overallVerdict: `${monthReports.length} reports submitted this month across ${active.length} employees. ${Number(mAvgWl) >= 3.5 && Number(mAvgPr) >= 3.5 ? "High-effort, high-output month. Monitor for burnout in the coming weeks." : "Balanced month with no systemic concerns. Continue current operating rhythm."}`,
+    flags: mFlags,
+    generatedAt: seedWeek(0) + "T10:00:00Z",
+  });
 
   return {
     weeklyStaffReports: reports,
