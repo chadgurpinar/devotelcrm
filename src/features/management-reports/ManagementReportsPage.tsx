@@ -191,12 +191,20 @@ function MyReportTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
   };
 
   const handleSubmit = () => {
-    handleSaveDraft();
-    const fresh = useAppStore.getState();
-    const report = fresh.weeklyStaffReports.find(
-      (r) => r.employeeId === myEmployee.id && r.weekStartDate === selectedWeek,
-    );
-    if (report) fresh.submitWeeklyStaffReport(report.id);
+    const id = state.upsertWeeklyStaffReport({
+      employeeId: myEmployee.id,
+      weekStartDate: selectedWeek,
+      status: "Draft",
+      reportText: draft.reportText.trim(),
+      highlights: draft.highlights
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+      workloadRating: draft.workloadRating as WorkloadRating,
+      productivityRating: draft.productivityRating as ProductivityRating,
+      calendarScreenshotUrl: draft.calendarScreenshotUrl.trim() || undefined,
+    });
+    state.submitWeeklyStaffReport(id);
   };
 
   const pastWeeks = Array.from({ length: 8 }, (_, i) =>
@@ -561,8 +569,8 @@ function TeamViewTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
                       variant="ghost"
                       onClick={() => {
                         state.generateWeeklyReportAiSummary("individual", emp.id, teamWeek);
-                        const fresh = useAppStore.getState();
-                        const summary = fresh.weeklyReportAiSummaries
+                        const summaries = useAppStore.getState().weeklyReportAiSummaries;
+                        const summary = summaries
                           .filter(
                             (s) =>
                               s.scope === "individual" &&
@@ -579,7 +587,7 @@ function TeamViewTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
                               ? ["Flags: " + summary.flags.join("; ")]
                               : []),
                           ].join("\n");
-                          fresh.addWeeklyReportManagerComment({
+                          state.addWeeklyReportManagerComment({
                             reportId: empReport.id,
                             managerUserId: state.activeUserId,
                             commentText: text,
