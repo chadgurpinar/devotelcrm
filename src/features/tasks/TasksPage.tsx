@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getCompanyName, getEventName, getProjectName, getUserName } from "../../store/selectors";
@@ -20,6 +20,10 @@ const LABEL_COLOR_PRESETS = [
   "bg-slate-500",
   "bg-pink-500",
 ];
+
+function isProjectLabel(label: TaskLabel, projectNames: Set<string>): boolean {
+  return projectNames.has(label.name);
+}
 
 type TaskSection = "MyPersonalTasks" | "AssignedToMe" | "AssignedByMe" | "Completed" | "Archive";
 type DueFilter = "Any" | "DueSoon" | "Overdue" | "NoDueDate";
@@ -88,6 +92,7 @@ function getStoredViewMode(): TasksViewMode {
 
 export function TasksPage() {
   const state = useAppStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<TasksViewMode>(getStoredViewMode);
   const [section, setSection] = useState<TaskSection>("MyPersonalTasks");
   const [search, setSearch] = useState("");
@@ -95,13 +100,22 @@ export function TasksPage() {
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "Any">("Any");
   const [dueFilter, setDueFilter] = useState<DueFilter>("Any");
   const [linkedFilter, setLinkedFilter] = useState<LinkedFilter>("Any");
+  const [labelFilter, setLabelFilter] = useState<string>(() => searchParams.get("labelId") ?? "Any");
   const [sortBy, setSortBy] = useState<SortBy>("LastActivityDesc");
   const [selectedTaskId, setSelectedTaskId] = useState<string>("");
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [form, setForm] = useState<CreateTaskForm>(() => emptyCreateTaskForm(state.activeUserId));
-  const [addLabelPopoverOpen, setAddLabelPopoverOpen] = useState(false);
+  const [isLabelManagerOpen, setLabelManagerOpen] = useState(false);
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLOR_PRESETS[0]);
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
+  const [editLabelName, setEditLabelName] = useState("");
+  const [editLabelColor, setEditLabelColor] = useState("");
+
+  const projectNames = useMemo(
+    () => new Set(state.projects.map((p) => p.name)),
+    [state.projects],
+  );
   const setViewModePersisted = useCallback((mode: TasksViewMode) => {
     setViewMode(mode);
     try {
@@ -214,6 +228,7 @@ export function TasksPage() {
     if (linkedFilter === "Event") dataset = dataset.filter((task) => Boolean(task.eventId));
     if (linkedFilter === "Interconnection") dataset = dataset.filter((task) => Boolean(task.interconnectionProcessId));
     if (linkedFilter === "Project") dataset = dataset.filter((task) => Boolean(task.projectId));
+    if (labelFilter !== "Any") dataset = dataset.filter((task) => (task.labelIds ?? []).includes(labelFilter));
 
     if (search.trim()) {
       const query = search.trim().toLowerCase();
@@ -241,7 +256,7 @@ export function TasksPage() {
       if (sortBy === "PriorityDesc") return priorityWeight[right.priority] - priorityWeight[left.priority];
       return right.updatedAt.localeCompare(left.updatedAt);
     });
-  }, [commentsByTaskId, dueFilter, linkedFilter, priorityFilter, search, sectionTasks, sortBy, statusFilter]);
+  }, [commentsByTaskId, dueFilter, labelFilter, linkedFilter, priorityFilter, search, sectionTasks, sortBy, statusFilter]);
 
   function getTaskLinkTarget(task: Task): LinkTarget {
     if (task.companyId) return { label: getCompanyName(state, task.companyId), href: `/companies/${task.companyId}` };
@@ -316,7 +331,6 @@ export function TasksPage() {
     state.addTaskLabel({ name, color: newLabelColor });
     setNewLabelName("");
     setNewLabelColor(LABEL_COLOR_PRESETS[0]);
-    setAddLabelPopoverOpen(false);
   };
 
   return (
@@ -341,41 +355,13 @@ export function TasksPage() {
                 Kanban
               </Button>
             </div>
-            <div className="relative">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setAddLabelPopoverOpen((v) => !v)}
-              >
-                + Add label
-              </Button>
-              {addLabelPopoverOpen && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setAddLabelPopoverOpen(false)} />
-                  <div className="absolute right-0 top-full z-40 mt-1 w-48 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                    <input
-                      className="mb-2 w-full rounded border border-slate-200 px-2 py-1 text-xs"
-                      placeholder="Label name"
-                      value={newLabelName}
-                      onChange={(e) => setNewLabelName(e.target.value)}
-                    />
-                    <div className="mb-2 flex flex-wrap gap-1">
-                      {LABEL_COLOR_PRESETS.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          className={`h-5 w-5 rounded-full ${c} ${newLabelColor === c ? "ring-2 ring-slate-400 ring-offset-1" : ""}`}
-                          onClick={() => setNewLabelColor(c)}
-                        />
-                      ))}
-                    </div>
-                    <Button size="sm" onClick={handleAddLabel} disabled={!newLabelName.trim()}>
-                      Create
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setLabelManagerOpen(true)}
+            >
+              Manage labels
+            </Button>
             <Button
               size="sm"
               onClick={() => {
@@ -406,7 +392,7 @@ export function TasksPage() {
           </Button>
         </div>
 
-        <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-6">
+        <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-7">
           <div className="md:col-span-2">
             <FieldLabel>Search</FieldLabel>
             <input placeholder="Search task or comments..." value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -448,6 +434,36 @@ export function TasksPage() {
               <option value="Interconnection">Interconnection</option>
               <option value="Project">Project</option>
             </select>
+          </div>
+          <div>
+            <FieldLabel>Label</FieldLabel>
+            {labelFilter !== "Any" ? (
+              <div className="flex items-center gap-1">
+                {(() => {
+                  const activeLabel = state.taskLabels.find((l) => l.id === labelFilter);
+                  return activeLabel ? (
+                    <span className={`rounded px-2 py-1 text-xs font-medium text-white ${activeLabel.color}`}>
+                      {activeLabel.name}
+                    </span>
+                  ) : null;
+                })()}
+                <button
+                  className="rounded px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-100"
+                  onClick={() => setLabelFilter("Any")}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)}>
+                <option value="Any">Any</option>
+                {state.taskLabels.map((label) => (
+                  <option key={label.id} value={label.id}>
+                    {label.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <FieldLabel>Sort</FieldLabel>
@@ -539,9 +555,24 @@ export function TasksPage() {
                     </td>
                     <td>
                       {linkTarget ? (
-                        <Link className="text-xs font-semibold text-brand-700 hover:underline" to={linkTarget.href}>
-                          {linkTarget.label}
-                        </Link>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Link className="text-xs font-semibold text-brand-700 hover:underline" to={linkTarget.href}>
+                            {linkTarget.label}
+                          </Link>
+                          {task.projectId && (() => {
+                            const pLabel = state.taskLabels.find(
+                              (l) => l.name === getProjectName(state, task.projectId!),
+                            );
+                            return pLabel ? (
+                              <button
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${pLabel.color}`}
+                                onClick={() => setLabelFilter(pLabel.id)}
+                              >
+                                {pLabel.name}
+                              </button>
+                            ) : null;
+                          })()}
+                        </div>
                       ) : (
                         <span className="text-xs text-slate-500">-</span>
                       )}
@@ -734,6 +765,162 @@ export function TasksPage() {
               <Button size="sm" onClick={handleCreateTask} disabled={!form.title.trim()}>
                 Create task
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isLabelManagerOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setLabelManagerOpen(false)}
+        >
+          <div
+            className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-800">Label Management</h3>
+              <Button size="sm" variant="secondary" onClick={() => { setLabelManagerOpen(false); setEditingLabelId(null); }}>
+                Close
+              </Button>
+            </div>
+
+            <div className="mb-4 overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr>
+                    <th className="text-left text-xs text-slate-500">Color</th>
+                    <th className="text-left text-xs text-slate-500">Name</th>
+                    <th className="text-left text-xs text-slate-500">Tasks</th>
+                    <th className="text-right text-xs text-slate-500">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.taskLabels.map((label) => {
+                    const taskCount = state.tasks.filter((t) => (t.labelIds ?? []).includes(label.id)).length;
+                    const isProjectLbl = isProjectLabel(label, projectNames);
+                    const isEditing = editingLabelId === label.id;
+
+                    return (
+                      <tr key={label.id} className="border-t border-slate-100">
+                        <td className="py-2">
+                          {isEditing ? (
+                            <div className="flex flex-wrap gap-1">
+                              {LABEL_COLOR_PRESETS.map((c) => (
+                                <button
+                                  key={c}
+                                  type="button"
+                                  className={`h-5 w-5 rounded-full ${c} ${editLabelColor === c ? "ring-2 ring-slate-400 ring-offset-1" : ""}`}
+                                  onClick={() => setEditLabelColor(c)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <span className={`inline-block h-4 w-4 rounded-full ${label.color}`} />
+                          )}
+                        </td>
+                        <td className="py-2">
+                          {isEditing ? (
+                            <input
+                              className="w-full rounded border border-slate-200 px-2 py-1 text-xs"
+                              value={editLabelName}
+                              onChange={(e) => setEditLabelName(e.target.value)}
+                            />
+                          ) : (
+                            <span className="text-xs font-medium text-slate-700">{label.name}</span>
+                          )}
+                        </td>
+                        <td className="py-2">
+                          <span className="text-xs text-slate-500">{taskCount}</span>
+                        </td>
+                        <td className="py-2 text-right">
+                          {isEditing ? (
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  if (editLabelName.trim()) {
+                                    state.updateTaskLabel(label.id, { name: editLabelName.trim(), color: editLabelColor });
+                                  }
+                                  setEditingLabelId(null);
+                                }}
+                              >
+                                Save
+                              </Button>
+                              <Button size="sm" variant="secondary" onClick={() => setEditingLabelId(null)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end gap-1">
+                              {isProjectLbl ? (
+                                <span className="flex items-center gap-1 text-[10px] text-slate-400" title="Project label – cannot delete">
+                                  🔒 Project
+                                </span>
+                              ) : null}
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setEditingLabelId(label.id);
+                                  setEditLabelName(label.name);
+                                  setEditLabelColor(label.color);
+                                }}
+                              >
+                                Edit
+                              </Button>
+                              {!isProjectLbl && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    state.deleteTaskLabel(label.id);
+                                    if (labelFilter === label.id) setLabelFilter("Any");
+                                  }}
+                                >
+                                  Delete
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-2 text-xs font-semibold text-slate-700">Add new label</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <FieldLabel>Name</FieldLabel>
+                  <input
+                    className="rounded border border-slate-200 px-2 py-1 text-xs"
+                    placeholder="Label name"
+                    value={newLabelName}
+                    onChange={(e) => setNewLabelName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Color</FieldLabel>
+                  <div className="flex flex-wrap gap-1">
+                    {LABEL_COLOR_PRESETS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`h-5 w-5 rounded-full ${c} ${newLabelColor === c ? "ring-2 ring-slate-400 ring-offset-1" : ""}`}
+                        onClick={() => setNewLabelColor(c)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <Button size="sm" onClick={handleAddLabel} disabled={!newLabelName.trim()}>
+                  Create label
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getUserName } from "../../store/selectors";
@@ -279,6 +280,7 @@ function capitalizeRole(role: ProjectSubmissionKey): string {
 
 export function ProjectGovernanceV2() {
   const state = useAppStore();
+  const navigate = useNavigate();
   const thisWeek = weekStartMonday(new Date());
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("Any");
@@ -1362,17 +1364,38 @@ export function ProjectGovernanceV2() {
           });
           return map;
         })();
+        const projectLabel = state.taskLabels.find((l) => l.name === project?.name);
 
         if (!project) return null;
         return (
-          <div className="fixed inset-0 z-40 bg-slate-900/30" onClick={() => { setOpenProjectTasksId(null); setSelectedTaskIdInProject(null); }}>
-            <aside
-              className="absolute right-0 top-0 h-full w-full max-w-3xl overflow-y-auto border-l border-slate-200 bg-white p-4 shadow-xl"
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+            onClick={() => { setOpenProjectTasksId(null); setSelectedTaskIdInProject(null); }}
+          >
+            <div
+              className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Tasks: {project.name}</h3>
-                <div className="flex gap-2">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800">{project.name}</h3>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <p className="text-xs text-slate-500">Tasks</p>
+                    {projectLabel && (
+                      <button
+                        className="text-xs font-medium text-brand-700 hover:underline"
+                        onClick={() => {
+                          setOpenProjectTasksId(null);
+                          setSelectedTaskIdInProject(null);
+                          navigate(`/tasks?labelId=${projectLabel.id}`);
+                        }}
+                      >
+                        View all tasks →
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     onClick={() => {
@@ -1396,53 +1419,55 @@ export function ProjectGovernanceV2() {
                   </Button>
                 </div>
               </div>
-              {selectedTask ? (
-                <TaskDrawer
-                  task={selectedTask}
-                  comments={commentsByTaskId.get(selectedTask.id) ?? []}
-                  users={state.users}
-                  labels={state.taskLabels}
-                  getUserName={(userId) => getUserName(state, userId)}
-                  onSave={(task, draft) => {
-                    state.updateTask({
-                      ...task,
-                      title: draft.title.trim(),
-                      description: draft.description.trim(),
-                      status: draft.status,
-                      priority: draft.priority,
-                      dueAt: draft.dueAt ? new Date(`${draft.dueAt}T12:00:00`).toISOString() : undefined,
-                      assigneeUserId: draft.assigneeUserId,
-                      visibility: draft.visibility,
-                      watcherUserIds: draft.watcherUserIds,
-                      isUrgent: draft.isUrgent,
-                      labelIds: draft.labelIds,
-                    });
-                  }}
-                  onClose={() => setSelectedTaskIdInProject(null)}
-                  onArchive={(task) =>
-                    state.updateTask({
-                      ...task,
-                      status: "Done",
-                      archivedAt: new Date().toISOString(),
-                    })
-                  }
-                  onUnarchive={(task) => state.updateTask({ ...task, archivedAt: undefined })}
-                  onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
-                />
-              ) : (
-                <TaskKanbanBoard
-                  tasks={projectTasks}
-                  users={state.users}
-                  labels={state.taskLabels}
-                  onUpdateTask={(id, patch) => {
-                    const task = state.tasks.find((t) => t.id === id);
-                    if (task) state.updateTask({ ...task, ...patch });
-                  }}
-                  onOpenTask={(task) => setSelectedTaskIdInProject(task.id)}
-                  getUserName={(userId) => getUserName(state, userId)}
-                />
-              )}
-            </aside>
+              <div className="flex-1 overflow-y-auto px-5 py-4">
+                {selectedTask ? (
+                  <TaskDrawer
+                    task={selectedTask}
+                    comments={commentsByTaskId.get(selectedTask.id) ?? []}
+                    users={state.users}
+                    labels={state.taskLabels}
+                    getUserName={(userId) => getUserName(state, userId)}
+                    onSave={(task, draft) => {
+                      state.updateTask({
+                        ...task,
+                        title: draft.title.trim(),
+                        description: draft.description.trim(),
+                        status: draft.status,
+                        priority: draft.priority,
+                        dueAt: draft.dueAt ? new Date(`${draft.dueAt}T12:00:00`).toISOString() : undefined,
+                        assigneeUserId: draft.assigneeUserId,
+                        visibility: draft.visibility,
+                        watcherUserIds: draft.watcherUserIds,
+                        isUrgent: draft.isUrgent,
+                        labelIds: draft.labelIds,
+                      });
+                    }}
+                    onClose={() => setSelectedTaskIdInProject(null)}
+                    onArchive={(task) =>
+                      state.updateTask({
+                        ...task,
+                        status: "Done",
+                        archivedAt: new Date().toISOString(),
+                      })
+                    }
+                    onUnarchive={(task) => state.updateTask({ ...task, archivedAt: undefined })}
+                    onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
+                  />
+                ) : (
+                  <TaskKanbanBoard
+                    tasks={projectTasks}
+                    users={state.users}
+                    labels={state.taskLabels}
+                    onUpdateTask={(id, patch) => {
+                      const task = state.tasks.find((t) => t.id === id);
+                      if (task) state.updateTask({ ...task, ...patch });
+                    }}
+                    onOpenTask={(task) => setSelectedTaskIdInProject(task.id)}
+                    getUserName={(userId) => getUserName(state, userId)}
+                  />
+                )}
+              </div>
+            </div>
           </div>
         );
       })()}

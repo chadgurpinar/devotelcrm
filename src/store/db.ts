@@ -104,6 +104,9 @@ interface DbActions {
   ) => string;
   addTaskComment: (taskId: string, text: string, kind?: TaskComment["kind"]) => void;
   addTaskLabel: (payload: Omit<TaskLabel, "id">) => string;
+  updateTaskLabel: (id: string, patch: { name?: string; color?: string }) => void;
+  deleteTaskLabel: (id: string) => void;
+  ensureProjectLabel: (projectId: string, projectName: string) => string;
   updateTask: (task: Task) => void;
   createProject: (payload: Omit<Project, "id" | "createdAt" | "updatedAt">) => string;
   updateProject: (project: Project) => void;
@@ -1246,6 +1249,17 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       const taskId = uid("t");
       const now = new Date().toISOString();
       const { initialComment, watcherUserIds, ...taskPayload } = payload;
+      let labelIds = taskPayload.labelIds ? [...taskPayload.labelIds] : [];
+      if (taskPayload.projectId) {
+        const state = get();
+        const project = state.projects.find((p) => p.id === taskPayload.projectId);
+        if (project) {
+          const projectLabelId = get().ensureProjectLabel(project.id, project.name);
+          if (!labelIds.includes(projectLabelId)) {
+            labelIds = [...labelIds, projectLabelId];
+          }
+        }
+      }
       set((state) => ({
         ...state,
         tasks: [
@@ -1253,6 +1267,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           {
             ...taskPayload,
             id: taskId,
+            labelIds: labelIds.length > 0 ? labelIds : undefined,
             createdAt: now,
             updatedAt: now,
             completedAt: taskPayload.status === "Done" ? now : undefined,
@@ -1306,6 +1321,40 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       set((state) => ({
         ...state,
         taskLabels: [...state.taskLabels, { ...payload, id: labelId }],
+      }));
+      return labelId;
+    },
+    updateTaskLabel: (id, patch) =>
+      set((state) => ({
+        ...state,
+        taskLabels: state.taskLabels.map((label) =>
+          label.id === id ? { ...label, ...patch } : label,
+        ),
+      })),
+    deleteTaskLabel: (id) =>
+      set((state) => ({
+        ...state,
+        taskLabels: state.taskLabels.filter((label) => label.id !== id),
+        tasks: state.tasks.map((task) =>
+          task.labelIds?.includes(id)
+            ? { ...task, labelIds: task.labelIds.filter((lid) => lid !== id) }
+            : task,
+        ),
+      })),
+    ensureProjectLabel: (projectId, projectName) => {
+      const state = get();
+      const existing = state.taskLabels.find((l) => l.name === projectName);
+      if (existing) return existing.id;
+      const PROJECT_LABEL_COLORS = [
+        "bg-violet-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500",
+        "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-pink-500",
+      ];
+      const projectIdx = state.projects.findIndex((p) => p.id === projectId);
+      const color = PROJECT_LABEL_COLORS[(projectIdx >= 0 ? projectIdx : 0) % PROJECT_LABEL_COLORS.length];
+      const labelId = uid("tl");
+      set((s) => ({
+        ...s,
+        taskLabels: [...s.taskLabels, { id: labelId, name: projectName, color }],
       }));
       return labelId;
     },
@@ -1366,6 +1415,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           },
         ],
       }));
+      get().ensureProjectLabel(id, payload.name);
       return id;
     },
     updateProject: (project) =>
@@ -5119,9 +5169,38 @@ export const useAppStore = create<AppStore>()(
         meetings,
         eventStaff,
         tasks,
-        taskLabels: Array.isArray(state.taskLabels)
-          ? (state.taskLabels as unknown as TaskLabel[])
-          : fallback.taskLabels,
+        taskLabels: (() => {
+          let labels: TaskLabel[] = Array.isArray(state.taskLabels)
+            ? (state.taskLabels as unknown as TaskLabel[])
+            : fallback.taskLabels;
+          if (labels.length === 0) {
+            labels = [
+              { id: "label-bug", name: "Bug", color: "bg-rose-500" },
+              { id: "label-feature", name: "Feature", color: "bg-blue-500" },
+              { id: "label-infra", name: "Infra", color: "bg-slate-500" },
+              { id: "label-urgent", name: "Urgent", color: "bg-amber-500" },
+              { id: "label-review", name: "Review", color: "bg-violet-500" },
+              { id: "label-blocked", name: "Blocked", color: "bg-rose-700" },
+              { id: "label-research", name: "Research", color: "bg-cyan-500" },
+              { id: "label-docs", name: "Docs", color: "bg-emerald-500" },
+            ];
+          }
+          const PROJECT_LABEL_COLORS = [
+            "bg-violet-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500",
+            "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-pink-500",
+          ];
+          const allProjects: Project[] = Array.isArray(state.projects) ? projects : fallback.projects;
+          allProjects.forEach((project, idx) => {
+            if (!labels.some((l) => l.name === project.name)) {
+              labels = [...labels, {
+                id: `label-project-${project.id}`,
+                name: project.name,
+                color: PROJECT_LABEL_COLORS[idx % PROJECT_LABEL_COLORS.length],
+              }];
+            }
+          });
+          return labels;
+        })(),
         taskComments,
         projects: Array.isArray(state.projects) ? projects : fallback.projects,
         projectWeeklyReports: Array.isArray(state.projectWeeklyReports)
