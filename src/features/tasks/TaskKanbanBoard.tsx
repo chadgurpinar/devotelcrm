@@ -29,9 +29,9 @@ export function TaskKanbanBoard({
 }: TaskKanbanBoardProps) {
   const activeTasks = tasks.filter((t) => t.status !== "Completed" && t.status !== "Archived");
   const byStage = {
-    Backlog: activeTasks.filter((t) => getTaskStage(t) === "Backlog" && !t.archivedAt),
-    InProgress: activeTasks.filter((t) => getTaskStage(t) === "InProgress" && !t.archivedAt),
-    Done: activeTasks.filter((t) => getTaskStage(t) === "Done" && !t.archivedAt),
+    Backlog: activeTasks.filter((t) => getTaskStage(t) === "Backlog"),
+    InProgress: activeTasks.filter((t) => getTaskStage(t) === "InProgress"),
+    Done: activeTasks.filter((t) => getTaskStage(t) === "Done"),
   };
 
   const moveToStage = (task: Task, stage: KanbanStage) => {
@@ -43,7 +43,7 @@ export function TaskKanbanBoard({
     onUpdateTask(task.id, {
       kanbanStage: stage,
       status: statusMap[stage],
-      ...(stage === "Done" ? { completedAt: new Date().toISOString(), archivedAt: new Date().toISOString() } : {}),
+      ...(stage === "Done" ? { completedAt: new Date().toISOString() } : {}),
     });
   };
 

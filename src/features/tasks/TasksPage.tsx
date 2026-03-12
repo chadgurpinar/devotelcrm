@@ -190,10 +190,10 @@ export function TasksPage() {
 
   const sectionTasks = useMemo(() => {
     if (section === "Completed") {
-      return state.tasks.filter((task) => task.status === "Completed" || (task.status === "Done" && !task.archivedAt));
+      return state.tasks.filter((task) => task.status === "Completed");
     }
     if (section === "Archive") {
-      return state.tasks.filter((task) => task.status === "Archived" || (task.status === "Done" && Boolean(task.archivedAt)));
+      return state.tasks.filter((task) => task.status === "Archived");
     }
     if (section === "AssignedToMe") {
       return state.tasks.filter(

@@ -1378,7 +1378,6 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       set((state) => {
         const existing = state.tasks.find((row) => row.id === task.id);
         const now = new Date().toISOString();
-        const hasArchivedAt = Object.prototype.hasOwnProperty.call(task, "archivedAt");
         const isTerminal = task.status === "Done" || task.status === "Completed" || task.status === "Archived";
         return {
           ...state,
@@ -1394,7 +1393,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
                   archivedAt:
                     task.status === "Archived"
                       ? task.archivedAt ?? existing?.archivedAt ?? now
-                      : isTerminal ? (hasArchivedAt ? task.archivedAt : existing?.archivedAt) : undefined,
+                      : undefined,
                   watcherUserIds: Array.from(
                     new Set([...(task.watcherUserIds ?? []), task.createdByUserId, task.assigneeUserId].filter(Boolean)),
                   ),
