@@ -28,7 +28,7 @@ export type InterconnectionType = "One-way" | "Two-way";
 export type Workscope = "SMS" | "Voice" | "Data" | "Software" | "RCS";
 export type ContactRoleTag = "Commercial" | "Technical" | "Finance";
 
-export type TaskStatus = "Open" | "InProgress" | "Done" | "Completed" | "Archived";
+export type TaskStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Completed" | "Archived";
 export type TaskPriority = "Low" | "Medium" | "High" | "Critical";
 export type TaskVisibility = "Private" | "Shared";
 export type TaskCommentKind = "Comment" | "Blocker";

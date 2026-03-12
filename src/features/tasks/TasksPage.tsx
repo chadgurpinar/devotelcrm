@@ -186,7 +186,7 @@ export function TasksPage() {
     }
   }, [isDoneSection, statusFilter]);
 
-  const isTerminalStatus = (s: string) => s === "Done" || s === "Completed" || s === "Archived";
+  const isTerminalStatus = (s: string) => s === "Completed" || s === "Archived";
 
   const sectionTasks = useMemo(() => {
     if (section === "Completed") {
@@ -284,7 +284,7 @@ export function TasksPage() {
     state.createTask({
       title,
       description: form.description.trim(),
-      status: "Open",
+      status: "Backlog",
       priority: form.priority,
       dueAt: form.dueAt ? new Date(`${form.dueAt}T12:00:00`).toISOString() : undefined,
       createdByUserId: state.activeUserId,
@@ -402,7 +402,7 @@ export function TasksPage() {
             <FieldLabel>Status</FieldLabel>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "Any")}>
               <option value="Any">Any</option>
-              {!isDoneSection && <option value="Open">Open</option>}
+              {!isDoneSection && <option value="Backlog">Backlog</option>}
               {!isDoneSection && <option value="InProgress">In Progress</option>}
               {isDoneSection && <option value="Done">Done</option>}
               {isDoneSection && <option value="Completed">Completed</option>}
@@ -508,6 +508,17 @@ export function TasksPage() {
               </tr>
             </thead>
             <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-8 text-center text-sm text-slate-400">
+                    {section === "Completed"
+                      ? "No completed tasks yet. Mark tasks as Complete when the work is permanently done."
+                      : section === "Archive"
+                        ? "No archived tasks yet. Archive tasks that are done but contain useful reference information."
+                        : "No tasks found."}
+                  </td>
+                </tr>
+              )}
               {rows.map((task) => {
                 const lastComment = (commentsByTaskId.get(task.id) ?? []).slice(-1)[0];
                 const linkTarget = getTaskLinkTarget(task);

@@ -4028,7 +4028,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
               id: taskId,
               title: "Follow-up from note",
               description: note.text,
-              status: "Open",
+              status: "Backlog",
               priority: "Medium",
               createdByUserId: state.activeUserId,
               assigneeUserId,

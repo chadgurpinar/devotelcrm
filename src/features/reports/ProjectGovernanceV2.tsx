@@ -1431,7 +1431,7 @@ export function ProjectGovernanceV2() {
                       state.createTask({
                         title: `New task for ${project.name}`,
                         description: "",
-                        status: "Open",
+                        status: "Backlog",
                         priority: "Medium",
                         createdByUserId: state.activeUserId,
                         assigneeUserId: state.activeUserId,

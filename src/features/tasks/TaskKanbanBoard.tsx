@@ -36,7 +36,7 @@ export function TaskKanbanBoard({
 
   const moveToStage = (task: Task, stage: KanbanStage) => {
     const statusMap: Record<KanbanStage, Task["status"]> = {
-      Backlog: "Open",
+      Backlog: "Backlog",
       InProgress: "InProgress",
       Done: "Done",
     };

@@ -1068,7 +1068,7 @@ const PER_PROJECT_TASK_DEFS: ExtraProjectTaskDef[] = [
   {
     titleSuffix: "Compliance documentation collection",
     description: "Gather all required compliance and regulatory documents from the partner before interconnection.",
-    status: "Open",
+    status: "Backlog",
     kanbanStage: "Backlog",
     priority: "High",
     dueDaysFromNow: 5,
@@ -1088,7 +1088,7 @@ const PER_PROJECT_TASK_DEFS: ExtraProjectTaskDef[] = [
   {
     titleSuffix: "End-to-end testing plan",
     description: "Create and execute bilateral testing plan covering voice quality, CLI pass-through, and failover scenarios.",
-    status: "Open",
+    status: "Backlog",
     kanbanStage: "Backlog",
     priority: "Medium",
     dueDaysFromNow: 10,
@@ -1098,7 +1098,7 @@ const PER_PROJECT_TASK_DEFS: ExtraProjectTaskDef[] = [
   {
     titleSuffix: "Go-live readiness checklist",
     description: "Complete all go-live prerequisites including monitoring setup, escalation paths, and capacity verification.",
-    status: "Open",
+    status: "Backlog",
     kanbanStage: "Backlog",
     priority: "Medium",
     dueDaysFromNow: 15,
@@ -1118,7 +1118,7 @@ const PER_PROJECT_TASK_DEFS: ExtraProjectTaskDef[] = [
   {
     titleSuffix: "Partner SLA review and sign-off",
     description: "Review SLA terms with partner, negotiate any deviations, and obtain mutual sign-off.",
-    status: "Open",
+    status: "Backlog",
     kanbanStage: "Backlog",
     priority: "High",
     isUrgent: true,
@@ -1144,7 +1144,7 @@ const PER_PROJECT_TASK_DEFS: ExtraProjectTaskDef[] = [
   {
     titleSuffix: "Billing integration setup",
     description: "Configure billing system integration for automated invoicing and reconciliation with the partner.",
-    status: "Open",
+    status: "Backlog",
     kanbanStage: "Backlog",
     priority: "Low",
     dueDaysFromNow: 20,

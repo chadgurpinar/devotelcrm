@@ -116,7 +116,7 @@ export function TaskDrawer({
             value={draft.status}
             onChange={(e) => setDraft((prev) => (prev ? { ...prev, status: e.target.value as TaskStatus } : prev))}
           >
-            <option value="Open">Open</option>
+            <option value="Backlog">Backlog</option>
             <option value="InProgress">In Progress</option>
             <option value="Done">Done</option>
             <option value="Completed">Completed</option>

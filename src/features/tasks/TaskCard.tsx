@@ -138,6 +138,7 @@ export function TaskCard({
             size="sm"
             variant="secondary"
             className="text-[10px]"
+            title="Mark as complete — permanently closed"
             onClick={() => onUpdateTask(task.id, { status: "Completed" })}
           >
             Complete
@@ -146,6 +147,7 @@ export function TaskCard({
             size="sm"
             variant="ghost"
             className="text-[10px]"
+            title="Archive — closed but kept for future reference"
             onClick={() => onUpdateTask(task.id, { status: "Archived" })}
           >
             Archive
