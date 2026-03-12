@@ -117,8 +117,10 @@ export function TaskDrawer({
             onChange={(e) => setDraft((prev) => (prev ? { ...prev, status: e.target.value as TaskStatus } : prev))}
           >
             <option value="Open">Open</option>
-            <option value="InProgress">InProgress</option>
+            <option value="InProgress">In Progress</option>
             <option value="Done">Done</option>
+            <option value="Completed">Completed</option>
+            <option value="Archived">Archived</option>
           </select>
         </div>
         <div>
@@ -234,17 +236,17 @@ export function TaskDrawer({
       </div>
       <div className="mt-3 flex gap-2">
         <Button onClick={saveTaskDetail}>Save task</Button>
-        {task.status !== "Done" && (
+        {task.status !== "Done" && task.status !== "Completed" && task.status !== "Archived" && (
           <Button variant="secondary" onClick={() => onArchive(task)}>
             Complete and archive
           </Button>
         )}
-        {task.status === "Done" && !task.archivedAt && (
+        {task.status === "Done" && (
           <Button variant="secondary" onClick={() => onArchive(task)}>
             Move to archive
           </Button>
         )}
-        {task.status === "Done" && task.archivedAt && (
+        {(task.status === "Archived" || (task.status === "Done" && task.archivedAt)) && (
           <Button variant="secondary" onClick={() => onUnarchive(task)}>
             Remove from archive
           </Button>

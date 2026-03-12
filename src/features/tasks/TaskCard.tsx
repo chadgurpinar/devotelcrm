@@ -20,7 +20,7 @@ function getLabelColor(color: string): string {
 }
 
 function isOverdue(task: Task): boolean {
-  if (task.status === "Done" || !task.dueAt) return false;
+  if (task.status === "Done" || task.status === "Completed" || task.status === "Archived" || !task.dueAt) return false;
   return new Date(task.dueAt).getTime() < Date.now();
 }
 
@@ -98,9 +98,9 @@ export function TaskCard({
           )}
         </span>
       </div>
-      {variant === "kanban" && showActions && onMoveToStage && task.status !== "Done" && (
+      {variant === "kanban" && showActions && onMoveToStage && task.status !== "Done" && task.status !== "Completed" && task.status !== "Archived" && (
         <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
-          {task.kanbanStage !== "Backlog" && (
+          {(task.kanbanStage as string) !== "Backlog" && (
             <Button
               size="sm"
               variant="ghost"
@@ -110,7 +110,7 @@ export function TaskCard({
               ← Backlog
             </Button>
           )}
-          {task.kanbanStage !== "InProgress" && (
+          {(task.kanbanStage as string) !== "InProgress" && (
             <Button
               size="sm"
               variant="ghost"
@@ -128,7 +128,27 @@ export function TaskCard({
               onUpdateTask?.(task.id, { status: "Done", kanbanStage: "Done" });
             }}
           >
+            Done
+          </Button>
+        </div>
+      )}
+      {variant === "kanban" && showActions && onUpdateTask && task.status === "Done" && (
+        <div className="mt-2 flex justify-end gap-2 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="text-[10px]"
+            onClick={() => onUpdateTask(task.id, { status: "Completed" })}
+          >
             Complete
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-[10px]"
+            onClick={() => onUpdateTask(task.id, { status: "Archived" })}
+          >
+            Archive
           </Button>
         </div>
       )}

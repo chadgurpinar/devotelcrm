@@ -60,7 +60,7 @@ function isDueSoon(dueAt?: string): boolean {
 }
 
 function isOverdue(task: Task): boolean {
-  if (task.status === "Done" || !task.dueAt) return false;
+  if (task.status === "Done" || task.status === "Completed" || task.status === "Archived" || !task.dueAt) return false;
   return new Date(task.dueAt).getTime() < Date.now();
 }
 
@@ -177,26 +177,28 @@ export function TasksPage() {
   useEffect(() => {
     if (isDoneSection) {
       if (statusFilter === "Open" || statusFilter === "InProgress") {
-        setStatusFilter("Done");
+        setStatusFilter("Any");
       }
       return;
     }
-    if (statusFilter === "Done") {
+    if (statusFilter === "Done" || statusFilter === "Completed" || statusFilter === "Archived") {
       setStatusFilter("Any");
     }
   }, [isDoneSection, statusFilter]);
 
+  const isTerminalStatus = (s: string) => s === "Done" || s === "Completed" || s === "Archived";
+
   const sectionTasks = useMemo(() => {
     if (section === "Completed") {
-      return state.tasks.filter((task) => task.status === "Done" && !task.archivedAt);
+      return state.tasks.filter((task) => task.status === "Completed" || (task.status === "Done" && !task.archivedAt));
     }
     if (section === "Archive") {
-      return state.tasks.filter((task) => task.status === "Done" && Boolean(task.archivedAt));
+      return state.tasks.filter((task) => task.status === "Archived" || (task.status === "Done" && Boolean(task.archivedAt)));
     }
     if (section === "AssignedToMe") {
       return state.tasks.filter(
         (task) =>
-          task.status !== "Done" &&
+          !isTerminalStatus(task.status) &&
           task.assigneeUserId === state.activeUserId &&
           task.createdByUserId !== state.activeUserId,
       );
@@ -204,14 +206,14 @@ export function TasksPage() {
     if (section === "AssignedByMe") {
       return state.tasks.filter(
         (task) =>
-          task.status !== "Done" &&
+          !isTerminalStatus(task.status) &&
           task.createdByUserId === state.activeUserId &&
           task.assigneeUserId !== state.activeUserId,
       );
     }
     return state.tasks.filter(
       (task) =>
-        task.status !== "Done" &&
+        !isTerminalStatus(task.status) &&
         task.createdByUserId === state.activeUserId &&
         task.assigneeUserId === state.activeUserId,
     );
@@ -320,8 +322,7 @@ export function TasksPage() {
   function archiveTaskDirectly(task: Task) {
     state.updateTask({
       ...task,
-      status: "Done",
-      archivedAt: new Date().toISOString(),
+      status: "Archived",
     });
   }
 
@@ -402,8 +403,10 @@ export function TasksPage() {
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "Any")}>
               <option value="Any">Any</option>
               {!isDoneSection && <option value="Open">Open</option>}
-              {!isDoneSection && <option value="InProgress">InProgress</option>}
+              {!isDoneSection && <option value="InProgress">In Progress</option>}
               {isDoneSection && <option value="Done">Done</option>}
+              {isDoneSection && <option value="Completed">Completed</option>}
+              {isDoneSection && <option value="Archived">Archived</option>}
             </select>
           </div>
           <div>
@@ -533,15 +536,20 @@ export function TasksPage() {
                       </div>
                     </td>
                     <td>
-                      <Badge className={task.status === "Done" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}>
+                      <Badge className={
+                        task.status === "Completed" ? "bg-emerald-100 text-emerald-700"
+                        : task.status === "Archived" ? "bg-violet-100 text-violet-700"
+                        : task.status === "Done" ? "bg-emerald-100 text-emerald-700"
+                        : "bg-blue-100 text-blue-700"
+                      }>
                         {task.status}
                       </Badge>
                     </td>
                     <td>{task.priority}</td>
-                    <td className={overdue && task.status !== "Done" ? "font-semibold text-rose-600" : ""}>
+                    <td className={overdue && !isTerminalStatus(task.status) ? "font-semibold text-rose-600" : ""}>
                       {task.dueAt ? (
                         <>
-                          {overdue && task.status !== "Done" && "⚠ "}
+                          {overdue && !isTerminalStatus(task.status) && "⚠ "}
                           {new Date(task.dueAt).toLocaleDateString()}
                         </>
                       ) : (
@@ -583,37 +591,41 @@ export function TasksPage() {
                         <Button size="sm" variant="secondary" onClick={() => setSelectedTaskId(task.id)}>
                           Open
                         </Button>
-                        {task.status !== "Done" && (
+                        {!isTerminalStatus(task.status) && (
                           <Button size="sm" onClick={() => state.updateTask({ ...task, status: "Done" })}>
                             Mark done
                           </Button>
                         )}
-                        {task.status !== "Done" && (
+                        {!isTerminalStatus(task.status) && (
                           <Button size="sm" variant="secondary" onClick={() => archiveTaskDirectly(task)}>
                             Direct archive
                           </Button>
                         )}
-                        {task.status === "Done" && !task.archivedAt && (
+                        {task.status === "Done" && (
+                          <Button
+                            size="sm"
+                            onClick={() => state.updateTask({ ...task, status: "Completed" })}
+                          >
+                            Complete
+                          </Button>
+                        )}
+                        {(task.status === "Done" || task.status === "Completed") && (
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() =>
-                              state.updateTask({
-                                ...task,
-                                archivedAt: new Date().toISOString(),
-                              })
-                            }
+                            onClick={() => state.updateTask({ ...task, status: "Archived" })}
                           >
                             Archive
                           </Button>
                         )}
-                        {task.status === "Done" && task.archivedAt && (
+                        {task.status === "Archived" && (
                           <Button
                             size="sm"
                             variant="secondary"
                             onClick={() =>
                               state.updateTask({
                                 ...task,
+                                status: "Done",
                                 archivedAt: undefined,
                               })
                             }
@@ -938,11 +950,10 @@ export function TasksPage() {
           onArchive={(task) =>
             state.updateTask({
               ...task,
-              status: "Done",
-              archivedAt: new Date().toISOString(),
+              status: "Archived",
             })
           }
-          onUnarchive={(task) => state.updateTask({ ...task, archivedAt: undefined })}
+          onUnarchive={(task) => state.updateTask({ ...task, status: "Done", archivedAt: undefined })}
           onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
         />
       )}

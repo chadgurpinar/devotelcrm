@@ -1379,6 +1379,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         const existing = state.tasks.find((row) => row.id === task.id);
         const now = new Date().toISOString();
         const hasArchivedAt = Object.prototype.hasOwnProperty.call(task, "archivedAt");
+        const isTerminal = task.status === "Done" || task.status === "Completed" || task.status === "Archived";
         return {
           ...state,
           tasks: state.tasks.map((row) =>
@@ -1387,11 +1388,13 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
                   ...task,
                   updatedAt: now,
                   completedAt:
-                    task.status === "Done"
+                    isTerminal
                       ? task.completedAt ?? existing?.completedAt ?? now
                       : undefined,
                   archivedAt:
-                    task.status === "Done" ? (hasArchivedAt ? task.archivedAt : existing?.archivedAt) : undefined,
+                    task.status === "Archived"
+                      ? task.archivedAt ?? existing?.archivedAt ?? now
+                      : isTerminal ? (hasArchivedAt ? task.archivedAt : existing?.archivedAt) : undefined,
                   watcherUserIds: Array.from(
                     new Set([...(task.watcherUserIds ?? []), task.createdByUserId, task.assigneeUserId].filter(Boolean)),
                   ),
@@ -4059,7 +4062,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 23,
+    version: 24,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
