@@ -176,6 +176,7 @@ export function TasksPage() {
 
   useEffect(() => {
     if (isDoneSection) {
+      setViewModePersisted("LIST");
       if (statusFilter === "Open" || statusFilter === "InProgress") {
         setStatusFilter("Any");
       }
@@ -184,7 +185,7 @@ export function TasksPage() {
     if (statusFilter === "Done" || statusFilter === "Completed" || statusFilter === "Archived") {
       setStatusFilter("Any");
     }
-  }, [isDoneSection, statusFilter]);
+  }, [isDoneSection, statusFilter, setViewModePersisted]);
 
   const isTerminalStatus = (s: string) => s === "Completed" || s === "Archived";
 
@@ -340,22 +341,24 @@ export function TasksPage() {
         title="Operational Tasks"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-1">
-              <Button
-                size="sm"
-                variant={viewMode === "LIST" ? "primary" : "secondary"}
-                onClick={() => setViewModePersisted("LIST")}
-              >
-                List
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === "KANBAN" ? "primary" : "secondary"}
-                onClick={() => setViewModePersisted("KANBAN")}
-              >
-                Kanban
-              </Button>
-            </div>
+            {!isDoneSection && (
+              <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-1">
+                <Button
+                  size="sm"
+                  variant={viewMode === "LIST" ? "primary" : "secondary"}
+                  onClick={() => setViewModePersisted("LIST")}
+                >
+                  List
+                </Button>
+                <Button
+                  size="sm"
+                  variant={viewMode === "KANBAN" ? "primary" : "secondary"}
+                  onClick={() => setViewModePersisted("KANBAN")}
+                >
+                  Kanban
+                </Button>
+              </div>
+            )}
             <Button
               size="sm"
               variant="secondary"
@@ -389,7 +392,7 @@ export function TasksPage() {
             Completed
           </Button>
           <Button variant={section === "Archive" ? "primary" : "secondary"} onClick={() => setSection("Archive")}>
-            Archive
+            Starred
           </Button>
         </div>
 
@@ -406,7 +409,7 @@ export function TasksPage() {
               {!isDoneSection && <option value="InProgress">In Progress</option>}
               {isDoneSection && <option value="Done">Done</option>}
               {isDoneSection && <option value="Completed">Completed</option>}
-              {isDoneSection && <option value="Archived">Archived</option>}
+              {isDoneSection && <option value="Archived">Starred</option>}
             </select>
           </div>
           <div>
@@ -479,7 +482,7 @@ export function TasksPage() {
           </div>
         </div>
 
-        {viewMode === "KANBAN" ? (
+        {viewMode === "KANBAN" && !isDoneSection ? (
           <TaskKanbanBoard
             tasks={rows}
             users={state.users}
@@ -514,7 +517,7 @@ export function TasksPage() {
                     {section === "Completed"
                       ? "No completed tasks yet. Mark tasks as Complete when the work is permanently done."
                       : section === "Archive"
-                        ? "No archived tasks yet. Archive tasks that are done but contain useful reference information."
+                        ? "No starred tasks yet. Star tasks that are done but contain useful reference information you may need later."
                         : "No tasks found."}
                   </td>
                 </tr>
@@ -534,7 +537,7 @@ export function TasksPage() {
                         {isUrgent && <Badge className="bg-rose-100 text-rose-700">URGENT</Badge>}
                         <Badge className="bg-slate-100 text-slate-700">{task.visibility}</Badge>
                         <Badge className="bg-slate-100 text-slate-700">{task.watcherUserIds.length} watchers</Badge>
-                        {task.archivedAt && <Badge className="bg-violet-100 text-violet-700">Archived</Badge>}
+                        {task.archivedAt && <Badge className="bg-violet-100 text-violet-700">⭐ Starred</Badge>}
                         {overdue && <Badge className="bg-rose-100 text-rose-700">Overdue</Badge>}
                         {(task.labelIds ?? []).map((lid) => {
                           const label = state.taskLabels.find((l) => l.id === lid);
@@ -549,7 +552,7 @@ export function TasksPage() {
                     <td>
                       <Badge className={
                         task.status === "Completed" ? "bg-emerald-100 text-emerald-700"
-                        : task.status === "Archived" ? "bg-violet-100 text-violet-700"
+                        : task.status === "Archived" ? "bg-amber-100 text-amber-700"
                         : task.status === "Done" ? "bg-emerald-100 text-emerald-700"
                         : "bg-blue-100 text-blue-700"
                       }>
@@ -598,53 +601,61 @@ export function TasksPage() {
                     </td>
                     <td className="text-xs">{lastComment ? lastComment.content : "-"}</td>
                     <td>
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="secondary" onClick={() => setSelectedTaskId(task.id)}>
-                          Open
-                        </Button>
-                        {!isTerminalStatus(task.status) && (
-                          <Button size="sm" onClick={() => state.updateTask({ ...task, status: "Done" })}>
-                            Mark done
-                          </Button>
-                        )}
-                        {!isTerminalStatus(task.status) && (
-                          <Button size="sm" variant="secondary" onClick={() => archiveTaskDirectly(task)}>
-                            Direct archive
-                          </Button>
-                        )}
-                        {task.status === "Done" && (
-                          <Button
-                            size="sm"
-                            onClick={() => state.updateTask({ ...task, status: "Completed" })}
-                          >
-                            Complete
-                          </Button>
-                        )}
-                        {(task.status === "Done" || task.status === "Completed") && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => state.updateTask({ ...task, status: "Archived" })}
-                          >
-                            Archive
-                          </Button>
-                        )}
-                        {task.status === "Archived" && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() =>
-                              state.updateTask({
-                                ...task,
-                                status: "Done",
-                                archivedAt: undefined,
-                              })
-                            }
-                          >
-                            Unarchive
-                          </Button>
-                        )}
-                      </div>
+                      {(() => {
+                        const isMine = task.createdByUserId === state.activeUserId;
+                        const isAssignedToMe = task.assigneeUserId === state.activeUserId && !isMine;
+                        const canComplete = isMine;
+                        const canStar = isMine || isAssignedToMe;
+                        return (
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="secondary" onClick={() => setSelectedTaskId(task.id)}>
+                              Open
+                            </Button>
+                            {!isTerminalStatus(task.status) && (
+                              <Button size="sm" onClick={() => state.updateTask({ ...task, status: "Done" })}>
+                                Mark done
+                              </Button>
+                            )}
+                            {!isTerminalStatus(task.status) && canStar && (
+                              <Button size="sm" variant="secondary" onClick={() => archiveTaskDirectly(task)}>
+                                Star / Save
+                              </Button>
+                            )}
+                            {task.status === "Done" && canComplete && (
+                              <Button
+                                size="sm"
+                                onClick={() => state.updateTask({ ...task, status: "Completed" })}
+                              >
+                                Complete
+                              </Button>
+                            )}
+                            {(task.status === "Done" || task.status === "Completed") && canStar && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => state.updateTask({ ...task, status: "Archived" })}
+                              >
+                                ⭐ Star
+                              </Button>
+                            )}
+                            {task.status === "Archived" && canStar && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() =>
+                                  state.updateTask({
+                                    ...task,
+                                    status: "Done",
+                                    archivedAt: undefined,
+                                  })
+                                }
+                              >
+                                Unstar
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

@@ -120,7 +120,7 @@ export function TaskDrawer({
             <option value="InProgress">In Progress</option>
             <option value="Done">Done</option>
             <option value="Completed">Completed</option>
-            <option value="Archived">Archived</option>
+            <option value="Archived">Starred</option>
           </select>
         </div>
         <div>
@@ -238,17 +238,17 @@ export function TaskDrawer({
         <Button onClick={saveTaskDetail}>Save task</Button>
         {task.status !== "Done" && task.status !== "Completed" && task.status !== "Archived" && (
           <Button variant="secondary" onClick={() => onArchive(task)}>
-            Complete and archive
+            ⭐ Star / Save
           </Button>
         )}
         {task.status === "Done" && (
           <Button variant="secondary" onClick={() => onArchive(task)}>
-            Move to archive
+            ⭐ Star
           </Button>
         )}
         {(task.status === "Archived" || (task.status === "Done" && task.archivedAt)) && (
           <Button variant="secondary" onClick={() => onUnarchive(task)}>
-            Remove from archive
+            Unstar
           </Button>
         )}
       </div>

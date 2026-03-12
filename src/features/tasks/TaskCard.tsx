@@ -147,10 +147,10 @@ export function TaskCard({
             size="sm"
             variant="ghost"
             className="text-[10px]"
-            title="Archive — closed but kept for future reference"
+            title="Star — closed but kept for future reference"
             onClick={() => onUpdateTask(task.id, { status: "Archived" })}
           >
-            Archive
+            ⭐ Star
           </Button>
         </div>
       )}
