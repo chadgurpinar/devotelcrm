@@ -106,7 +106,7 @@ export function NocNewCaseCard({ nocCase: c, portalType, activeUserName, onActio
 
   const elapsedMins = elapsed / 60000;
   const timerColorClass =
-    elapsedMins > 30 ? "text-rose-700 bg-rose-50" : elapsedMins > 15 ? "text-amber-700 bg-amber-50" : "text-slate-600";
+    elapsedMins > 60 ? "text-rose-700 bg-rose-50 rounded px-1" : elapsedMins > 30 ? "text-amber-700 bg-amber-50 rounded px-1" : "text-slate-500";
 
   const isActioned = c.status === "Actioned";
   const availableActions = ACTIONS_BY_CASE_TYPE[c.caseType] ?? [];
@@ -119,6 +119,8 @@ export function NocNewCaseCard({ nocCase: c, portalType, activeUserName, onActio
 
   return (
     <article
+      data-case-id={c.id}
+      data-created-at={c.createdAt}
       className={`relative rounded-xl border bg-white p-4 shadow-sm transition ${SEVERITY_BORDER[c.severity]} ${
         isActioned ? "opacity-70" : ""
       }`}
