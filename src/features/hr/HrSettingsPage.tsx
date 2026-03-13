@@ -9,11 +9,17 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5];
 const HOLIDAY_COUNTRIES = ["Turkey", "United Kingdom", "United States"] as const;
 
+function fmtDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 const auditLogEntries = [
-  { changedBy: "Sevim Yılmaz", field: "Turkey Annual Leave", oldValue: "14 days", newValue: "20 days", date: "2026-02-20" },
-  { changedBy: "Kübra Demir", field: "UK Sick Leave", oldValue: "10 days", newValue: "15 days", date: "2026-02-18" },
-  { changedBy: "System", field: "FX Rate USD/EUR", oldValue: "0.91", newValue: "0.94", date: "2026-02-15" },
-  { changedBy: "Sevim Yılmaz", field: "TR Public Holiday Added", oldValue: "-", newValue: "Republic Day", date: "2026-02-10" },
+  { changedBy: "Admin", field: "TR Annual Leave Days", oldValue: "14", newValue: "14", date: "10 Mar 2026" },
+  { changedBy: "Admin", field: "UK Sick Leave Days", oldValue: "10", newValue: "12", date: "05 Mar 2026" },
+  { changedBy: "Admin", field: "TR Seniority 5-15yr", oldValue: "20", newValue: "20", date: "01 Mar 2026" },
+  { changedBy: "Admin", field: "USA Working Days", oldValue: "Mon-Fri", newValue: "Mon-Fri", date: "28 Feb 2026" },
 ];
 
 export function HrSettingsPage() {
@@ -31,6 +37,8 @@ export function HrSettingsPage() {
 
   const [holidayFilter, setHolidayFilter] = useState("All");
   const [holidayForm, setHolidayForm] = useState({ country: "Turkey" as string, date: "", name: "" });
+  const [editingTiers, setEditingTiers] = useState(false);
+  const [tierDrafts, setTierDrafts] = useState<Array<{ minYears: number; maxYears: number | null; days: number }>>([]);
 
   const filteredHolidays = useMemo(() => {
     const src = state.hrPublicHolidays.slice();
@@ -260,21 +268,54 @@ export function HrSettingsPage() {
 
         {editingProfile?.seniorityTiers && editingProfile.seniorityTiers.length > 0 && (
           <section className="mt-3 rounded-md border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Seniority Tiers</p>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Seniority Leave Tiers</p>
+              {!editingTiers ? (
+                <Button size="sm" variant="secondary" onClick={() => { setEditingTiers(true); setTierDrafts(editingProfile.seniorityTiers!.map((t) => ({ ...t }))); }}>
+                  Edit
+                </Button>
+              ) : (
+                <div className="flex gap-1">
+                  <Button size="sm" variant="secondary" onClick={() => setEditingTiers(false)}>Cancel</Button>
+                  <Button size="sm" onClick={() => {
+                    state.upsertHrLeaveProfile({
+                      id: editingProfile.id,
+                      country: editingProfile.country,
+                      annualLeaveDays: editingProfile.annualLeaveDays,
+                      sickLeaveDays: editingProfile.sickLeaveDays,
+                      carryOverPolicy: editingProfile.carryOverPolicy,
+                      resetPolicy: editingProfile.resetPolicy,
+                      workingDays: editingProfile.workingDays,
+                      seniorityTiers: tierDrafts,
+                    });
+                    setEditingTiers(false);
+                  }}>Save</Button>
+                </div>
+              )}
+            </div>
             <table>
               <thead>
                 <tr>
-                  <th>Min Years</th>
-                  <th>Max Years</th>
-                  <th>Days</th>
+                  <th>Years of Service</th>
+                  <th>Annual Leave Days</th>
                 </tr>
               </thead>
               <tbody>
-                {editingProfile.seniorityTiers.map((tier, idx) => (
+                {(editingTiers ? tierDrafts : editingProfile.seniorityTiers).map((tier, idx) => (
                   <tr key={idx}>
-                    <td>{tier.minYears}</td>
-                    <td>{tier.maxYears ?? "∞"}</td>
-                    <td>{tier.days}</td>
+                    <td>{tier.minYears}–{tier.maxYears !== null ? `${tier.maxYears} yr` : "∞"}</td>
+                    <td>
+                      {editingTiers ? (
+                        <input
+                          type="number"
+                          className="w-20 rounded border border-slate-300 px-2 py-1 text-xs"
+                          value={tierDrafts[idx].days}
+                          onChange={(e) => setTierDrafts((prev) => prev.map((t, i) => i === idx ? { ...t, days: Number(e.target.value) } : t))}
+                        />
+                      ) : (
+                        `${tier.days} days`
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -314,12 +355,12 @@ export function HrSettingsPage() {
             ) : (
               filteredHolidays.map((h) => (
                 <tr key={h.id}>
-                  <td>{h.date}</td>
+                  <td>{fmtDate(h.date)}</td>
                   <td>{h.name}</td>
                   <td>{h.country}</td>
                   <td>
                     <Button size="sm" variant="secondary" onClick={() => state.deletePublicHoliday(h.id)}>
-                      Delete
+                      🗑 Delete
                     </Button>
                   </td>
                 </tr>
@@ -363,7 +404,7 @@ export function HrSettingsPage() {
       </Card>
 
       {/* ── Recent Changes (Audit Log) ── */}
-      <Card title="Recent Changes">
+      <Card title="Recent Settings Changes" actions={<span className="text-[10px] text-slate-400">⚙ Audit log prototype — will connect to real mutations in next phase</span>}>
         <table>
           <thead>
             <tr>
