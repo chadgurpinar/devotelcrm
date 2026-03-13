@@ -263,7 +263,7 @@ function LeaveRequestModal(props: LeaveRequestModalProps) {
           </div>
         </div>
 
-        {leaveType === "Annual" && (
+        {(leaveType === "Annual" || leaveType === "Other") && (
           <div className="mb-3">
             <FieldLabel>Duration</FieldLabel>
             <div className="flex gap-2">
@@ -324,7 +324,7 @@ function LeaveRequestModal(props: LeaveRequestModalProps) {
                 startDate,
                 endDate,
                 employeeComment: employeeComment.trim() ? employeeComment.trim() : undefined,
-                halfDay: leaveType === "Annual" && halfDay ? true : undefined,
+                halfDay: (leaveType === "Annual" || leaveType === "Other") && halfDay ? true : undefined,
                 doctorNoteFileName: leaveType === "Sick" && doctorNoteFileName ? doctorNoteFileName : undefined,
               })
             }
@@ -359,9 +359,11 @@ export function HrLeavePage() {
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [actionModal, setActionModal] = useState<LeaveActionModalState>(null);
   const [actionError, setActionError] = useState("");
+  const [clashConfirm, setClashConfirm] = useState<{ requestId: string; action: HrLeaveActionType; clashCount: number } | null>(null);
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState<"" | HrLeaveStatus>("");
   const [employeeNameSearch, setEmployeeNameSearch] = useState("");
   const [employeeLeaveTypeFilter, setEmployeeLeaveTypeFilter] = useState<"" | HrLeaveType>("");
+  const [employeeMonthFilter, setEmployeeMonthFilter] = useState("");
   const [managerMemberFilter, setManagerMemberFilter] = useState("");
   const [managerDateFrom, setManagerDateFrom] = useState("");
   const [managerDateTo, setManagerDateTo] = useState("");
@@ -435,10 +437,21 @@ export function HrLeavePage() {
     }
   }, [activeEmployees, employeeById, hrActorId]);
 
+  const getAnnualEntitlement = (employee: HrEmployee): number => {
+    const profile = leaveProfileByCountry.get(employee.countryOfEmployment);
+    if (!profile) return 0;
+    if (profile.seniorityTiers && employee.startDate) {
+      const years = Math.floor((Date.now() - new Date(employee.startDate).getTime()) / (365.25 * 86400000));
+      const tier = profile.seniorityTiers.find((t) => years >= t.minYears && (t.maxYears === null || years < t.maxYears));
+      if (tier) return tier.days;
+    }
+    return profile.annualLeaveDays;
+  };
+
   const annualBalance = (employeeId: string): AnnualBalance => {
     const employee = employeeById.get(employeeId);
     if (!employee) return { entitlement: 0, used: 0, remaining: 0 };
-    const entitlement = leaveProfileByCountry.get(employee.countryOfEmployment)?.annualLeaveDays ?? 0;
+    const entitlement = getAnnualEntitlement(employee);
     const currentYear = new Date().getFullYear();
     const used = state.hrLeaveRequests
       .filter(
@@ -468,8 +481,11 @@ export function HrLeavePage() {
         return emp ? displayEmployee(emp).toLowerCase().includes(term) : false;
       });
     }
+    if (employeeMonthFilter) {
+      rows = rows.filter((row) => row.startDate.slice(5, 7) === employeeMonthFilter);
+    }
     return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  }, [employeeActorId, employeeStatusFilter, employeeLeaveTypeFilter, employeeNameSearch, employeeById, state.hrLeaveRequests]);
+  }, [employeeActorId, employeeStatusFilter, employeeLeaveTypeFilter, employeeNameSearch, employeeMonthFilter, employeeById, state.hrLeaveRequests]);
 
   const employeePendingCount = useMemo(
     () => employeeRows.filter((row) => row.status === "PendingManager" || row.status === "PendingHR").length,
@@ -677,6 +693,33 @@ export function HrLeavePage() {
     setRequestModalOpen(false);
   };
 
+  const countDepartmentClashes = (request: HrLeaveRequest): number => {
+    const employee = employeeById.get(request.employeeId);
+    if (!employee) return 0;
+    return state.hrLeaveRequests.filter(
+      (r) =>
+        r.id !== request.id &&
+        r.status === "Approved" &&
+        r.employeeId !== request.employeeId &&
+        employeeById.get(r.employeeId)?.departmentId === employee.departmentId &&
+        dateRangesOverlap(r.startDate, r.endDate, request.startDate, request.endDate),
+    ).length;
+  };
+
+  const handleApproveClick = (requestId: string, action: HrLeaveActionType) => {
+    if (action === "MANAGER_APPROVE" || action === "HR_APPROVE") {
+      const req = state.hrLeaveRequests.find((r) => r.id === requestId);
+      if (req) {
+        const clashCount = countDepartmentClashes(req);
+        if (clashCount >= 2) {
+          setClashConfirm({ requestId, action, clashCount });
+          return;
+        }
+      }
+    }
+    setActionModal({ requestId, action });
+  };
+
   const applyAction = (comment: string) => {
     if (!actionModal) return;
     const result = state.applyHrLeaveAction(actionModal.requestId, actionModal.action, comment.trim() || undefined);
@@ -794,6 +837,15 @@ export function HrLeavePage() {
                   <option value="Rejected">Rejected</option>
                 </select>
               </div>
+              <div className="w-32">
+                <FieldLabel>Month</FieldLabel>
+                <select value={employeeMonthFilter} onChange={(event) => setEmployeeMonthFilter(event.target.value)}>
+                  <option value="">All</option>
+                  {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => (
+                    <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
+                  ))}
+                </select>
+              </div>
               <Button size="sm" onClick={() => setRequestModalOpen(true)} disabled={!employeeActor}>
                 Create leave request
               </Button>
@@ -816,7 +868,11 @@ export function HrLeavePage() {
                 <tbody>
                   {employeeRows.map((row) => (
                     <tr key={row.id}>
-                      <td>{row.leaveType}{row.doctorNoteFileName ? " 📎" : ""}</td>
+                      <td>
+                        {row.leaveType}
+                        {row.halfDay && <Badge className="ml-1 bg-amber-100 text-amber-700">½</Badge>}
+                        {row.doctorNoteFileName && <span className="ml-1" title={row.doctorNoteFileName}>📎</span>}
+                      </td>
                       <td>
                         {row.startDate} - {row.endDate}
                       </td>
@@ -935,7 +991,11 @@ export function HrLeavePage() {
                           return (
                             <tr key={row.id}>
                               <td>{employee ? displayEmployee(employee) : row.employeeId}</td>
-                              <td>{row.leaveType}{row.doctorNoteFileName ? " 📎" : ""}</td>
+                              <td>
+                                {row.leaveType}
+                                {row.halfDay && <Badge className="ml-1 bg-amber-100 text-amber-700">½</Badge>}
+                                {row.doctorNoteFileName && <span className="ml-1" title={row.doctorNoteFileName}>📎</span>}
+                              </td>
                               <td>
                                 {row.startDate} - {row.endDate}
                               </td>
@@ -944,7 +1004,7 @@ export function HrLeavePage() {
                               <td>
                                 <div className="flex flex-wrap items-center gap-1">
                                   {row.totalDays === 0 && !row.halfDay && <Badge className="bg-rose-100 text-rose-700">⚠ 0 days — invalid</Badge>}
-                                  <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_APPROVE" })} disabled={row.totalDays === 0 && !row.halfDay}>
+                                  <Button size="sm" onClick={() => handleApproveClick(row.id, "MANAGER_APPROVE")} disabled={row.totalDays === 0 && !row.halfDay}>
                                     Approve
                                   </Button>
                                   <Button size="sm" variant="secondary" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_REJECT" })}>
@@ -1107,7 +1167,11 @@ export function HrLeavePage() {
                         <tr key={row.id}>
                           <td>{employee ? displayEmployee(employee) : row.employeeId}</td>
                           <td>{departmentName}</td>
-                          <td>{row.leaveType}{row.doctorNoteFileName ? " 📎" : ""}</td>
+                          <td>
+                            {row.leaveType}
+                            {row.halfDay && <Badge className="ml-1 bg-amber-100 text-amber-700">½</Badge>}
+                            {row.doctorNoteFileName && <span className="ml-1" title={row.doctorNoteFileName}>📎</span>}
+                          </td>
                           <td>
                             {row.startDate} - {row.endDate}
                           </td>
@@ -1116,7 +1180,7 @@ export function HrLeavePage() {
                           <td>
                             <div className="flex flex-wrap items-center gap-1">
                               {row.totalDays === 0 && !row.halfDay && <Badge className="bg-rose-100 text-rose-700">⚠ 0 days — invalid</Badge>}
-                              <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "HR_APPROVE" })} disabled={row.totalDays === 0 && !row.halfDay}>
+                              <Button size="sm" onClick={() => handleApproveClick(row.id, "HR_APPROVE")} disabled={row.totalDays === 0 && !row.halfDay}>
                                 Approve
                               </Button>
                               <Button size="sm" variant="secondary" onClick={() => setActionModal({ requestId: row.id, action: "HR_REJECT" })}>
@@ -1339,6 +1403,31 @@ export function HrLeavePage() {
         onConfirm={applyAction}
         errorMessage={actionError}
       />
+
+      {clashConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-sm font-semibold text-slate-800 mb-2">⚠ Department Leave Overlap</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              {clashConfirm.clashCount} other team members are on leave during this period. Approve anyway?
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setClashConfirm(null)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setActionModal({ requestId: clashConfirm.requestId, action: clashConfirm.action });
+                  setClashConfirm(null);
+                }}
+              >
+                Approve anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
