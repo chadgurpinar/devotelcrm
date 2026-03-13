@@ -278,6 +278,9 @@ interface DbActions {
   addRoutingNocRequest: (data: Omit<import("./types").RoutingNocRequest, "id" | "status" | "submittedAt">) => void;
   closeRoutingNocRequest: (id: string, status: import("./types").RoutingReqStatus, payload: { nocComment?: string; closedBy: string }) => void;
   markRoutingNocRequestReviewed: (id: string) => void;
+  addAmEntry: (data: Omit<import("./types").AmEntry, "id" | "submittedAt" | "expiresAt" | "isArchived" | "comments">) => void;
+  addAmComment: (entryId: string, text: string, authorName: string) => void;
+  archiveExpiredAmEntries: () => void;
   resetDemoData: () => void;
   exportData: () => string;
   importData: (raw: string) => { ok: boolean; message: string };
@@ -3997,6 +4000,49 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           r.id === id ? { ...r, reviewedByAm: true } : r,
         ),
       })),
+    addAmEntry: (data) =>
+      set((state) => {
+        const now = new Date();
+        return {
+          ...state,
+          amEntries: [
+            ...state.amEntries,
+            {
+              ...data,
+              id: crypto.randomUUID(),
+              submittedAt: now.toISOString(),
+              expiresAt: new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString(),
+              isArchived: false,
+              comments: [],
+            },
+          ],
+        };
+      }),
+    addAmComment: (entryId, text, authorName) =>
+      set((state) => ({
+        ...state,
+        amEntries: state.amEntries.map((e) =>
+          e.id === entryId
+            ? {
+                ...e,
+                comments: [
+                  ...e.comments,
+                  { id: crypto.randomUUID(), text, authorName, createdAt: new Date().toISOString() },
+                ],
+              }
+            : e,
+        ),
+      })),
+    archiveExpiredAmEntries: () =>
+      set((state) => {
+        const now = new Date();
+        return {
+          ...state,
+          amEntries: state.amEntries.map((e) =>
+            !e.isArchived && new Date(e.expiresAt) <= now ? { ...e, isArchived: true } : e,
+          ),
+        };
+      }),
     resetDemoData: () =>
       set((state) => ({
         ...state,
@@ -4044,6 +4090,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           opsSlaProfiles: Array.isArray(data.opsSlaProfiles) ? data.opsSlaProfiles : state.opsSlaProfiles,
           nocCases: Array.isArray(data.nocCases) ? data.nocCases : [],
           routingNocRequests: Array.isArray(data.routingNocRequests) ? data.routingNocRequests : [],
+          amEntries: Array.isArray(data.amEntries) ? data.amEntries : [],
         }));
         return { ok: true, message: "Data imported successfully." };
       } catch {
@@ -4216,7 +4263,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 28,
+    version: 29,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {

@@ -97,6 +97,7 @@ function buildCounts(db: DbState): Record<keyof DbState, number> {
     opsSlaProfiles: db.opsSlaProfiles.length,
     nocCases: db.nocCases.length,
     routingNocRequests: db.routingNocRequests.length,
+    amEntries: db.amEntries.length,
     weeklyStaffReports: db.weeklyStaffReports.length,
     weeklyReportManagerComments: db.weeklyReportManagerComments.length,
     weeklyReportAiSummaries: db.weeklyReportAiSummaries.length,

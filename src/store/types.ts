@@ -907,6 +907,32 @@ export interface RoutingNocRequest {
   reviewedByAm?: boolean;
 }
 
+export type AmTab =
+  | "Route Request"
+  | "Traffic Request"
+  | "Targets"
+  | "Deal Offers";
+
+export interface AmComment {
+  id: string;
+  text: string;
+  authorName: string;
+  createdAt: string;
+}
+
+export interface AmEntry {
+  id: string;
+  tab: AmTab;
+  fields?: Record<string, string>;
+  customer?: Record<string, string>;
+  provider?: Record<string, string>;
+  submittedBy: string;
+  submittedAt: string;
+  expiresAt: string;
+  isArchived: boolean;
+  comments: AmComment[];
+}
+
 export type OpsPortalId =
   | "sms-noc"
   | "voice-noc"
@@ -1270,6 +1296,7 @@ export interface DbState {
   opsSlaProfiles: OpsSlaProfile[];
   nocCases: NocCase[];
   routingNocRequests: RoutingNocRequest[];
+  amEntries: AmEntry[];
   weeklyStaffReports: WeeklyStaffReport[];
   weeklyReportManagerComments: WeeklyReportManagerComment[];
   weeklyReportAiSummaries: WeeklyReportAiSummary[];
