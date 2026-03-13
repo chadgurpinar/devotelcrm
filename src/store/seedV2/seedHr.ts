@@ -187,11 +187,28 @@ function buildDepartments(idFactory: SeedIdFactory, baseNowIso: string, count: n
     "Software Development": 10,
     "Business Development & Sales": 8,
   };
+  const entityMap: Record<string, "USA" | "UK" | "TR"> = {
+    Management: "UK",
+    Sales: "UK",
+    Interconnection: "TR",
+    NOC: "TR",
+    Routing: "TR",
+    Product: "UK",
+    Finance: "UK",
+    "Human Resources": "UK",
+    "Product Development": "USA",
+    "Branding & Marketing": "UK",
+    "Telecom Operations": "TR",
+    Operations: "TR",
+    "Software Development": "USA",
+    "Business Development & Sales": "USA",
+  };
   const rows: HrDepartment[] = selected.map((name) => ({
     id: idFactory.next("hrDepartment"),
     name,
     parentDepartmentId: undefined,
     targetHeadcount: targetHeadcounts[name] ?? 5,
+    legalEntityId: entityMap[name] ?? "UK" as const,
     createdAt: baseNowIso,
     updatedAt: baseNowIso,
   }));

@@ -48,6 +48,7 @@ export function HrOrganizationPageV2() {
   const [editingDepartmentId, setEditingDepartmentId] = useState<string | null>(null);
   const [form, setForm] = useState<DepartmentForm>(emptyForm);
   const [isModalOpen, setModalOpen] = useState(false);
+  const [deptView, setDeptView] = useState<"Table" | "Org Chart">("Table");
   const hasLoggedOrgValidationRef = useRef(false);
 
   const departmentById = useMemo(() => {
@@ -170,6 +171,7 @@ export function HrOrganizationPageV2() {
     let filtered = rows;
     if (entityFilter !== "All") {
       filtered = filtered.filter((entry) => {
+        if (entry.department.legalEntityId) return entry.department.legalEntityId === entityFilter;
         const entities = entitiesByDepartment.get(entry.department.id);
         return entities != null && entities.has(entityFilter);
       });
@@ -182,6 +184,20 @@ export function HrOrganizationPageV2() {
     }
     return filtered;
   }, [departmentById, departmentSearch, entityFilter, entitiesByDepartment, hrDepartments]);
+
+  const cssChartDepts = useMemo(() => {
+    return hrDepartments
+      .filter((d) => !d.parentDepartmentId)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((dept) => {
+        const filled = headcountByDepartment.get(dept.id) ?? 0;
+        const target = dept.targetHeadcount ?? filled;
+        const head = dept.departmentHeadEmployeeId
+          ? hrEmployees.find((e) => e.id === dept.departmentHeadEmployeeId)
+          : undefined;
+        return { dept, filled, target, headName: head ? `${head.firstName} ${head.lastName}` : undefined };
+      });
+  }, [headcountByDepartment, hrDepartments, hrEmployees]);
 
   const focusedChain = useMemo(() => {
     if (!focusedEmployeeId) return [];
@@ -440,7 +456,38 @@ export function HrOrganizationPageV2() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="mb-3 flex gap-1">
+            <Button size="sm" variant={deptView === "Table" ? "primary" : "secondary"} onClick={() => setDeptView("Table")}>
+              Table
+            </Button>
+            <Button size="sm" variant={deptView === "Org Chart" ? "primary" : "secondary"} onClick={() => setDeptView("Org Chart")}>
+              Org Chart
+            </Button>
+          </div>
+
+          {deptView === "Org Chart" && (
+            <div className="flex flex-col items-center py-6">
+              <div className="rounded-lg bg-brand-600 px-6 py-3 text-white font-semibold text-sm shadow">
+                Devotel Group
+              </div>
+              <div className="w-px h-6 bg-slate-300" />
+              <div className="w-full border-t border-slate-300" />
+              <div className="flex flex-wrap justify-center gap-4 pt-0">
+                {cssChartDepts.map((item) => (
+                  <div key={item.dept.id} className="flex flex-col items-center">
+                    <div className="w-px h-6 bg-slate-300" />
+                    <div className="w-40 rounded-lg border border-slate-200 bg-white p-3 shadow-sm text-center">
+                      <p className="font-semibold text-sm text-slate-800">{item.dept.name}</p>
+                      {item.headName && <p className="text-xs text-slate-500 mt-0.5">{item.headName}</p>}
+                      <p className="text-xs text-slate-400 mt-1">{item.filled}/{item.target}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {deptView === "Table" && <div className="overflow-x-auto">
             <table>
               <thead>
                 <tr>
@@ -490,13 +537,11 @@ export function HrOrganizationPageV2() {
                       {entry.department.targetHeadcount != null
                         ? (() => {
                             const vacant = entry.department.targetHeadcount - (headcountByDepartment.get(entry.department.id) ?? 0);
-                            return (
-                              <span className={vacant > 0 ? "text-rose-600" : "text-emerald-600"}>
-                                {vacant}
-                              </span>
-                            );
+                            return vacant > 0
+                              ? <span className="text-rose-600 font-medium">🔴 {vacant} open</span>
+                              : <span className="text-emerald-600 font-medium">✓ Full</span>;
                           })()
-                        : "-"}
+                        : "—"}
                     </td>
                     <td>{new Date(entry.department.updatedAt).toLocaleString()}</td>
                     <td>
@@ -513,7 +558,7 @@ export function HrOrganizationPageV2() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
         </Card>
       )}
 
@@ -677,9 +722,10 @@ export function HrOrganizationPageV2() {
                   <option value="">None</option>
                   {hrEmployees
                     .filter((employee) => employee.active)
+                    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
                     .map((employee) => (
                       <option key={employee.id} value={employee.id}>
-                        {employee.firstName} {employee.lastName}
+                        {employee.firstName} {employee.lastName}{employee.jobTitle ? ` — ${employee.jobTitle}` : ""}
                       </option>
                     ))}
                 </select>

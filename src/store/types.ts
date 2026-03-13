@@ -495,6 +495,7 @@ export interface HrDepartment {
   parentDepartmentId?: string;
   targetHeadcount?: number;
   departmentHeadEmployeeId?: string;
+  legalEntityId?: OurEntity;
   createdAt: string;
   updatedAt: string;
 }
