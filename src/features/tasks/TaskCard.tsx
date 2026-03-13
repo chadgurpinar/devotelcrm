@@ -24,6 +24,22 @@ function isOverdue(task: Task): boolean {
   return new Date(task.dueAt).getTime() < Date.now();
 }
 
+function dueDateBadge(task: Task): { label: string; className: string } | null {
+  if (!task.dueAt) return null;
+  if (task.status === "Completed" || task.status === "Archived") return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const due = new Date(task.dueAt);
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const diffMs = dueDay.getTime() - today.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  const short = due.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (diffDays < 0) return { label: `Overdue · ${short}`, className: "bg-rose-100 text-rose-700" };
+  if (diffDays === 0) return { label: "Due today", className: "bg-amber-100 text-amber-700" };
+  if (diffDays <= 3) return { label: `Due ${short}`, className: "bg-yellow-100 text-yellow-700" };
+  return { label: `Due ${short}`, className: "bg-slate-100 text-slate-600" };
+}
+
 export interface TaskCardProps {
   task: Task;
   labels: TaskLabel[];
@@ -87,16 +103,18 @@ export function TaskCard({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2 text-xs text-slate-600">
         <span>{assigneeName}</span>
-        <span className={overdue ? "font-semibold text-rose-600" : ""}>
-          {task.dueAt ? (
-            <>
-              {overdue && "⚠ "}
-              {new Date(task.dueAt).toLocaleDateString()}
-            </>
-          ) : (
-            "-"
+        <div className="flex items-center gap-1">
+          {(task.attachmentIds?.length ?? 0) > 0 && (
+            <span className="text-slate-400">📎 {task.attachmentIds!.length}</span>
           )}
-        </span>
+          {(() => {
+            const badge = dueDateBadge(task);
+            if (!badge) return <span>-</span>;
+            return (
+              <Badge className={badge.className}>{badge.label}</Badge>
+            );
+          })()}
+        </div>
       </div>
       {variant === "kanban" && showActions && onMoveToStage && task.status !== "Done" && task.status !== "Completed" && task.status !== "Archived" && (
         <div className="mt-2 flex flex-wrap gap-1 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>

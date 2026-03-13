@@ -609,6 +609,87 @@ export function CompanyDetailPage() {
                     }
                   />
                 </div>
+                <div>
+                  <FieldLabel>CC Email</FieldLabel>
+                  <input
+                    value={company.emails.cc ?? ""}
+                    onChange={(e) =>
+                      state.updateCompany({
+                        ...company,
+                        emails: { ...company.emails, cc: e.target.value || undefined },
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-slate-200 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bank Details</p>
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">Finance use only</span>
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <div>
+                  <FieldLabel>Bank Name</FieldLabel>
+                  <input
+                    value={company.bankDetails?.bankName ?? ""}
+                    onChange={(e) =>
+                      state.updateCompany({
+                        ...company,
+                        bankDetails: { ...company.bankDetails, bankName: e.target.value || undefined },
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <FieldLabel>IBAN</FieldLabel>
+                  <input
+                    value={company.bankDetails?.iban ?? ""}
+                    onChange={(e) =>
+                      state.updateCompany({
+                        ...company,
+                        bankDetails: { ...company.bankDetails, iban: e.target.value || undefined },
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <FieldLabel>SWIFT / BIC</FieldLabel>
+                  <input
+                    value={company.bankDetails?.swift ?? ""}
+                    onChange={(e) =>
+                      state.updateCompany({
+                        ...company,
+                        bankDetails: { ...company.bankDetails, swift: e.target.value || undefined },
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Account Holder</FieldLabel>
+                  <input
+                    value={company.bankDetails?.accountHolder ?? ""}
+                    onChange={(e) =>
+                      state.updateCompany({
+                        ...company,
+                        bankDetails: { ...company.bankDetails, accountHolder: e.target.value || undefined },
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Currency</FieldLabel>
+                  <input
+                    value={company.bankDetails?.currency ?? ""}
+                    onChange={(e) =>
+                      state.updateCompany({
+                        ...company,
+                        bankDetails: { ...company.bankDetails, currency: e.target.value || undefined },
+                      })
+                    }
+                  />
+                </div>
               </div>
             </section>
 

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
-import { Task, TaskComment, TaskLabel, TaskPriority, TaskStatus, TaskVisibility, User } from "../../store/types";
+import { Task, TaskAttachment, TaskComment, TaskLabel, TaskPriority, TaskStatus, TaskVisibility, User } from "../../store/types";
 
 export interface TaskDrawerDraft {
   title: string;
@@ -15,9 +15,16 @@ export interface TaskDrawerDraft {
   labelIds?: string[];
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export interface TaskDrawerProps {
   task: Task;
   comments: TaskComment[];
+  attachments: TaskAttachment[];
   users: User[];
   labels: TaskLabel[];
   getUserName: (userId: string) => string;
@@ -26,11 +33,14 @@ export interface TaskDrawerProps {
   onArchive: (task: Task) => void;
   onUnarchive: (task: Task) => void;
   onAddComment: (taskId: string, text: string, kind?: TaskComment["kind"]) => void;
+  onAddAttachment?: (taskId: string, file: File) => void;
+  onRemoveAttachment?: (attachmentId: string) => void;
 }
 
 export function TaskDrawer({
   task,
   comments,
+  attachments,
   users,
   labels,
   getUserName,
@@ -39,7 +49,10 @@ export function TaskDrawer({
   onArchive,
   onUnarchive,
   onAddComment,
+  onAddAttachment,
+  onRemoveAttachment,
 }: TaskDrawerProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<TaskDrawerDraft>({
     title: task.title,
     description: task.description,
@@ -251,6 +264,51 @@ export function TaskDrawer({
             Unstar
           </Button>
         )}
+      </div>
+
+      <div className="mt-4 rounded-md border border-slate-200 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Attachments {attachments.length > 0 && <span className="text-slate-400">({attachments.length})</span>}
+          </p>
+          {onAddAttachment && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onAddAttachment(task.id, file);
+                  e.target.value = "";
+                }}
+              />
+              <Button size="sm" variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                + Add attachment
+              </Button>
+            </>
+          )}
+        </div>
+        {attachments.length === 0 && (
+          <p className="text-xs text-slate-400">No attachments yet.</p>
+        )}
+        <div className="space-y-1">
+          {attachments.map((att) => (
+            <div key={att.id} className="flex items-center justify-between rounded border border-slate-100 bg-slate-50 px-2 py-1 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-slate-400">📎</span>
+                <span className="truncate font-medium text-slate-700">{att.fileName}</span>
+                <span className="shrink-0 text-slate-400">{formatFileSize(att.sizeBytes)}</span>
+                <span className="shrink-0 text-slate-400">{new Date(att.uploadedAt).toLocaleDateString()}</span>
+              </div>
+              {onRemoveAttachment && (
+                <Button size="sm" variant="ghost" className="text-rose-500" onClick={() => onRemoveAttachment(att.id)}>
+                  ×
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="mt-4 rounded-md border border-slate-200 p-3">

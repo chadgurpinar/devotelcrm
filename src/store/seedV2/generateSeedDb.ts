@@ -524,6 +524,7 @@ export function generateSeedDb(
     tasks: crmTasks.tasks.slice().sort((left, right) => left.id.localeCompare(right.id)),
     taskLabels: crmTasks.taskLabels.slice().sort((left, right) => left.id.localeCompare(right.id)),
     taskComments: crmTasks.taskComments.slice().sort((left, right) => left.id.localeCompare(right.id)),
+    taskAttachments: [],
     interconnectionProcesses: lifecycle.interconnectionProcesses.slice().sort((left, right) => left.id.localeCompare(right.id)),
     projects: projectsSeed.projects.slice().sort((left, right) => left.id.localeCompare(right.id)),
     projectWeeklyReports: projectsSeed.projectWeeklyReports

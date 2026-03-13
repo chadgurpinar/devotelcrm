@@ -1453,6 +1453,7 @@ export function ProjectGovernanceV2() {
                   <TaskDrawer
                     task={selectedTask}
                     comments={commentsByTaskId.get(selectedTask.id) ?? []}
+                    attachments={state.taskAttachments.filter((a) => a.taskId === selectedTask.id)}
                     users={state.users}
                     labels={state.taskLabels}
                     getUserName={(userId) => getUserName(state, userId)}
@@ -1480,6 +1481,8 @@ export function ProjectGovernanceV2() {
                     }
                     onUnarchive={(task) => state.updateTask({ ...task, status: "Done", archivedAt: undefined })}
                     onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
+                    onAddAttachment={(taskId, file) => state.addTaskAttachment(taskId, file, state.activeUserId)}
+                    onRemoveAttachment={(attachmentId) => state.removeTaskAttachment(attachmentId)}
                   />
                 ) : (
                   <TaskKanbanBoard

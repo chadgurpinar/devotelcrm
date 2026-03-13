@@ -64,6 +64,22 @@ function isOverdue(task: Task): boolean {
   return new Date(task.dueAt).getTime() < Date.now();
 }
 
+function dueDateBadgeInfo(task: Task): { label: string; className: string } | null {
+  if (!task.dueAt) return null;
+  if (task.status === "Completed" || task.status === "Archived") return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const due = new Date(task.dueAt);
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  const diffMs = dueDay.getTime() - today.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  const short = due.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (diffDays < 0) return { label: `Overdue · ${short}`, className: "bg-rose-100 text-rose-700" };
+  if (diffDays === 0) return { label: "Due today", className: "bg-amber-100 text-amber-700" };
+  if (diffDays <= 3) return { label: `Due ${short}`, className: "bg-yellow-100 text-yellow-700" };
+  return { label: `Due ${short}`, className: "bg-slate-100 text-slate-600" };
+}
+
 function emptyCreateTaskForm(activeUserId: string): CreateTaskForm {
   return {
     title: "",
@@ -560,15 +576,12 @@ export function TasksPage() {
                       </Badge>
                     </td>
                     <td>{task.priority}</td>
-                    <td className={overdue && !isTerminalStatus(task.status) ? "font-semibold text-rose-600" : ""}>
-                      {task.dueAt ? (
-                        <>
-                          {overdue && !isTerminalStatus(task.status) && "⚠ "}
-                          {new Date(task.dueAt).toLocaleDateString()}
-                        </>
-                      ) : (
-                        "-"
-                      )}
+                    <td>
+                      {(() => {
+                        const badge = dueDateBadgeInfo(task);
+                        if (!badge) return "-";
+                        return <Badge className={badge.className}>{badge.label}</Badge>;
+                      })()}
                     </td>
                     <td>{new Date(task.updatedAt).toLocaleString()}</td>
                     <td className="text-xs">
@@ -964,6 +977,7 @@ export function TasksPage() {
         <TaskDrawer
           task={selectedTask}
           comments={commentsByTaskId.get(selectedTask.id) ?? []}
+          attachments={state.taskAttachments.filter((a) => a.taskId === selectedTask.id)}
           users={state.users}
           labels={state.taskLabels}
           getUserName={(userId) => getUserName(state, userId)}
@@ -977,6 +991,8 @@ export function TasksPage() {
           }
           onUnarchive={(task) => state.updateTask({ ...task, status: "Done", archivedAt: undefined })}
           onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
+          onAddAttachment={(taskId, file) => state.addTaskAttachment(taskId, file, state.activeUserId)}
+          onRemoveAttachment={(attachmentId) => state.removeTaskAttachment(attachmentId)}
         />
       )}
     </div>

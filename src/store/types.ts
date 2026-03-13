@@ -117,6 +117,14 @@ export interface Company {
     finance?: string;
     invoice?: string;
     rates?: string;
+    cc?: string;
+  };
+  bankDetails?: {
+    bankName?: string;
+    iban?: string;
+    swift?: string;
+    accountHolder?: string;
+    currency?: string;
   };
 }
 
@@ -211,9 +219,22 @@ export interface Task {
   updatedAt: string;
   completedAt?: string;
   archivedAt?: string;
-  isUrgent?: boolean; // deadline-independent urgent flag → always floats to top, red highlight
-  kanbanStage?: "Backlog" | "InProgress" | "Done"; // Kanban board stage (separate from status)
-  labelIds?: string[]; // references to TaskLabel.id
+  isUrgent?: boolean;
+  kanbanStage?: "Backlog" | "InProgress" | "Done";
+  labelIds?: string[];
+  attachmentIds?: string[];
+  dueDateReminderLastTriggeredAt?: string;
+}
+
+export interface TaskAttachment {
+  id: string;
+  taskId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+  uploadedByUserId: string;
+  note?: string;
 }
 
 export interface Project {
@@ -1109,6 +1130,7 @@ export interface DbState {
   tasks: Task[];
   taskLabels: TaskLabel[];
   taskComments: TaskComment[];
+  taskAttachments: TaskAttachment[];
   interconnectionProcesses: InterconnectionProcess[];
   projects: Project[];
   projectWeeklyReports: ProjectWeeklyReport[];

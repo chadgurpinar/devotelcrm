@@ -65,6 +65,7 @@ function buildCounts(db: DbState): Record<keyof DbState, number> {
     tasks: db.tasks.length,
     taskLabels: db.taskLabels.length,
     taskComments: db.taskComments.length,
+    taskAttachments: db.taskAttachments.length,
     interconnectionProcesses: db.interconnectionProcesses.length,
     projects: db.projects.length,
     projectWeeklyReports: db.projectWeeklyReports.length,

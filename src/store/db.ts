@@ -276,6 +276,8 @@ interface DbActions {
   resetDemoData: () => void;
   exportData: () => string;
   importData: (raw: string) => { ok: boolean; message: string };
+  addTaskAttachment: (taskId: string, file: File, userId: string) => void;
+  removeTaskAttachment: (attachmentId: string) => void;
   processReminders: () => void;
   convertNoteToTask: (noteId: string, assigneeUserId: string) => void;
 }
@@ -3956,6 +3958,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           ...data,
           tasks: Array.isArray(data.tasks) ? data.tasks : state.tasks,
           taskComments: Array.isArray(data.taskComments) ? data.taskComments : [],
+          taskAttachments: Array.isArray(data.taskAttachments) ? data.taskAttachments : [],
           projects: Array.isArray(data.projects) ? data.projects : [],
           projectWeeklyReports: Array.isArray(data.projectWeeklyReports) ? data.projectWeeklyReports : [],
           hrLegalEntities: Array.isArray(data.hrLegalEntities) ? data.hrLegalEntities : state.hrLegalEntities,
@@ -3986,29 +3989,91 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         return { ok: false, message: "Invalid JSON." };
       }
     },
+    addTaskAttachment: (taskId, file, userId) =>
+      set((state) => {
+        const task = state.tasks.find((t) => t.id === taskId);
+        if (!task) return state;
+        const attachmentId = uid("ta");
+        const now = new Date().toISOString();
+        const attachment = {
+          id: attachmentId,
+          taskId,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          uploadedAt: now,
+          uploadedByUserId: userId,
+        };
+        return {
+          ...state,
+          taskAttachments: [...state.taskAttachments, attachment],
+          tasks: state.tasks.map((t) =>
+            t.id === taskId
+              ? { ...t, attachmentIds: [...(t.attachmentIds ?? []), attachmentId], updatedAt: now }
+              : t,
+          ),
+        };
+      }),
+    removeTaskAttachment: (attachmentId) =>
+      set((state) => {
+        const att = state.taskAttachments.find((a) => a.id === attachmentId);
+        if (!att) return state;
+        const now = new Date().toISOString();
+        return {
+          ...state,
+          taskAttachments: state.taskAttachments.filter((a) => a.id !== attachmentId),
+          tasks: state.tasks.map((t) =>
+            t.id === att.taskId
+              ? {
+                  ...t,
+                  attachmentIds: (t.attachmentIds ?? []).filter((id) => id !== attachmentId),
+                  updatedAt: now,
+                }
+              : t,
+          ),
+        };
+      }),
     processReminders: () =>
       set((state) => {
         const now = Date.now();
-        const due = state.notes.filter(
+        const todayStr = new Date().toISOString().slice(0, 10);
+
+        const dueNotes = state.notes.filter(
           (note) =>
             Boolean(note.reminderAt) &&
             !note.reminderTriggered &&
             new Date(note.reminderAt as string).getTime() <= now,
         );
-        if (!due.length) {
-          return state;
-        }
+
+        const dueTasks = state.tasks.filter((t) => {
+          if (t.status === "Done" || t.status === "Completed" || t.status === "Archived") return false;
+          if (!t.dueAt) return false;
+          if (t.assigneeUserId !== state.activeUserId && t.createdByUserId !== state.activeUserId) return false;
+          const dueDate = t.dueAt.slice(0, 10);
+          if (dueDate > todayStr) return false;
+          if (t.dueDateReminderLastTriggeredAt === todayStr) return false;
+          return true;
+        });
+
+        if (!dueNotes.length && !dueTasks.length) return state;
 
         const nextNotes = state.notes.map((note) =>
-          due.find((x) => x.id === note.id) ? { ...note, reminderTriggered: true } : note,
+          dueNotes.find((x) => x.id === note.id) ? { ...note, reminderTriggered: true } : note,
+        );
+        const nextTasks = state.tasks.map((task) =>
+          dueTasks.find((x) => x.id === task.id)
+            ? { ...task, dueDateReminderLastTriggeredAt: todayStr }
+            : task,
         );
         const outbox = [
           ...state.outbox,
-          ...due.map((note) => `Reminder: ${note.text.slice(0, 80)} (${note.id})`),
+          ...dueNotes.map((note) => `Reminder: ${note.text.slice(0, 80)} (${note.id})`),
+          ...dueTasks.map((task) => `⏰ Task due: ${task.title}`),
         ];
         return {
           ...state,
           notes: nextNotes,
+          tasks: nextTasks,
           outbox,
         };
       }),
@@ -4061,7 +4126,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 24,
+    version: 25,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
