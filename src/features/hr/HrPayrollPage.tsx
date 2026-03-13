@@ -325,6 +325,16 @@ export function HrPayrollPage() {
             <p className="text-lg font-semibold text-slate-800">{preview.totals.headcount}</p>
           </div>
         </div>
+        {(() => {
+          const dates = state.hrFxRates.map((r) => r.effectiveAt).sort().reverse();
+          const latest = dates[0];
+          return latest ? (
+            <p className="mb-2 text-[10px] text-slate-400">
+              FX rates last updated: {new Date(latest).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+              <span className="ml-3">⚙ Automatic deduction requires payroll integration</span>
+            </p>
+          ) : null;
+        })()}
 
         <div className="overflow-x-auto">
           <table>
@@ -343,11 +353,17 @@ export function HrPayrollPage() {
             <tbody>
               {preview.lines.map((line) => {
                 const employee = employeeById.get(line.employeeId);
+                const unpaidDays = state.hrLeaveRequests
+                  .filter((r) => r.employeeId === line.employeeId && r.leaveType === "Unpaid" && r.status === "Approved" && r.startDate.slice(0, 7) <= month && r.endDate.slice(0, 7) >= month)
+                  .reduce((s, r) => s + r.totalDays, 0);
                 return (
                   <tr key={line.id}>
                     <td>
                       <p className="font-semibold text-slate-700">{employee ? employeeName(employee.firstName, employee.lastName) : line.employeeId}</p>
                       <p className="text-[11px] text-slate-500">{employee?.countryOfEmployment ?? "-"}</p>
+                      {unpaidDays > 0 && (
+                        <p className="text-[10px] text-amber-600 mt-0.5">⚠ {unpaidDays} unpaid leave day{unpaidDays !== 1 ? "s" : ""} in {month} — verify deduction</p>
+                      )}
                     </td>
                     <td>{line.currency}</td>
                     <td>{line.net.toLocaleString()}</td>

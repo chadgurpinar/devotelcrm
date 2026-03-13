@@ -2,9 +2,12 @@ import { useMemo, useState } from "react";
 import { Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { HrEmployee, HrEmploymentType, HrGender, HrMaritalStatus, OurEntity } from "../../store/types";
+import { formatDate } from "../../utils/datetime";
 import { EmployeeTable } from "./components/EmployeeTable";
 import { EmployeeForm, EmployeeFormTab, HrEmployeeEditModal } from "./components/HrEmployeeEditModal";
 import { HrEmployeeProfileModal } from "./components/HrEmployeeProfileModal";
+
+export { formatDate };
 
 const employmentTypes: HrEmploymentType[] = ["Full-time", "Part-time", "Contractor"];
 const genderOptions: HrGender[] = ["Male", "Female", "Other", "PreferNotToSay"];
@@ -13,13 +16,6 @@ const legalEntityDefaults: OurEntity[] = ["USA", "UK", "TR"];
 
 function employeeName(row: Pick<HrEmployee, "firstName" | "lastName">): string {
   return `${row.firstName} ${row.lastName}`.trim();
-}
-
-export function formatDate(iso?: string): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function optionalString(value: string | undefined): string | undefined {
@@ -491,6 +487,14 @@ export function HrPeoplePageV2() {
             <h2 className="mb-4 text-lg font-semibold text-slate-800">
               Deactivate {deactivateTarget.displayName || employeeName(deactivateTarget)}
             </h2>
+            {(() => {
+              const activeAssignments = state.hrAssetAssignments.filter((a) => a.employeeId === deactivateTarget.id && !a.returnedAt);
+              return activeAssignments.length > 0 ? (
+                <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                  ⚠ This employee has {activeAssignments.length} active asset assignment{activeAssignments.length > 1 ? "s" : ""}. Please initiate return process from Assets.
+                </div>
+              ) : null;
+            })()}
             <div className="mb-3">
               <FieldLabel>Reason for leaving *</FieldLabel>
               <select value={deactivateReason} onChange={(e) => setDeactivateReason(e.target.value)}>

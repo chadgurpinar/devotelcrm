@@ -283,6 +283,13 @@ export function HrDashboardPage() {
             {renderKpiDelta(kpiChanges.assets, false)}
           </div>
         </div>
+        {(() => {
+          const dates = state.hrFxRates.map((r) => r.effectiveAt).sort().reverse();
+          const latest = dates[0];
+          return latest ? (
+            <p className="mb-2 text-[10px] text-slate-400">FX rates last updated: {new Date(latest).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</p>
+          ) : null;
+        })()}
 
         <div className="grid gap-3 md:grid-cols-2">
           <section className="rounded-md border border-slate-200 p-3">

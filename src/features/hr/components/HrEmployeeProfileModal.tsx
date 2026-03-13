@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button } from "../../../components/ui";
 import { useAppStore } from "../../../store/db";
 import { HrEmployee } from "../../../store/types";
-import { formatDate } from "../HrPeoplePageV2";
+import { formatDate } from "../../../utils/datetime";
 
 interface HrEmployeeProfileModalProps {
   employeeId: string | null;

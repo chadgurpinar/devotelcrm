@@ -40,11 +40,11 @@ const navGroups = [
     items: [
       { to: "/hr/dashboard", label: "HR Dashboard", icon: "H" },
       { to: "/hr/people", label: "People", icon: "P" },
+      { to: "/hr/assets", label: "Assets & Software", icon: "A" },
       { to: "/hr/organization", label: "Organization", icon: "O" },
       { to: "/hr/payroll", label: "Payroll & Compensation", icon: "Y" },
       { to: "/hr/payslip", label: "My Payslip", icon: "₿" },
       { to: "/hr/leave", label: "Leave Management", icon: "L" },
-      { to: "/hr/assets", label: "Assets & Software", icon: "A" },
       { to: "/hr/expenses", label: "Expenses", icon: "E" },
       { to: "/hr/settings", label: "HR Settings", icon: "S" },
     ],

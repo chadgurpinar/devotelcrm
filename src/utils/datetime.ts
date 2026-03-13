@@ -86,3 +86,17 @@ export function startOfDay(value: string | Date | null | undefined): Date {
   date.setHours(0, 0, 0, 0);
   return date;
 }
+
+export function formatDate(iso: string | undefined | null): string {
+  if (!iso) return "—";
+  const date = parseDateValue(iso);
+  if (!isValidDate(date)) return iso ?? "—";
+  return date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+export function formatDateTime(iso: string | undefined | null): string {
+  if (!iso) return "—";
+  const date = parseDateValue(iso);
+  if (!isValidDate(date)) return iso ?? "—";
+  return date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
