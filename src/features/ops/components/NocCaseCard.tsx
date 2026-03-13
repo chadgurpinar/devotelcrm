@@ -1,283 +1,143 @@
-import { useEffect, useState } from "react";
-import { Badge, Button, FieldLabel } from "../../../components/ui";
-import { NocCase, NocCaseAction, NocPortalType, NocSeverity } from "../../../store/types";
+import { useMemo, useState } from "react";
+import { Badge, Button } from "../../../components/ui";
+import { OpsCase, OpsCaseAction, OpsCaseActionType } from "../../../store/types";
+import { OpsCaseActionDefinition } from "../domain/opsPolicies";
+import { OpsCaseSlaView } from "../domain/opsSla";
+import { getCaseCardTheme } from "../domain/opsTheme";
+import { NocCaseInfoBlock } from "./NocCaseInfoBlock";
+import { OpsSlaCountdown } from "./OpsSlaCountdown";
 
-const SEVERITY_BORDER: Record<NocSeverity, string> = {
-  URGENT: "border-l-4 border-l-red-500",
-  HIGH: "border-l-4 border-l-amber-500",
-  MEDIUM: "border-l-4 border-l-emerald-500",
-  DECREASE: "border-l-4 border-l-red-500",
-  INCREASE: "border-l-4 border-l-amber-500",
-};
-
-const SEVERITY_BADGE: Record<NocSeverity, string> = {
-  URGENT: "bg-red-100 text-red-700",
-  HIGH: "bg-amber-100 text-amber-700",
-  MEDIUM: "bg-emerald-100 text-emerald-700",
-  DECREASE: "bg-red-100 text-red-700",
-  INCREASE: "bg-amber-100 text-amber-700",
-};
-
-const ACTION_LABELS: Record<NocCaseAction, string> = {
-  TT_RAISED: "TT Raised",
-  IGNORED: "Ignored",
-  CHECKED_NOISSUE: "Checked / No Issue",
-  ROUTING_CHANGED: "Routing Changed",
-  AC_MNG_INFORMED: "AC Mng Informed",
-  ROUTING_INFORMED: "Routing Informed",
-};
-
-const ACTION_BUTTON_STYLE: Record<NocCaseAction, string> = {
-  TT_RAISED: "bg-blue-600 text-white hover:opacity-90",
-  IGNORED: "bg-slate-500 text-white hover:opacity-90",
-  CHECKED_NOISSUE: "bg-emerald-600 text-white hover:opacity-90",
-  ROUTING_CHANGED: "bg-violet-600 text-white hover:opacity-90",
-  ROUTING_INFORMED: "bg-violet-500 text-white hover:opacity-90",
-  AC_MNG_INFORMED: "bg-orange-500 text-white hover:opacity-90",
-};
-
-const ACTIONS_BY_CASE_TYPE: Record<string, NocCaseAction[]> = {
-  ProviderIssue: ["TT_RAISED", "IGNORED"],
-  Losses: ["CHECKED_NOISSUE", "ROUTING_CHANGED", "AC_MNG_INFORMED"],
-  NewLostTraffic: ["AC_MNG_INFORMED", "ROUTING_INFORMED", "IGNORED"],
-  TrafficComparison: ["CHECKED_NOISSUE", "ROUTING_INFORMED", "AC_MNG_INFORMED"],
-  ScheduleTest: ["TT_RAISED", "ROUTING_INFORMED", "AC_MNG_INFORMED", "IGNORED"],
-  FailedSmsCall: ["CHECKED_NOISSUE", "ROUTING_CHANGED", "AC_MNG_INFORMED"],
-};
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString();
+function formatDateTime(value?: string): string {
+  if (!value) return "-";
+  return new Date(value).toLocaleString();
 }
 
-function formatElapsed(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function rateColor(rate: number, thresholds: [number, number]): string {
-  if (rate < thresholds[0]) return "font-semibold text-rose-600";
-  if (rate <= thresholds[1]) return "font-semibold text-amber-600";
-  return "font-semibold text-emerald-600";
-}
-
-interface NocCaseCardProps {
-  nocCase: NocCase;
-  portalType: NocPortalType;
-  activeUserName: string;
-  onAction: (
-    id: string,
-    action: NocCaseAction,
-    payload: { ttNumber?: string; comment?: string; actionedBy: string },
-  ) => void;
-}
-
-export function NocCaseCard({ nocCase: c, portalType, activeUserName, onAction }: NocCaseCardProps) {
-  const [selectedAction, setSelectedAction] = useState<NocCaseAction | null>(null);
-  const [ttNumber, setTtNumber] = useState("");
+export function NocCaseCard(props: {
+  caseRow: OpsCase;
+  sla: OpsCaseSlaView;
+  availableActions: OpsCaseActionDefinition[];
+  lastAction?: OpsCaseAction;
+  actorName?: string;
+  currentActorName?: string;
+  enableActions?: boolean;
+  onApplyAction: (input: { actionType: OpsCaseActionType; comment?: string; ttNumber?: string }) => { ok: boolean; message?: string };
+  onOpenHistory: () => void;
+}) {
+  const { caseRow, sla, availableActions, lastAction, actorName, currentActorName, enableActions = true, onApplyAction, onOpenHistory } = props;
+  const [selectedAction, setSelectedAction] = useState<OpsCaseActionDefinition | undefined>(undefined);
   const [comment, setComment] = useState("");
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [elapsed, setElapsed] = useState(() => Date.now() - new Date(c.createdAt).getTime());
+  const [ttNumber, setTtNumber] = useState("");
+  const [validationError, setValidationError] = useState("");
 
-  useEffect(() => {
-    if (c.status !== "Open") return;
-    const interval = setInterval(() => {
-      setElapsed(Date.now() - new Date(c.createdAt).getTime());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [c.createdAt, c.status]);
+  const theme = useMemo(() => getCaseCardTheme(caseRow), [caseRow]);
 
-  function handleSave() {
-    if (!selectedAction) return;
-    if (selectedAction === "TT_RAISED" && !ttNumber.trim()) return;
-    onAction(c.id, selectedAction, {
-      ttNumber: selectedAction === "TT_RAISED" ? ttNumber.trim() : undefined,
-      comment: comment.trim() || undefined,
-      actionedBy: activeUserName,
-    });
-    setSelectedAction(null);
-    setTtNumber("");
+  function resetForm() {
+    setSelectedAction(undefined);
     setComment("");
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 2500);
+    setTtNumber("");
+    setValidationError("");
   }
 
-  const elapsedMins = elapsed / 60000;
-  const timerColorClass =
-    elapsedMins > 30 ? "text-rose-700 bg-rose-50" : elapsedMins > 15 ? "text-amber-700 bg-amber-50" : "text-slate-600";
-
-  const isActioned = c.status === "Actioned";
-  const availableActions = ACTIONS_BY_CASE_TYPE[c.caseType] ?? [];
-
-  let responseTimeStr = "";
-  if (isActioned && c.actionedAt) {
-    const diff = new Date(c.actionedAt).getTime() - new Date(c.createdAt).getTime();
-    responseTimeStr = formatElapsed(diff);
+  function submitAction() {
+    if (!selectedAction) return;
+    const trimmedComment = comment.trim();
+    const trimmedTtNumber = ttNumber.trim();
+    if (selectedAction.comment === "REQUIRED" && !trimmedComment) {
+      setValidationError("Comment is mandatory for this action.");
+      return;
+    }
+    if (selectedAction.ttNumber === "REQUIRED" && !trimmedTtNumber) {
+      setValidationError("TT number is mandatory for this action.");
+      return;
+    }
+    const result = onApplyAction({
+      actionType: selectedAction.type,
+      comment: trimmedComment,
+      ttNumber: selectedAction.ttNumber === "REQUIRED" ? trimmedTtNumber : undefined,
+    });
+    if (!result.ok) {
+      setValidationError(result.message ?? "Action failed.");
+      return;
+    }
+    resetForm();
   }
+
+  const saveDisabled =
+    !selectedAction ||
+    (selectedAction.comment === "REQUIRED" && !comment.trim()) ||
+    (selectedAction.ttNumber === "REQUIRED" && !ttNumber.trim());
 
   return (
-    <article
-      className={`relative rounded-xl border bg-white p-4 shadow-sm transition ${SEVERITY_BORDER[c.severity]} ${
-        isActioned ? "opacity-70" : ""
-      }`}
-    >
-      {isActioned && (
-        <Badge className="absolute right-3 top-3 bg-emerald-100 text-emerald-700">✓ Actioned</Badge>
-      )}
-
-      {showSuccess && (
-        <div className="absolute inset-x-0 top-0 z-10 flex justify-center">
-          <div className="rounded-b-lg bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white shadow">
-            ✓ Case actioned successfully
-          </div>
+    <article className={`rounded-xl border p-3 shadow-sm ${theme.cardClass}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-0.5">
+          <NocCaseInfoBlock caseRow={caseRow} />
         </div>
-      )}
-
-      {/* C3 — Header / Info */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-700">
-            {c.providerName && (
-              <span><span className="font-medium text-slate-500">Provider:</span> {c.providerName}</span>
-            )}
-            {c.customerName && (
-              <span><span className="font-medium text-slate-500">Customer:</span> {c.customerName}</span>
-            )}
-            {c.destination && (
-              <span><span className="font-medium text-slate-500">Destination:</span> {c.destination}</span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-700">
-            {portalType === "SMS" && c.smsCount != null && (
-              <span><span className="font-medium text-slate-500">SMS Count:</span> {c.smsCount.toLocaleString()}</span>
-            )}
-            {portalType === "SMS" && c.dlrRate != null && (
-              <span>
-                <span className="font-medium text-slate-500">DLR Rate:</span>{" "}
-                <span className={rateColor(c.dlrRate, [70, 85])}>{c.dlrRate}%</span>
-              </span>
-            )}
-            {portalType === "Voice" && c.callCount != null && (
-              <span><span className="font-medium text-slate-500">Call Count:</span> {c.callCount.toLocaleString()}</span>
-            )}
-            {portalType === "Voice" && c.asrRate != null && (
-              <span>
-                <span className="font-medium text-slate-500">ASR:</span>{" "}
-                <span className={rateColor(c.asrRate, [40, 60])}>{c.asrRate}%</span>
-              </span>
-            )}
-            {c.lossAmount != null && (
-              <span>
-                <span className="font-medium text-slate-500">Loss:</span>{" "}
-                <span className="font-semibold text-rose-600">{c.lossAmount.toLocaleString()} msgs</span>
-              </span>
-            )}
-            {c.attemptCount != null && (
-              <span><span className="font-medium text-slate-500">Attempts:</span> {c.attemptCount.toLocaleString()}</span>
-            )}
-            {c.testResult && (
-              <span>
-                <span className="font-medium text-slate-500">Test Result:</span>{" "}
-                <span className={c.testResult === "FAILED" || c.testResult === "TIMEOUT" ? "font-semibold text-rose-600" : ""}>
-                  {c.testResult}
-                </span>
-              </span>
-            )}
-            {c.trafficDirection && (
-              <span>
-                <span className="font-medium text-slate-500">Traffic:</span>{" "}
-                <span className={c.trafficDirection === "DECREASE" ? "font-semibold text-rose-600" : "font-semibold text-amber-600"}>
-                  {c.trafficDirection === "DECREASE" ? "↓" : "↑"}{" "}
-                  {c.trafficChangePercent != null ? `${c.trafficChangePercent > 0 ? "+" : ""}${c.trafficChangePercent}%` : ""} vs last hour
-                </span>
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="shrink-0 text-right space-y-1">
-          <Badge className={SEVERITY_BADGE[c.severity]}>{c.severity}</Badge>
-          <p className="text-[11px] text-slate-500">⏰ {formatDateTime(c.createdAt)}</p>
-        </div>
+        <Badge className={theme.badgeClass}>
+          {caseRow.category === "TRAFFIC_COMPARISON"
+            ? String((caseRow.metadata as { comparisonType?: string }).comparisonType ?? "N/A")
+            : caseRow.severity}
+        </Badge>
       </div>
 
-      {/* C4 — Countdown / Response time */}
-      <div className={`mt-3 rounded-md px-3 py-1.5 text-xs font-medium ${timerColorClass}`}>
-        {isActioned ? (
-          <>
-            ✓ Actioned at {formatDateTime(c.actionedAt!)}
-            {responseTimeStr && <span className="ml-2 text-slate-500">· Response time: {responseTimeStr}</span>}
-          </>
-        ) : (
-          <>⏱ Open for: {formatElapsed(elapsed)}</>
-        )}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <OpsSlaCountdown sla={sla} />
+        <Button size="sm" variant="ghost" onClick={onOpenHistory}>
+          View history
+        </Button>
       </div>
 
-      {/* C5+C6 — Action buttons (Open only) */}
-      {!isActioned && (
-        <div className="mt-3">
+      {enableActions && availableActions.length > 0 && (
+        <div className="mt-3 rounded-md border border-slate-200 bg-white/80 p-2">
           <div className="flex flex-wrap gap-1.5">
-            {availableActions.map((a) => (
-              <button
-                key={a}
-                type="button"
-                onClick={() => setSelectedAction(a)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${ACTION_BUTTON_STYLE[a]} ${
-                  selectedAction === a ? "ring-2 ring-offset-1 ring-slate-900" : ""
-                }`}
+            {availableActions.map((action) => (
+              <Button
+                key={action.type}
+                size="sm"
+                variant={selectedAction?.type === action.type ? "primary" : "secondary"}
+                onClick={() => {
+                  setSelectedAction(action);
+                  setValidationError("");
+                }}
               >
-                {ACTION_LABELS[a]}
-              </button>
+                {action.label}
+              </Button>
             ))}
           </div>
-
           {selectedAction && (
-            <div className="mt-3 space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
-              {selectedAction === "TT_RAISED" && (
-                <div>
-                  <FieldLabel>TT Number</FieldLabel>
-                  <input
-                    value={ttNumber}
-                    onChange={(e) => setTtNumber(e.target.value)}
-                    placeholder="Enter TT reference number"
-                  />
-                </div>
-              )}
-              <div>
-                <FieldLabel>Comment (optional)</FieldLabel>
-                <textarea
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  rows={2}
-                  placeholder="Add note..."
-                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
-                />
-              </div>
-              <p className="text-[11px] text-slate-500">
-                NOC Member: <span className="font-semibold text-slate-700">{activeUserName}</span> ·{" "}
-                {new Date().toLocaleString()}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  onClick={handleSave}
-                  disabled={selectedAction === "TT_RAISED" && !ttNumber.trim()}
-                >
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setSelectedAction(null);
-                    setTtNumber("");
-                    setComment("");
+            <div className="mt-2 space-y-2">
+              {selectedAction.ttNumber === "REQUIRED" && (
+                <input
+                  placeholder="Enter TT number"
+                  value={ttNumber}
+                  onChange={(event) => {
+                    setTtNumber(event.target.value);
+                    setValidationError("");
                   }}
-                >
+                  className="w-full"
+                />
+              )}
+              <textarea
+                placeholder="Short action comment"
+                value={comment}
+                onChange={(event) => {
+                  setComment(event.target.value);
+                  setValidationError("");
+                }}
+                rows={2}
+                className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+              />
+              <p className="text-[11px] text-slate-500">
+                Action will be saved by <span className="font-semibold text-slate-700">{currentActorName ?? "Current user"}</span> at{" "}
+                {formatDateTime(new Date().toISOString())}
+              </p>
+              {validationError && <p className="text-[11px] font-semibold text-rose-700">{validationError}</p>}
+              <div className="flex items-center justify-end gap-2">
+                <Button size="sm" variant="secondary" onClick={resetForm}>
                   Cancel
+                </Button>
+                <Button size="sm" onClick={submitAction} disabled={saveDisabled}>
+                  Save action
                 </Button>
               </div>
             </div>
@@ -285,20 +145,17 @@ export function NocCaseCard({ nocCase: c, portalType, activeUserName, onAction }
         </div>
       )}
 
-      {/* C7 — Actioned state display */}
-      {isActioned && c.action && (
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-          <p>
-            ✓ Action: <span className="font-semibold">{ACTION_LABELS[c.action]}</span>
-          </p>
-          {c.ttNumber && <p>TT: {c.ttNumber}</p>}
-          {c.comment && <p>Comment: &ldquo;{c.comment}&rdquo;</p>}
-          <p className="mt-1 text-xs text-slate-500">
-            By: {c.actionedBy ?? "-"}
-            {c.actionedAt && <> | {formatDateTime(c.actionedAt)}</>}
-          </p>
-        </div>
-      )}
+      <div className="mt-3 text-[11px] text-slate-600">
+        {lastAction ? (
+          <>
+            Last action by <span className="font-semibold">{actorName ?? lastAction.performedByUserId}</span> on{" "}
+            <span className="font-semibold">{formatDateTime(lastAction.performedAt)}</span>
+            {lastAction.comment ? ` — ${lastAction.comment}` : ""}
+          </>
+        ) : (
+          <>No action yet.</>
+        )}
+      </div>
     </article>
   );
 }

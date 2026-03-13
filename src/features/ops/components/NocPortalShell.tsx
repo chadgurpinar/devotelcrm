@@ -10,7 +10,7 @@ import {
   NocPortalType,
   NocSeverity,
 } from "../../../store/types";
-import { NocCaseCard } from "./NocCaseCard";
+import { NocNewCaseCard } from "./NocNewCaseCard";
 
 const ALL_CASE_TYPES: NocCaseType[] = [
   "ProviderIssue",
@@ -205,7 +205,7 @@ export default function NocPortalShell({ portalType }: NocPortalShellProps) {
         ) : (
           <div className="space-y-3">
             {activeCases.map((c) => (
-              <NocCaseCard
+              <NocNewCaseCard
                 key={c.id}
                 nocCase={c}
                 portalType={portalType}
