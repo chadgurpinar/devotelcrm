@@ -176,7 +176,13 @@ export function HrDashboardPage() {
 
   // DASH 4 — Department cost breakdown
   const departmentCosts = useMemo(() => {
-    const map = new Map<string, { headcount: number; totalCost: number }>();
+    const empById = new Map(state.hrEmployees.map((e) => [e.id, e]));
+    const map = new Map<string, { headcount: number; totalCost: number; headName?: string }>();
+    state.hrDepartments.forEach((dept) => {
+      const deptName = dept.name;
+      const headEmp = dept.departmentHeadEmployeeId ? empById.get(dept.departmentHeadEmployeeId) : undefined;
+      map.set(deptName, { headcount: 0, totalCost: 0, headName: headEmp?.displayName });
+    });
     state.hrEmployees
       .filter((emp) => emp.active)
       .forEach((emp) => {
@@ -188,8 +194,9 @@ export function HrDashboardPage() {
       });
     return Array.from(map.entries())
       .map(([department, data]) => ({ department, ...data }))
+      .filter((row) => row.headcount > 0)
       .sort((a, b) => b.totalCost - a.totalCost);
-  }, [state.hrEmployees, departmentById]);
+  }, [state.hrEmployees, state.hrDepartments, departmentById]);
 
   // Existing cost trend (kept for backward compat reference)
   const costTrend = useMemo(
@@ -215,29 +222,27 @@ export function HrDashboardPage() {
       {/* DASH 1 — Action Required */}
       <Card title="⚡ Action Required">
         {allClear ? (
-          <p className="text-sm font-medium text-emerald-600">✓ All clear — no pending actions</p>
+          <p className="text-sm font-medium text-emerald-600">✓ All clear — no actions needed</p>
         ) : (
           <div className="space-y-1">
             {pendingLeaveCount > 0 && (
-              <p className="text-sm text-slate-700">
-                <Badge className="mr-1 bg-amber-100 text-amber-800">{pendingLeaveCount}</Badge>
-                leave requests awaiting approval
+              <p className="text-sm text-amber-700 bg-amber-50 rounded px-2 py-1">
+                📋 {pendingLeaveCount} leave requests awaiting approval
               </p>
             )}
             {pendingExpenseCount > 0 && (
-              <p className="text-sm text-slate-700">
-                <Badge className="mr-1 bg-amber-100 text-amber-800">{pendingExpenseCount}</Badge>
-                expenses awaiting approval
+              <p className="text-sm text-amber-700 bg-amber-50 rounded px-2 py-1">
+                💰 {pendingExpenseCount} expenses awaiting approval
               </p>
             )}
             {birthdaysThisWeek.length > 0 && (
-              <p className="text-sm text-slate-700">
-                🎂 {birthdaysThisWeek.length} birthdays this week: {birthdaysThisWeek.join(", ")}
+              <p className="text-sm text-blue-700 bg-blue-50 rounded px-2 py-1">
+                🎂 Birthdays this week: {birthdaysThisWeek.join(", ")}
               </p>
             )}
             {newStartersThisWeek.length > 0 && (
-              <p className="text-sm text-slate-700">
-                👋 {newStartersThisWeek.length} new starters this week: {newStartersThisWeek.join(", ")}
+              <p className="text-sm text-emerald-700 bg-emerald-50 rounded px-2 py-1">
+                👋 New starters this week: {newStartersThisWeek.join(", ")}
               </p>
             )}
           </div>
@@ -337,21 +342,23 @@ export function HrDashboardPage() {
                   <td className="py-1.5 pr-3 text-right text-slate-600">{entry.employerCostEur.toLocaleString()}</td>
                   <td className="py-1.5 pr-3 text-right text-slate-600">{entry.headcount}</td>
                   <td className="py-1.5">
-                    <div className="h-3 rounded bg-blue-500" style={{ width: `${entry.barPct}%` }} />
+                    <div className="h-3 rounded bg-indigo-400" style={{ width: `${entry.barPct}%` }} />
                   </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
+        <p className="mt-2 text-[10px] text-slate-400">Showing payroll snapshots from store</p>
       </Card>
 
       {/* DASH 4 — Department cost breakdown */}
-      <Card title="Cost by Department">
+      <Card title="Estimated Cost by Department" actions={<span className="text-xs text-slate-400">Based on active employee salaries</span>}>
         <table className="w-full text-left text-xs">
           <thead>
             <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
               <th className="pb-2 pr-3">Department</th>
+              <th className="pb-2 pr-3">Head</th>
               <th className="pb-2 pr-3 text-right">Headcount</th>
               <th className="pb-2 text-right">Est. Monthly Cost (EUR)</th>
             </tr>
@@ -359,19 +366,61 @@ export function HrDashboardPage() {
           <tbody>
             {departmentCosts.length === 0 ? (
               <tr>
-                <td colSpan={3} className="py-3 text-slate-500">
+                <td colSpan={4} className="py-3 text-slate-500">
                   No department data.
                 </td>
               </tr>
             ) : (
-              departmentCosts.map((row) => (
-                <tr key={row.department} className="border-b border-slate-100">
-                  <td className="py-1.5 pr-3 font-medium text-slate-700">{row.department}</td>
-                  <td className="py-1.5 pr-3 text-right text-slate-600">{row.headcount}</td>
-                  <td className="py-1.5 text-right text-slate-600">{row.totalCost.toLocaleString()}</td>
+              <>
+                {departmentCosts.map((row) => (
+                  <tr key={row.department} className="border-b border-slate-100">
+                    <td className="py-1.5 pr-3 font-medium text-slate-700">{row.department}</td>
+                    <td className="py-1.5 pr-3 text-slate-500 text-[11px]">{row.headName ?? "—"}</td>
+                    <td className="py-1.5 pr-3 text-right text-slate-600">{row.headcount}</td>
+                    <td className="py-1.5 text-right text-slate-600">{row.totalCost.toLocaleString()}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-slate-200 font-semibold">
+                  <td className="py-1.5 pr-3 text-slate-800">Total</td>
+                  <td className="py-1.5 pr-3" />
+                  <td className="py-1.5 pr-3 text-right text-slate-800">{departmentCosts.reduce((s, r) => s + r.headcount, 0)}</td>
+                  <td className="py-1.5 text-right text-slate-800">{departmentCosts.reduce((s, r) => s + r.totalCost, 0).toLocaleString()}</td>
                 </tr>
-              ))
+              </>
             )}
+          </tbody>
+        </table>
+      </Card>
+
+      {/* DASH 5 — Turnover dummy table */}
+      <Card title="Turnover Overview — Last 6 Months" actions={<span className="text-[10px] text-slate-400">⚙ Dummy data — will connect to real offboarding records when available</span>}>
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="border-b border-slate-200 text-[11px] uppercase tracking-wide text-slate-400">
+              <th className="pb-2 pr-3">Month</th>
+              <th className="pb-2 pr-3 text-right">Joiners</th>
+              <th className="pb-2 pr-3 text-right">Leavers</th>
+              <th className="pb-2 text-right">Turnover Rate %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              { month: "Oct 2025", leavers: 1, joiners: 2, turnoverRate: 4.2 },
+              { month: "Nov 2025", leavers: 0, joiners: 1, turnoverRate: 0 },
+              { month: "Dec 2025", leavers: 2, joiners: 0, turnoverRate: 8.1 },
+              { month: "Jan 2026", leavers: 1, joiners: 3, turnoverRate: 3.9 },
+              { month: "Feb 2026", leavers: 0, joiners: 2, turnoverRate: 0 },
+              { month: "Mar 2026", leavers: 1, joiners: 1, turnoverRate: 3.7 },
+            ].map((row) => (
+              <tr key={row.month} className="border-b border-slate-100">
+                <td className="py-1.5 pr-3 font-medium text-slate-700">{row.month}</td>
+                <td className="py-1.5 pr-3 text-right text-emerald-600">+{row.joiners}</td>
+                <td className="py-1.5 pr-3 text-right text-rose-600">{row.leavers > 0 ? `-${row.leavers}` : "0"}</td>
+                <td className={`py-1.5 text-right font-semibold ${row.turnoverRate > 5 ? "text-rose-600" : "text-emerald-600"}`}>
+                  {row.turnoverRate.toFixed(1)}%
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </Card>
