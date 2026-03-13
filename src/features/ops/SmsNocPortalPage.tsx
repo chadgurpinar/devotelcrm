@@ -1,6 +1,5 @@
-import { NocPortalPage } from "./OpsPortalPage";
-import { SMS_NOC_PORTAL_CONFIG } from "./portalConfigs";
+import NocPortalShell from "./components/NocPortalShell";
 
 export function SmsNocPortalPage() {
-  return <NocPortalPage config={SMS_NOC_PORTAL_CONFIG} />;
+  return <NocPortalShell portalType="SMS" />;
 }
