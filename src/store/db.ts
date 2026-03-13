@@ -144,6 +144,7 @@ interface DbActions {
   deleteHrDepartment: (departmentId: string) => void;
   createHrEmployee: (payload: Omit<HrEmployee, "id" | "createdAt" | "updatedAt">) => string;
   updateHrEmployee: (employee: HrEmployee) => void;
+  updateEmployeePhoto: (employeeId: string, base64: string) => void;
   upsertHrCompensation: (
     payload: Omit<HrEmployeeCompensation, "id" | "createdAt" | "updatedAt"> & { id?: string },
   ) => string;
@@ -1905,6 +1906,13 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
                 updatedAt: new Date().toISOString(),
               }
             : row,
+        ),
+      })),
+    updateEmployeePhoto: (employeeId, base64) =>
+      set((state) => ({
+        ...state,
+        hrEmployees: state.hrEmployees.map((row) =>
+          row.id === employeeId ? { ...row, profilePhotoBase64: base64, updatedAt: new Date().toISOString() } : row,
         ),
       })),
     upsertHrCompensation: (payload) => {

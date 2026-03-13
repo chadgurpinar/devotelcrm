@@ -28,6 +28,8 @@ interface HrEmployeeEditModalProps {
   formTab: EmployeeFormTab;
   setFormTab: Dispatch<SetStateAction<EmployeeFormTab>>;
   formErrors: string[];
+  emailDuplicateError?: string;
+  onEmailBlur?: (email: string) => void;
   onClose: () => void;
   onSave: () => void;
   departments: HrDepartment[];
@@ -36,6 +38,7 @@ interface HrEmployeeEditModalProps {
   employmentTypes: HrEmploymentType[];
   genderOptions: HrGender[];
   maritalStatusOptions: HrMaritalStatus[];
+  projects?: { id: string; name: string }[];
 }
 
 export function HrEmployeeEditModal(props: HrEmployeeEditModalProps) {
@@ -81,7 +84,12 @@ export function HrEmployeeEditModal(props: HrEmployeeEditModalProps) {
             </div>
             <div className="md:col-span-2">
               <FieldLabel>Email *</FieldLabel>
-              <input value={props.form.email} onChange={(event) => props.setForm((prev) => ({ ...prev, email: event.target.value }))} />
+              <input
+                value={props.form.email}
+                onChange={(event) => props.setForm((prev) => ({ ...prev, email: event.target.value }))}
+                onBlur={() => props.onEmailBlur?.(props.form.email)}
+              />
+              {props.emailDuplicateError && <p className="mt-1 text-xs text-rose-600">{props.emailDuplicateError}</p>}
             </div>
             <div>
               <FieldLabel>Phone</FieldLabel>
@@ -251,6 +259,27 @@ export function HrEmployeeEditModal(props: HrEmployeeEditModalProps) {
                 onChange={(event) => props.setForm((prev) => ({ ...prev, citizenshipIdNumber: event.target.value || undefined }))}
               />
             </div>
+            {props.projects && (
+              <div className="md:col-span-2">
+                <FieldLabel>Projects</FieldLabel>
+                <select
+                  multiple
+                  value={props.form.projectIds ?? []}
+                  onChange={(event) => {
+                    const selected = Array.from(event.target.selectedOptions, (o) => o.value);
+                    props.setForm((prev) => ({ ...prev, projectIds: selected.length ? selected : undefined }));
+                  }}
+                  className="h-24"
+                >
+                  {props.projects.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {(props.form.projectIds?.length ?? 0) > 5 && (
+                  <p className="mt-1 text-xs text-rose-600">⚠ Max recommended: 5 concurrent projects</p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -417,7 +446,7 @@ export function HrEmployeeEditModal(props: HrEmployeeEditModalProps) {
           <Button size="sm" variant="secondary" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button size="sm" onClick={props.onSave}>
+          <Button size="sm" onClick={props.onSave} disabled={!!props.emailDuplicateError}>
             Save employee
           </Button>
         </div>

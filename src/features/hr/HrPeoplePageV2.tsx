@@ -116,6 +116,7 @@ export function HrPeoplePageV2() {
   const [deactivateTarget, setDeactivateTarget] = useState<HrEmployee | null>(null);
   const [deactivateReason, setDeactivateReason] = useState("");
   const [exitNotes, setExitNotes] = useState("");
+  const [emailDuplicateError, setEmailDuplicateError] = useState("");
 
   const legalEntityOptions = useMemo(() => {
     const entities = state.hrLegalEntities.map((entity) => entity.id);
@@ -200,10 +201,19 @@ export function HrPeoplePageV2() {
   const activeEmployees = useMemo(() => state.hrEmployees.filter((row) => row.active).length, [state.hrEmployees]);
   const inactiveEmployees = state.hrEmployees.length - activeEmployees;
 
+  function checkEmailDuplicate(email: string) {
+    if (!email.trim()) { setEmailDuplicateError(""); return; }
+    const dup = state.hrEmployees.find(
+      (e) => e.email.toLowerCase() === email.toLowerCase() && (!editingEmployeeId || e.id !== editingEmployeeId),
+    );
+    setEmailDuplicateError(dup ? "⚠ An employee with this email already exists." : "");
+  }
+
   function openCreateModal() {
     setEditingEmployeeId(null);
     setFormTab("Profile");
     setFormErrors([]);
+    setEmailDuplicateError("");
     setForm(emptyEmployeeForm(defaultDepartmentId, defaultLegalEntity));
     setModalOpen(true);
   }
@@ -212,6 +222,7 @@ export function HrPeoplePageV2() {
     setEditingEmployeeId(employee.id);
     setFormTab("Profile");
     setFormErrors([]);
+    setEmailDuplicateError("");
     setForm({ ...employee });
     setModalOpen(true);
   }
@@ -256,15 +267,14 @@ export function HrPeoplePageV2() {
       numberOfChildren: form.numberOfChildren,
     };
     const errors = validateEmployeeForm(normalized, editingEmployeeId);
-    if (errors.length) {
-      setFormErrors(errors);
-      return;
-    }
-
+    checkEmailDuplicate(normalized.email);
     const emailLower = normalized.email.toLowerCase();
     const duplicate = state.hrEmployees.find(e => e.email.toLowerCase() === emailLower);
     if (duplicate && (!editingEmployeeId || duplicate.id !== editingEmployeeId)) {
-      setFormErrors(["⚠ An employee with this email already exists."]);
+      errors.push("⚠ An employee with this email already exists.");
+    }
+    if (errors.length) {
+      setFormErrors(errors);
       return;
     }
 
@@ -326,7 +336,7 @@ export function HrPeoplePageV2() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "employees.csv";
+    a.download = `people-export-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -337,7 +347,7 @@ export function HrPeoplePageV2() {
         title="People"
         actions={
           <div className="flex gap-2">
-            <Button size="sm" variant="secondary" onClick={exportCSV}>Export CSV</Button>
+            <Button size="sm" variant="secondary" onClick={exportCSV}>⬇ Export CSV</Button>
             <Button size="sm" onClick={openCreateModal}>Add employee</Button>
           </div>
         }
@@ -450,6 +460,8 @@ export function HrPeoplePageV2() {
         formTab={formTab}
         setFormTab={setFormTab}
         formErrors={formErrors}
+        emailDuplicateError={emailDuplicateError}
+        onEmailBlur={checkEmailDuplicate}
         onClose={() => setModalOpen(false)}
         onSave={saveEmployee}
         departments={state.hrDepartments}
@@ -458,6 +470,7 @@ export function HrPeoplePageV2() {
         employmentTypes={employmentTypes}
         genderOptions={genderOptions}
         maritalStatusOptions={maritalStatusOptions}
+        projects={state.projects.map((p) => ({ id: p.id, name: p.name }))}
       />
 
       <HrEmployeeProfileModal
@@ -475,11 +488,9 @@ export function HrPeoplePageV2() {
       {deactivateTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-semibold text-slate-800">Confirm Deactivation</h2>
-            <p className="mb-4 text-sm text-slate-600">
-              You are about to deactivate{" "}
-              <span className="font-medium">{deactivateTarget.displayName || employeeName(deactivateTarget)}</span>.
-            </p>
+            <h2 className="mb-4 text-lg font-semibold text-slate-800">
+              Deactivate {deactivateTarget.displayName || employeeName(deactivateTarget)}
+            </h2>
             <div className="mb-3">
               <FieldLabel>Reason for leaving *</FieldLabel>
               <select value={deactivateReason} onChange={(e) => setDeactivateReason(e.target.value)}>

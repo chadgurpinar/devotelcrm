@@ -1,5 +1,6 @@
 import { Badge, Button } from "../../../components/ui";
 import { HrEmployee } from "../../../store/types";
+import { EmployeeAvatar } from "./HrEmployeeProfileModal";
 
 function employeeName(row: Pick<HrEmployee, "firstName" | "lastName">): string {
   return `${row.firstName} ${row.lastName}`.trim();
@@ -52,9 +53,13 @@ export function EmployeeTable(props: EmployeeTableProps) {
             return (
               <tr key={employee.id}>
                 <td>
-                  <p className="font-semibold text-slate-700">{employee.displayName || employeeName(employee)}</p>
-                  <p className="text-[11px] text-slate-500">{employee.email}</p>
-                  <p className="text-[11px] text-slate-500">{employee.phone}</p>
+                  <div className="flex items-center gap-2">
+                    <EmployeeAvatar employee={employee} size="sm" />
+                    <div>
+                      <p className="font-semibold text-slate-700">{employee.displayName || employeeName(employee)}</p>
+                      <p className="text-[11px] text-slate-500">{employee.email}</p>
+                    </div>
+                  </div>
                 </td>
                 <td>{props.departmentById.get(employee.departmentId) ?? "-"}</td>
                 <td>{employee.jobTitle ?? employee.position ?? "-"}</td>
