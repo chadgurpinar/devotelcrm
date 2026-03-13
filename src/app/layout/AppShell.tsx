@@ -32,6 +32,7 @@ const navGroups = [
       { to: "/ops/routing-noc", label: "Routing & NOC Portal", icon: "R" },
       { to: "/ops/account-managers", label: "Account Managers Portal", icon: "M" },
       { to: "/ops/noc-performance-audit", label: "NOC Performance / Audit", icon: "P" },
+      { to: "/ops/analytics", label: "A2P Analytics", icon: "X" },
     ],
   },
   {

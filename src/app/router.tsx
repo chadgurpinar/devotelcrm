@@ -20,6 +20,7 @@ import { RoutingNocPortalPage } from "../features/ops/RoutingNocPortalPage";
 import { AmNocRoutingPortalPage } from "../features/ops/AmNocRoutingPortalPage";
 import { AccountManagersPortalPage } from "../features/ops/AccountManagersPortalPage";
 import { NocPerformanceAuditPage } from "../features/ops/NocPerformanceAuditPage";
+import { A2pAnalyticsDashboard } from "../features/ops/A2pAnalyticsDashboard";
 import { HrDashboardPage } from "../features/hr/HrDashboardPage";
 import { HrPeoplePage } from "../features/hr/HrPeoplePage";
 import { HrOrganizationPageV2 as HrOrganizationPage } from "../features/hr/HrOrganizationPageV2";
@@ -57,6 +58,7 @@ export const router = createBrowserRouter([
       { path: "/ops/account-managers", element: <AccountManagersPortalPage /> },
       { path: "/ops/noc-performance-audit", element: <NocPerformanceAuditPage /> },
       { path: "/ops/performance-audit", element: <NocPerformanceAuditPage /> },
+      { path: "/ops/analytics", element: <A2pAnalyticsDashboard /> },
       { path: "/hr/dashboard", element: <HrDashboardPage /> },
       { path: "/hr/people", element: <HrPeoplePage /> },
       { path: "/hr/organization", element: <HrOrganizationPage /> },
