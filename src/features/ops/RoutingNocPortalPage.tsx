@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, FieldLabel } from "../../components/ui";
+import { Badge, Button } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getUserName } from "../../store/selectors";
 import { RoutingReqStatus, RoutingReqTab } from "../../store/types";
@@ -7,7 +7,7 @@ import { RoutingReqStatus, RoutingReqTab } from "../../store/types";
 const ALL_TABS: RoutingReqTab[] = ["Routing Request", "TT Request", "Test Request", "Loss Accepted"];
 
 const TAB_FIELDS: Record<RoutingReqTab, string[]> = {
-  "Routing Request": ["Customer", "Destination", "Provider 1", "Provider 2", "Provider 3", "Provider 4", "Provider 5", "Comment"],
+  "Routing Request": ["Customer", "Destination", "Comment"],
   "TT Request": ["Customer", "Destination", "Issue", "Comment"],
   "Test Request": ["Customer", "Destination", "Test Type", "Comment"],
   "Loss Accepted": ["Customer", "Destination", "Acceptable Loss Value", "Comment"],
@@ -33,7 +33,6 @@ const TAB_ACTIONS: Record<RoutingReqTab, Array<{ label: string; status: RoutingR
 };
 
 const POSITIVE_STATUSES: RoutingReqStatus[] = ["Routing Done", "TT Sent", "Test Successful", "Loss Accepted"];
-const NEGATIVE_STATUSES: RoutingReqStatus[] = ["Test Failed", "Loss Not Accepted", "Cancelled"];
 
 function statusBadgeClass(s: RoutingReqStatus): string {
   if (s === "Open") return "bg-blue-100 text-blue-700";
@@ -71,21 +70,14 @@ function emptyForm(tab: RoutingReqTab): Record<string, string> {
   return obj;
 }
 
-function isTextArea(field: string): boolean {
-  return field === "Comment" || field === "Issue";
-}
-
 function ElapsedTimer({ submittedAt }: { submittedAt: string }) {
   const [elapsed, setElapsed] = useState(() => Date.now() - new Date(submittedAt).getTime());
-
   useEffect(() => {
     const id = setInterval(() => setElapsed(Date.now() - new Date(submittedAt).getTime()), 1000);
     return () => clearInterval(id);
   }, [submittedAt]);
-
   const mins = elapsed / 60000;
   const cls = mins > 60 ? "text-rose-700 bg-rose-50 rounded px-1" : mins > 30 ? "text-amber-700 bg-amber-50 rounded px-1" : "text-slate-500";
-
   return <span className={`text-xs font-medium ${cls}`}>⏱ Open for: {formatElapsed(elapsed)}</span>;
 }
 
@@ -93,13 +85,17 @@ export function RoutingNocPortalPage() {
   const state = useAppStore();
   const [activeTab, setActiveTab] = useState<RoutingReqTab>("Routing Request");
   const [form, setForm] = useState<Record<string, string>>(() => emptyForm("Routing Request"));
+  const [providers, setProviders] = useState<string[]>([""]);
   const [filterStatus, setFilterStatus] = useState<"All" | "Open" | "Closed">("All");
   const [nocComments, setNocComments] = useState<Record<string, string>>({});
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const userName = useMemo(() => getUserName(state, state.activeUserId), [state]);
 
   useEffect(() => {
     setForm(emptyForm(activeTab));
+    setProviders([""]);
+    setExpandedId(null);
   }, [activeTab]);
 
   const tabSummaries = useMemo(
@@ -127,8 +123,17 @@ export function RoutingNocPortalPage() {
 
   function handleSend() {
     if (!form["Customer"]?.trim()) return;
-    state.addRoutingNocRequest({ tab: activeTab, fields: { ...form }, submittedBy: userName });
+    let fields: Record<string, string>;
+    if (activeTab === "Routing Request") {
+      const providerFields: Record<string, string> = {};
+      providers.forEach((p, i) => { if (p.trim()) providerFields[`Provider ${i + 1}`] = p.trim(); });
+      fields = { Customer: form["Customer"], Destination: form["Destination"] ?? "", ...providerFields, Comment: form["Comment"] ?? "" };
+    } else {
+      fields = { ...form };
+    }
+    state.addRoutingNocRequest({ tab: activeTab, fields, submittedBy: userName });
     setForm(emptyForm(activeTab));
+    setProviders([""]);
   }
 
   function handleClose(id: string, status: RoutingReqStatus) {
@@ -139,14 +144,19 @@ export function RoutingNocPortalPage() {
     setNocComments((prev) => { const next = { ...prev }; delete next[id]; return next; });
   }
 
+  const isRoutingTab = activeTab === "Routing Request";
+  const formFields = TAB_FIELDS[activeTab];
+  const expandedEntry = expandedId ? tabRequests.find((r) => r.id === expandedId) ?? null : null;
+
   return (
     <div className="space-y-4">
-      <div className="mb-6">
+      {/* Header */}
+      <div>
         <h1 className="text-2xl font-bold text-slate-800">Routing &amp; NOC Portal</h1>
         <p className="mt-1 text-sm text-slate-500">Account Manager requests · NOC/Routing responses</p>
       </div>
 
-      {/* B1 — Tab summary cards */}
+      {/* BÖLÜM 1 — Tab summary cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {tabSummaries.map((s) => {
           const selected = s.tab === activeTab;
@@ -172,139 +182,190 @@ export function RoutingNocPortalPage() {
         })}
       </div>
 
-      {/* B2 — Two-column layout */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* B3 — Left: New Request Form */}
-        <Card title={`New ${activeTab}`}>
-          <p className="mb-3 text-xs text-slate-500">Fill in the details and click Send</p>
-          <div className="space-y-3">
-            {TAB_FIELDS[activeTab].map((field) => (
-              <div key={field}>
-                <FieldLabel>{field}</FieldLabel>
-                {isTextArea(field) ? (
-                  <textarea
-                    rows={3}
-                    value={form[field] ?? ""}
-                    onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))}
-                    placeholder={field === "Comment" ? "Optional notes..." : ""}
-                    className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                  />
-                ) : (
-                  <input
-                    value={form[field] ?? ""}
-                    onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))}
-                  />
-                )}
+      {/* BÖLÜM 2 — Compact inline form */}
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        {formFields.map((field) => {
+          if (isRoutingTab && field === "Comment") return null;
+          return (
+            <div key={field} className="flex flex-col min-w-[120px]">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">{field}</label>
+              <input
+                className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+                value={form[field] ?? ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))}
+              />
+            </div>
+          );
+        })}
+
+        {isRoutingTab && providers.map((pv, i) => (
+          <div key={i} className="flex items-end gap-1">
+            <div className="flex flex-col min-w-[120px]">
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Provider {i + 1}</label>
+              <input
+                className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+                value={pv}
+                onChange={(e) => setProviders((prev) => prev.map((v, idx) => idx === i ? e.target.value : v))}
+              />
+            </div>
+            {i === 0 ? (
+              <button
+                type="button"
+                onClick={() => setProviders((p) => [...p, ""])}
+                className="h-8 w-8 rounded border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 text-lg font-bold flex items-center justify-center flex-shrink-0"
+              >
+                +
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setProviders((p) => p.filter((_, idx) => idx !== i))}
+                className="h-8 w-8 rounded border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100 text-lg font-bold flex items-center justify-center flex-shrink-0"
+              >
+                −
+              </button>
+            )}
+          </div>
+        ))}
+
+        {isRoutingTab && (
+          <div className="flex flex-col min-w-[120px]">
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Comment</label>
+            <input
+              className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+              value={form["Comment"] ?? ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, Comment: e.target.value }))}
+            />
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={handleSend}
+          disabled={!form["Customer"]?.trim()}
+          className="h-8 px-4 rounded-lg bg-brand-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-40 flex-shrink-0 self-end"
+        >
+          Send
+        </button>
+        <button
+          type="button"
+          onClick={() => { setForm(emptyForm(activeTab)); setProviders([""]); }}
+          className="h-8 px-3 rounded-lg border border-slate-200 text-slate-500 text-sm hover:bg-slate-50 flex-shrink-0 self-end"
+        >
+          Clear
+        </button>
+      </div>
+
+      {/* Filter bar */}
+      <div className="flex items-center gap-3">
+        <p className="text-xs text-slate-500">{openCount} open · {closedCount} closed</p>
+        <div className="flex gap-1">
+          {(["All", "Open", "Closed"] as const).map((s) => (
+            <Button key={s} size="sm" variant={filterStatus === s ? "primary" : "secondary"} onClick={() => setFilterStatus(s)}>
+              {s}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* BÖLÜM 3 — Compact request card grid + expand panel */}
+      {tabRequests.length === 0 ? (
+        <p className="py-8 text-center text-sm text-slate-400">No requests match this filter.</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3 xl:grid-cols-4">
+            {tabRequests.map((entry) => (
+              <article
+                key={entry.id}
+                onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
+                className={`rounded-xl border p-3 shadow-sm cursor-pointer transition hover:shadow-md ${cardBorderClass(entry.status)}`}
+              >
+                <div className="flex items-center justify-between gap-1 mb-1">
+                  <span className="text-xs font-semibold text-slate-700 truncate">{entry.submittedBy}</span>
+                  <Badge className={statusBadgeClass(entry.status)}>{entry.status}</Badge>
+                </div>
+                <div className="text-xs text-slate-500 truncate">
+                  {entry.fields["Customer"]}
+                  {entry.fields["Destination"] && <> → {entry.fields["Destination"]}</>}
+                </div>
+                <div className="mt-1">
+                  {entry.status === "Open" ? (
+                    <ElapsedTimer submittedAt={entry.submittedAt} />
+                  ) : (
+                    <span className="text-[10px] text-slate-400">{formatTS(entry.submittedAt)}</span>
+                  )}
+                </div>
+                <div className="mt-1 text-[10px] text-slate-400 text-right">
+                  {expandedId === entry.id ? "▲ less" : "▼ details"}
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {/* Expanded detail panel */}
+          {expandedEntry && (
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm mb-4">
+                {Object.entries(expandedEntry.fields)
+                  .filter(([, v]) => v.trim() !== "")
+                  .map(([k, v]) => (
+                    <div key={k}>
+                      <span className="text-xs text-slate-400 block">{k}</span>
+                      <span className="font-medium text-slate-700">{v}</span>
+                    </div>
+                  ))}
               </div>
-            ))}
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Button size="sm" onClick={handleSend} disabled={!form["Customer"]?.trim()}>
-              Send
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setForm(emptyForm(activeTab))}>
-              Clear
-            </Button>
-          </div>
-        </Card>
 
-        {/* B4 — Right: Request List */}
-        <Card title={`${activeTab}s`}>
-          <p className="mb-2 text-xs text-slate-500">{openCount} open · {closedCount} closed</p>
-          <div className="mb-3 flex gap-1">
-            {(["All", "Open", "Closed"] as const).map((s) => (
-              <Button key={s} size="sm" variant={filterStatus === s ? "primary" : "secondary"} onClick={() => setFilterStatus(s)}>
-                {s}
-              </Button>
-            ))}
-          </div>
-
-          {tabRequests.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">No requests match this filter.</p>
-          ) : (
-            <div className="space-y-3">
-              {tabRequests.map((entry) => (
-                <article key={entry.id} className={`rounded-xl border p-4 shadow-sm ${cardBorderClass(entry.status)}`}>
-                  {/* Top row */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs">
-                      <span className="font-semibold text-slate-700">{entry.submittedBy}</span>
-                      <span className="ml-2 text-slate-400">{formatTS(entry.submittedAt)}</span>
-                    </div>
-                    <Badge className={statusBadgeClass(entry.status)}>{entry.status}</Badge>
-                  </div>
-
-                  {/* Fields */}
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                    {Object.entries(entry.fields)
-                      .filter(([, v]) => v.trim() !== "")
-                      .map(([k, v]) => (
-                        <span key={k}>
-                          <span className="text-slate-500">{k}:</span>{" "}
-                          <span className="font-medium text-slate-700">{v}</span>
-                        </span>
-                      ))}
-                  </div>
-
-                  {/* Elapsed timer (open only) */}
-                  {entry.status === "Open" && (
-                    <div className="mt-2">
-                      <ElapsedTimer submittedAt={entry.submittedAt} />
-                    </div>
-                  )}
-
-                  {/* NOC action (open only) */}
-                  {entry.status === "Open" && (
-                    <div className="mt-3 space-y-2">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">NOC Response</p>
-                      <textarea
-                        rows={2}
-                        placeholder="Add comment (optional)..."
-                        value={nocComments[entry.id] ?? ""}
-                        onChange={(e) => setNocComments((prev) => ({ ...prev, [entry.id]: e.target.value }))}
-                        className="w-full rounded border border-slate-200 px-2 py-1 text-sm"
-                      />
-                      <div className="flex flex-wrap gap-2">
-                        {TAB_ACTIONS[activeTab].map((act) => (
-                          <button
-                            key={act.status}
-                            type="button"
-                            onClick={() => handleClose(entry.id, act.status)}
-                            className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${act.style}`}
-                          >
-                            {act.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Closed card footer */}
-                  {entry.status !== "Open" && (
-                    <div className="mt-3">
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                        <Badge className={statusBadgeClass(entry.status)}>{entry.status}</Badge>
-                        {entry.nocComment && <p className="mt-1 text-slate-600">Comment: &ldquo;{entry.nocComment}&rdquo;</p>}
-                        <p className="mt-1 text-xs text-slate-500">
-                          By: {entry.closedBy ?? "-"}
-                          {entry.closedAt && <> · {formatTS(entry.closedAt)}</>}
-                        </p>
-                      </div>
+              {expandedEntry.status === "Open" && (
+                <div className="border-t border-slate-100 pt-3 space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">NOC Response</p>
+                  <textarea
+                    rows={2}
+                    placeholder="Add comment (optional)..."
+                    value={nocComments[expandedEntry.id] ?? ""}
+                    onChange={(e) => setNocComments((prev) => ({ ...prev, [expandedEntry.id]: e.target.value }))}
+                    className="w-full rounded border border-slate-200 px-2 py-1 text-sm"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {TAB_ACTIONS[activeTab].map((act) => (
                       <button
+                        key={act.status}
                         type="button"
-                        onClick={() => state.markRoutingNocRequestReviewed(entry.id)}
-                        className="mt-2 text-xs text-slate-500 underline hover:text-slate-700"
+                        onClick={() => { handleClose(expandedEntry.id, act.status); setExpandedId(null); }}
+                        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${act.style}`}
                       >
-                        Mark as Reviewed
+                        {act.label}
                       </button>
-                    </div>
-                  )}
-                </article>
-              ))}
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {expandedEntry.status !== "Open" && (
+                <div className="border-t border-slate-100 pt-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <Badge className={statusBadgeClass(expandedEntry.status)}>{expandedEntry.status}</Badge>
+                    {expandedEntry.nocComment && (
+                      <p className="mt-1 text-slate-600">Comment: &ldquo;{expandedEntry.nocComment}&rdquo;</p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-500">
+                      By: {expandedEntry.closedBy ?? "-"}
+                      {expandedEntry.closedAt && <> · {formatTS(expandedEntry.closedAt)}</>}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { state.markRoutingNocRequestReviewed(expandedEntry.id); setExpandedId(null); }}
+                    className="mt-2 text-xs text-slate-500 underline hover:text-slate-700"
+                  >
+                    Mark as Reviewed
+                  </button>
+                </div>
+              )}
             </div>
           )}
-        </Card>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
