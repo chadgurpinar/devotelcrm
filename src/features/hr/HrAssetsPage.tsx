@@ -1,4 +1,5 @@
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { HrAssetCategory, HrCurrencyCode, HrEmployee, HrProvisionRequest, HrSoftwareProduct, HrSoftwareSeat } from "../../store/types";
@@ -150,6 +151,11 @@ export function HrAssetsPage() {
   const [returnConditionChoice, setReturnConditionChoice] = useState<"Good" | "Damaged" | "Needs Replacement">("Good");
   const [lostStolenModal, setLostStolenModal] = useState<{ assetId: string; status: "Lost" | "Stolen" } | null>(null);
   const [incidentNote, setIncidentNote] = useState("");
+  const [signatureModal, setSignatureModal] = useState<{ assignmentId: string; employeeId: string; assetName: string } | null>(null);
+  const [viewSigModal, setViewSigModal] = useState<{ dataUrl: string; signerName: string; date: string } | null>(null);
+  const [sigToast, setSigToast] = useState(false);
+  const [searchParams] = useSearchParams();
+  const replacementAssetName = searchParams.get("assetName");
 
   const hrSoftwareProducts = state.hrSoftwareProducts ?? [];
   const hrAssetAssignments = state.hrAssetAssignments ?? [];
@@ -654,18 +660,29 @@ export function HrAssetsPage() {
                         <td>{asset?.category ?? "-"}</td>
                         <td>{formatDateTime(assignment.assignedAt)}</td>
                         <td>
-                          <Badge className={assignment.acceptanceStatus === "Accepted" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}>
-                            {assignment.acceptanceStatus}
-                          </Badge>
-                        </td>
-                        <td>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => state.setHrAssetAssignmentAcceptance(assignment.id, assignment.acceptanceStatus !== "Accepted")}
-                          >
-                            {assignment.acceptanceStatus === "Accepted" ? "Revoke acceptance" : "Accept"}
-                          </Button>
+                          {assignment.acceptanceStatus === "Accepted" ? (
+                            <div>
+                              <Badge className="bg-emerald-100 text-emerald-700">✓ Digitally Signed</Badge>
+                              {(() => {
+                                const sig = state.hrDigitalSignatures.find((s) => s.assetAssignmentId === assignment.id);
+                                if (!sig) return null;
+                                const signer = employeeById.get(sig.employeeId);
+                                return (
+                                  <button className="ml-1 text-[10px] text-brand-600 hover:underline" onClick={() => setViewSigModal({ dataUrl: sig.signatureDataUrl, signerName: signer ? displayEmployee(signer) : sig.employeeId, date: new Date(sig.signedAt).toLocaleDateString() })}>
+                                    View Signature
+                                  </button>
+                                );
+                              })()}
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setSignatureModal({ assignmentId: assignment.id, employeeId: assignment.employeeId, assetName: asset?.name ?? assignment.assetId })}
+                            >
+                              ✍ Sign & Accept
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -797,7 +814,9 @@ export function HrAssetsPage() {
                           <p className="text-[11px] text-slate-500">{asset.category}</p>
                         </td>
                         <td>
-                          <Badge className={assetStatusClass(asset.status)}>{asset.status}</Badge>
+                          <Badge className={assetStatusClass(asset.status)}>
+                            {(asset.status === "Lost" || asset.status === "Stolen") && "🔴 "}{asset.status}
+                          </Badge>
                         </td>
                         <td>{assignee ? displayEmployee(assignee) : "-"}</td>
                         <td>{activeAssignment ? activeAssignment.acceptanceStatus : "-"}</td>
@@ -823,6 +842,14 @@ export function HrAssetsPage() {
                                 Mark Stolen
                               </Button>
                             ) : null}
+                            {(asset.status === "Lost" || asset.status === "Stolen" || (asset.notes ?? "").toLowerCase().includes("replacement")) && (
+                              <a
+                                href={`/hr/assets?tab=Requests&type=Hardware&assetId=${asset.id}&assetName=${encodeURIComponent(asset.name)}`}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                🔧 Request Replacement
+                              </a>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1588,45 +1615,75 @@ export function HrAssetsPage() {
 
       {assetHistoryId && (() => {
         const historyAsset = state.hrAssets.find((a) => a.id === assetHistoryId);
+        if (!historyAsset) return null;
         const assignments = (state.hrAssetAssignments ?? [])
           .filter((a) => a.assetId === assetHistoryId)
           .sort((a, b) => b.assignedAt.localeCompare(a.assignedAt));
+        const currentAssignee = historyAsset.status === "Assigned" && historyAsset.assignedToEmployeeId
+          ? employeeById.get(historyAsset.assignedToEmployeeId)
+          : undefined;
+        const conditionBadge = (c?: string) => {
+          if (!c) return "—";
+          const cls = c === "Good" ? "bg-emerald-100 text-emerald-700" : c === "Damaged" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700";
+          return <Badge className={cls}>{c}</Badge>;
+        };
         return (
-          <ModalShell title={`Assignment History — ${historyAsset?.name ?? assetHistoryId}`} onClose={() => setAssetHistoryId(null)}>
-            {assignments.length === 0 ? (
-              <p className="py-4 text-center text-sm text-slate-500">No prior assignments.</p>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th>Assigned At</th>
-                    <th>Returned At</th>
-                    <th>Acceptance</th>
-                    <th>Return Condition</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {assignments.map((assignment) => {
-                    const emp = employeeById.get(assignment.employeeId);
-                    return (
-                      <tr key={assignment.id}>
-                        <td>{emp ? displayEmployee(emp) : assignment.employeeId}</td>
-                        <td>{formatDateTime(assignment.assignedAt)}</td>
-                        <td>{formatDateTime(assignment.returnedAt)}</td>
-                        <td>
-                          <Badge className={assignment.acceptanceStatus === "Accepted" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}>
-                            {assignment.acceptanceStatus}
-                          </Badge>
-                        </td>
-                        <td>{assignment.returnCondition ?? "-"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </ModalShell>
+          <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/40" onClick={() => setAssetHistoryId(null)}>
+            <div className="h-full w-[480px] max-w-full overflow-y-auto bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="border-b border-slate-200 p-5">
+                <h2 className="text-lg font-bold text-slate-800">{historyAsset.name}</h2>
+                <div className="mt-1 flex gap-2">
+                  <Badge className="bg-slate-100 text-slate-700">{historyAsset.category}</Badge>
+                  <Badge className={assetStatusClass(historyAsset.status)}>{historyAsset.status}</Badge>
+                </div>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Details</p>
+                  {historyAsset.serialNumber && <p className="text-xs text-slate-600">Serial: {historyAsset.serialNumber}</p>}
+                  {historyAsset.imei && <p className="text-xs text-slate-600">IMEI: {historyAsset.imei}</p>}
+                  {historyAsset.purchaseDate && <p className="text-xs text-slate-600">Purchased: {historyAsset.purchaseDate}</p>}
+                  {historyAsset.warrantyEndsAt && <p className="text-xs text-slate-600">Warranty ends: {historyAsset.warrantyEndsAt}</p>}
+                  {historyAsset.notes && <p className="text-xs text-slate-600">Notes: {historyAsset.notes}</p>}
+                  {!historyAsset.serialNumber && !historyAsset.imei && !historyAsset.notes && <p className="text-xs text-slate-400 italic">No additional details</p>}
+                </div>
+
+                {currentAssignee && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Current Assignee</p>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+                      <p className="font-semibold text-slate-700">{displayEmployee(currentAssignee)}</p>
+                      <p className="text-slate-500">{currentAssignee.email}</p>
+                      <p className="text-slate-500">{state.hrDepartments.find((d) => d.id === currentAssignee.departmentId)?.name ?? "—"}</p>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">Assignment History</p>
+                  {assignments.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No prior assignments.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {assignments.map((a) => {
+                        const emp = employeeById.get(a.employeeId);
+                        return (
+                          <div key={a.id} className="rounded border border-slate-100 bg-slate-50 p-2 text-xs">
+                            <div className="flex justify-between"><span className="font-medium text-slate-700">{emp ? displayEmployee(emp) : a.employeeId}</span><Badge className={a.acceptanceStatus === "Accepted" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}>{a.acceptanceStatus}</Badge></div>
+                            <p className="text-slate-500 mt-0.5">Assigned: {formatDateTime(a.assignedAt)} · Returned: {a.returnedAt ? formatDateTime(a.returnedAt) : "Active"}</p>
+                            {a.returnCondition && <div className="mt-1">{conditionBadge(a.returnCondition)}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="border-t border-slate-200 p-5">
+                <Button size="sm" variant="secondary" onClick={() => setAssetHistoryId(null)}>Close</Button>
+              </div>
+            </div>
+          </div>
         );
       })()}
 
@@ -1672,6 +1729,76 @@ export function HrAssetsPage() {
             </div>
           </div>
         </ModalShell>
+      )}
+
+      {signatureModal && (() => {
+        const canvasRef = { current: null as HTMLCanvasElement | null };
+        let isDrawing = false;
+        const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
+        const startDraw = (e: React.MouseEvent<HTMLCanvasElement>) => { isDrawing = true; const ctx = getCtx(); if (!ctx) return; const r = canvasRef.current!.getBoundingClientRect(); ctx.beginPath(); ctx.moveTo(e.clientX - r.left, e.clientY - r.top); };
+        const draw = (e: React.MouseEvent<HTMLCanvasElement>) => { if (!isDrawing) return; const ctx = getCtx(); if (!ctx) return; const r = canvasRef.current!.getBoundingClientRect(); ctx.lineWidth = 2; ctx.lineCap = "round"; ctx.strokeStyle = "#1e293b"; ctx.lineTo(e.clientX - r.left, e.clientY - r.top); ctx.stroke(); };
+        const endDraw = () => { isDrawing = false; };
+        const clearCanvas = () => { const ctx = getCtx(); if (ctx && canvasRef.current) { ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height); } };
+        const hasDrawing = () => { const ctx = getCtx(); if (!ctx || !canvasRef.current) return false; const d = ctx.getImageData(0, 0, canvasRef.current.width, canvasRef.current.height).data; for (let i = 0; i < d.length; i += 4) { if (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250) return true; } return false; };
+        const handleSign = () => {
+          if (!canvasRef.current || !hasDrawing()) return;
+          const dataUrl = canvasRef.current.toDataURL();
+          state.saveDigitalSignature(signatureModal.assignmentId, signatureModal.employeeId, dataUrl);
+          const updated = (state.hrAssetAssignments ?? []).map((a) => a.id === signatureModal.assignmentId ? { ...a, acceptanceStatus: "Accepted" as const, acceptedAt: new Date().toISOString() } : a);
+          useAppStore.setState({ hrAssetAssignments: updated });
+          setSignatureModal(null);
+          setSigToast(true);
+          setTimeout(() => setSigToast(false), 3000);
+        };
+        const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+        const emp = employeeById.get(signatureModal.employeeId);
+        const empName = emp ? displayEmployee(emp) : signatureModal.employeeId;
+        return (
+          <ModalShell title="Digital Acceptance — Asset Zimmet" onClose={() => setSignatureModal(null)}>
+            <p className="text-xs text-slate-600 mb-3">
+              I, <strong>{empName}</strong>, confirm receipt of <strong>{signatureModal.assetName}</strong> on {todayStr}. I accept responsibility for this equipment.
+            </p>
+            <div className="mb-2">
+              <canvas
+                ref={(el) => { canvasRef.current = el; if (el && !el.dataset.init) { el.dataset.init = "1"; const ctx = el.getContext("2d"); if (ctx) { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, el.width, el.height); } } }}
+                width={400}
+                height={150}
+                className="border border-slate-300 rounded cursor-crosshair w-full"
+                onMouseDown={startDraw}
+                onMouseMove={draw}
+                onMouseUp={endDraw}
+                onMouseLeave={endDraw}
+              />
+              <p className="text-[10px] text-slate-400 mt-1">Sign above using mouse or touchpad</p>
+            </div>
+            <div className="flex gap-2 mb-3">
+              <Button size="sm" variant="secondary" onClick={clearCanvas}>Clear</Button>
+              <Button size="sm" onClick={handleSign}>Sign & Accept</Button>
+            </div>
+            <p className="text-[10px] text-amber-600">⚙ Digital signature prototype — legal binding requires certified e-signature service (e.g. DocuSign)</p>
+          </ModalShell>
+        );
+      })()}
+
+      {viewSigModal && (
+        <ModalShell title="Digital Signature" onClose={() => setViewSigModal(null)}>
+          <div className="text-center">
+            <img src={viewSigModal.dataUrl} alt="Signature" className="border border-slate-200 rounded mx-auto mb-2" style={{ maxWidth: 400 }} />
+            <p className="text-xs text-slate-600">Signed by {viewSigModal.signerName} on {viewSigModal.date}</p>
+          </div>
+        </ModalShell>
+      )}
+
+      {sigToast && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-lg bg-emerald-600 px-4 py-2 text-sm text-white shadow-lg">
+          ✓ Asset accepted and signature recorded
+        </div>
+      )}
+
+      {replacementAssetName && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-brand-600 px-4 py-2 text-sm text-white shadow-lg">
+          Creating replacement request for: {replacementAssetName}
+        </div>
       )}
 
       {lostStolenModal && (() => {
