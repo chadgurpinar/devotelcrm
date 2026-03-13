@@ -204,6 +204,8 @@ export function HrExpensesPageRoleBased() {
   const [pageMessage, setPageMessage] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<ExpenseMutationPayload | null>(null);
+  const [reconModal, setReconModal] = useState(false);
+  const [reconToast, setReconToast] = useState("");
 
   const employeeById = useMemo(() => new Map(state.hrEmployees.map((employee) => [employee.id, employee])), [state.hrEmployees]);
   const departmentById = useMemo(() => new Map(state.hrDepartments.map((department) => [department.id, department.name])), [state.hrDepartments]);
@@ -906,6 +908,14 @@ export function HrExpensesPageRoleBased() {
               </div>
             </div>
 
+            <div className="mb-3 flex items-center gap-3">
+              <Button size="sm" variant="secondary" onClick={() => setReconModal(true)}>
+                Send Year-End Reconciliation
+              </Button>
+              <span className="text-[10px] text-slate-400">⚙ Actual email delivery requires backend mail service</span>
+              {reconToast && <span className="text-xs text-emerald-600 font-medium">{reconToast}</span>}
+            </div>
+
             <section className="mb-3 rounded-md border border-slate-200 p-3">
               <div className="mb-2 flex flex-wrap gap-2">
                 {(["PendingFinance", "Approved", "Paid", "Rejected", "Cancelled"] as FinanceQueue[]).map((queue) => (
@@ -1304,6 +1314,21 @@ export function HrExpensesPageRoleBased() {
             <Button size="sm" onClick={() => submitClaimModal()} disabled={!claimFormValid}>
               {claimModal.mode === "create" ? "Submit" : "Save changes"}
             </Button>
+          </div>
+        </ModalShell>
+      )}
+
+      {reconModal && (
+        <ModalShell title="Year-End Reconciliation" onClose={() => setReconModal(false)}>
+          <p className="text-sm text-slate-600 mb-4">Send reconciliation summary to all employees? This will notify employees to confirm their expense records for the year.</p>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setReconModal(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => {
+              const count = state.hrEmployees.filter((e) => e.active).length;
+              setReconModal(false);
+              setReconToast(`✓ Reconciliation notifications sent to ${count} employees (simulation — email service required for real delivery)`);
+              setTimeout(() => setReconToast(""), 5000);
+            }}>Send</Button>
           </div>
         </ModalShell>
       )}

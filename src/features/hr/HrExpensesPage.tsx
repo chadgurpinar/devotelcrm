@@ -20,6 +20,8 @@ function HrExpensesPageLegacy() {
     currency: "EUR" as HrCurrencyCode,
     description: "",
     receiptUrl: "",
+    paymentMethod: "Personal" as "CompanyCard" | "Personal",
+    costCenterTag: "",
   });
   const [statusFilter, setStatusFilter] = useState<"" | HrExpenseStatus>("");
   const [employeeFilter, setEmployeeFilter] = useState("");
@@ -47,6 +49,8 @@ function HrExpensesPageLegacy() {
       currency: form.currency,
       description: form.description.trim(),
       receiptUrl: form.receiptUrl.trim() || undefined,
+      paymentMethod: form.paymentMethod,
+      costCenterTag: form.costCenterTag.trim() || undefined,
     });
     setForm((prev) => ({
       ...prev,
@@ -140,13 +144,20 @@ function HrExpensesPageLegacy() {
                 placeholder="Expense purpose"
               />
             </div>
-            <div className="md:col-span-3">
+            <div>
+              <FieldLabel>Paid with</FieldLabel>
+              <select value={form.paymentMethod} onChange={(event) => setForm((prev) => ({ ...prev, paymentMethod: event.target.value as "CompanyCard" | "Personal" }))}>
+                <option value="Personal">Personal (reimbursable)</option>
+                <option value="CompanyCard">Company Card</option>
+              </select>
+            </div>
+            <div>
+              <FieldLabel>Cost Center / Project</FieldLabel>
+              <input value={form.costCenterTag} onChange={(event) => setForm((prev) => ({ ...prev, costCenterTag: event.target.value }))} placeholder="e.g. Barcelona Conference" />
+            </div>
+            <div>
               <FieldLabel>Receipt URL (optional)</FieldLabel>
-              <input
-                value={form.receiptUrl}
-                onChange={(event) => setForm((prev) => ({ ...prev, receiptUrl: event.target.value }))}
-                placeholder="upload://expense/receipt.pdf"
-              />
+              <input value={form.receiptUrl} onChange={(event) => setForm((prev) => ({ ...prev, receiptUrl: event.target.value }))} placeholder="upload://expense/receipt.pdf" />
             </div>
             <div className="flex items-end">
               <Button size="sm" onClick={createExpense} disabled={!form.employeeId || !form.amount || Number(form.amount) <= 0}>
@@ -189,6 +200,7 @@ function HrExpensesPageLegacy() {
                 <th>Category</th>
                 <th>Amount</th>
                 <th>EUR</th>
+                <th>Payment</th>
                 <th>Status</th>
                 <th>Timeline</th>
                 <th>Comment</th>
@@ -217,6 +229,14 @@ function HrExpensesPageLegacy() {
                       {row.amount.toLocaleString()} {row.currency}
                     </td>
                     <td>{row.convertedAmountEUR.toLocaleString()} EUR</td>
+                    <td>
+                      {row.paymentMethod ? (
+                        <Badge className={row.paymentMethod === "CompanyCard" ? "bg-slate-100 text-slate-700" : "bg-blue-100 text-blue-700"}>
+                          {row.paymentMethod === "CompanyCard" ? "🏢 Company Card" : "👤 Personal"}
+                        </Badge>
+                      ) : "—"}
+                      {row.costCenterTag && <p className="text-[10px] text-slate-500 mt-0.5">📌 {row.costCenterTag}</p>}
+                    </td>
                     <td>
                       <Badge className={badgeClass}>{row.status}</Badge>
                     </td>
