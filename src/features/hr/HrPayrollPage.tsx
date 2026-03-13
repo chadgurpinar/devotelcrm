@@ -89,6 +89,8 @@ export function HrPayrollPage() {
   const [compConfirmTarget, setCompConfirmTarget] = useState<string | null>(null);
   const [compChangeReason, setCompChangeReason] = useState("");
   const [snapshotNotes, setSnapshotNotes] = useState("");
+  const [approvalStatus, setApprovalStatus] = useState<"pending" | "approved">("pending");
+  const [approvalToast, setApprovalToast] = useState(false);
   const [compHistoryOpen, setCompHistoryOpen] = useState(false);
   const [fxDraft, setFxDraft] = useState({
     from: "USD" as HrCurrencyCode,
@@ -299,7 +301,7 @@ export function HrPayrollPage() {
             </select>
           </div>
           <div className="flex items-end">
-            <Button size="sm" onClick={generateSnapshot}>
+            <Button size="sm" onClick={generateSnapshot} disabled={approvalStatus !== "approved"}>
               Generate snapshot
             </Button>
           </div>
@@ -353,33 +355,21 @@ export function HrPayrollPage() {
                       <span>{line.employerCost.toLocaleString()}</span>
                       {line.currency !== "EUR" && (() => {
                         const fxEntry = latestFxByCurrency.get(line.currency);
-                        return fxEntry ? (
-                          <p className="text-[10px] text-slate-400" title={`Rate: ${fxEntry.rate} effective ${fxEntry.effectiveAt}`}>
-                            Rate date: {new Date(fxEntry.effectiveAt).toLocaleDateString()}
-                          </p>
-                        ) : null;
+                        return <p className="text-[10px] text-slate-400">{fxEntry ? `Rate: ${fxEntry.rate} (as of ${new Date(fxEntry.effectiveAt).toLocaleDateString()})` : "Rate: N/A"}</p>;
                       })()}
                     </td>
                     <td>
                       <span>{line.bonusesTotal.toLocaleString()}</span>
                       {line.currency !== "EUR" && line.bonusesTotal > 0 && (() => {
                         const fxEntry = latestFxByCurrency.get(line.currency);
-                        return fxEntry ? (
-                          <p className="text-[10px] text-slate-400" title={`Rate: ${fxEntry.rate} effective ${fxEntry.effectiveAt}`}>
-                            Rate date: {new Date(fxEntry.effectiveAt).toLocaleDateString()}
-                          </p>
-                        ) : null;
+                        return <p className="text-[10px] text-slate-400">{fxEntry ? `Rate: ${fxEntry.rate} (as of ${new Date(fxEntry.effectiveAt).toLocaleDateString()})` : "Rate: N/A"}</p>;
                       })()}
                     </td>
                     <td>
                       <span>{line.netEur.toLocaleString()}</span>
                       {line.currency !== "EUR" && (() => {
                         const fxEntry = latestFxByCurrency.get(line.currency);
-                        return fxEntry ? (
-                          <p className="text-[10px] text-slate-400" title={`Rate: ${fxEntry.rate} effective ${fxEntry.effectiveAt}`}>
-                            Rate date: {new Date(fxEntry.effectiveAt).toLocaleDateString()}
-                          </p>
-                        ) : null;
+                        return <p className="text-[10px] text-slate-400">{fxEntry ? `Rate: ${fxEntry.rate} (as of ${new Date(fxEntry.effectiveAt).toLocaleDateString()})` : "Rate: N/A"}</p>;
                       })()}
                     </td>
                     <td>
@@ -465,9 +455,33 @@ export function HrPayrollPage() {
       </Card>
 
       <Card title="Payroll Snapshots">
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-center gap-0 mb-3">
+            <div className="flex items-center gap-2 rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-medium text-emerald-700">
+              Step 1: HR Prepared ✓
+            </div>
+            <div className="w-8 h-px bg-slate-300" />
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium ${approvalStatus === "approved" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+              Step 2: Finance Approval {approvalStatus === "approved" ? "✓" : "⏳"}
+            </div>
+            <div className="w-8 h-px bg-slate-300" />
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium ${approvalStatus === "approved" ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-400"}`}>
+              Step 3: Generate Snapshot 🔒
+            </div>
+          </div>
+          {approvalStatus === "pending" && (
+            <Button size="sm" onClick={() => { setApprovalStatus("approved"); setApprovalToast(true); setTimeout(() => setApprovalToast(false), 3000); }}>
+              Request Finance Approval
+            </Button>
+          )}
+          {approvalToast && (
+            <p className="mt-2 text-xs text-emerald-600 font-medium">✓ Finance approval recorded (simulated)</p>
+          )}
+          <p className="mt-2 text-[10px] text-amber-600">⚙ Approval simulation only — real approval workflow requires backend integration</p>
+        </div>
         <div className="mb-2 grid gap-2 md:grid-cols-[1fr_auto]">
           <input value={snapshotNotes} onChange={(event) => setSnapshotNotes(event.target.value)} placeholder="Optional note for next snapshot" />
-          <Button size="sm" onClick={generateSnapshot}>
+          <Button size="sm" onClick={generateSnapshot} disabled={approvalStatus !== "approved"}>
             Save snapshot
           </Button>
         </div>
@@ -508,10 +522,8 @@ export function HrPayrollPage() {
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCompConfirmTarget(null)}>
             <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
-              <h3 className="mb-3 text-sm font-semibold text-slate-800">Confirm compensation edit</h3>
-              <p className="mb-3 text-xs text-slate-700">
-                You are about to edit compensation for <strong>{targetName}</strong>. This action will be logged.
-              </p>
+              <h3 className="mb-1 text-sm font-semibold text-slate-800">Edit Compensation — {targetName}</h3>
+              <p className="mb-3 text-xs text-slate-500">This action will be logged with your name and timestamp.</p>
               <div className="mb-3">
                 <FieldLabel>Reason for change *</FieldLabel>
                 <textarea
@@ -521,9 +533,9 @@ export function HrPayrollPage() {
                   onChange={(event) => setCompChangeReason(event.target.value)}
                   placeholder="Minimum 10 characters…"
                 />
-                {compChangeReason.length > 0 && compChangeReason.length < 10 && (
-                  <p className="mt-1 text-[11px] text-rose-600">{10 - compChangeReason.length} more characters needed</p>
-                )}
+                <p className={`mt-1 text-[11px] ${compChangeReason.trim().length >= 10 ? "text-emerald-600" : "text-slate-400"}`}>
+                  {compChangeReason.trim().length} / 10 minimum
+                </p>
               </div>
               <div className="flex justify-end gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setCompConfirmTarget(null)}>
@@ -537,7 +549,7 @@ export function HrPayrollPage() {
                     setCompConfirmTarget(null);
                   }}
                 >
-                  Confirm
+                  Continue to Edit
                 </Button>
               </div>
             </div>
@@ -810,17 +822,28 @@ export function HrPayrollPage() {
                   .sort((a, b) => b.changedAt.localeCompare(a.changedAt));
                 if (logs.length === 0) return <p className="mt-2 text-xs text-slate-500">No change history.</p>;
                 return (
-                  <ul className="mt-2 space-y-2">
-                    {logs.map((log) => (
-                      <li key={log.id} className="rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-700">
-                        <p className="font-semibold">{new Date(log.changedAt).toLocaleString()}</p>
-                        <p>Reason: {log.reason}</p>
-                        {log.previousSalaryEur != null && <p>Previous: {log.previousSalaryEur.toLocaleString()} EUR</p>}
-                        {log.newSalaryEur != null && <p>New: {log.newSalaryEur.toLocaleString()} EUR</p>}
-                        <p className="text-slate-500">By: {log.changedByUserId}</p>
-                      </li>
-                    ))}
-                  </ul>
+                  <table className="mt-2 w-full text-xs">
+                    <thead><tr className="border-b border-slate-200 text-slate-500"><th className="py-1 text-left">Date</th><th className="py-1 text-left">Changed by</th><th className="py-1 text-left">Reason</th><th className="py-1 text-right">Prev EUR</th><th className="py-1 text-right">New EUR</th><th className="py-1 text-right">Delta</th></tr></thead>
+                    <tbody>
+                    {logs.map((log) => {
+                      const changedByEmp = employeeById.get(log.changedByUserId);
+                      const changedByName = changedByEmp ? employeeName(changedByEmp.firstName, changedByEmp.lastName) : (state.users.find(u => u.id === log.changedByUserId)?.name ?? log.changedByUserId);
+                      const delta = (log.newSalaryEur ?? 0) - (log.previousSalaryEur ?? 0);
+                      return (
+                        <tr key={log.id} className="border-b border-slate-100">
+                          <td className="py-1">{new Date(log.changedAt).toLocaleDateString()}</td>
+                          <td className="py-1">{changedByName}</td>
+                          <td className="py-1">{log.reason}</td>
+                          <td className="py-1 text-right">{log.previousSalaryEur != null ? log.previousSalaryEur.toLocaleString() : "—"}</td>
+                          <td className="py-1 text-right">{log.newSalaryEur != null ? log.newSalaryEur.toLocaleString() : "—"}</td>
+                          <td className={`py-1 text-right font-semibold ${delta > 0 ? "text-emerald-600" : delta < 0 ? "text-rose-600" : "text-slate-500"}`}>
+                            {delta > 0 ? "+" : ""}{delta !== 0 ? delta.toLocaleString() : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    </tbody>
+                  </table>
                 );
               })()}
             </section>

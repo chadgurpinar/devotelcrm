@@ -25,6 +25,7 @@ import { HrDashboardPage } from "../features/hr/HrDashboardPage";
 import { HrPeoplePage } from "../features/hr/HrPeoplePage";
 import { HrOrganizationPageV2 as HrOrganizationPage } from "../features/hr/HrOrganizationPageV2";
 import { HrPayrollPage } from "../features/hr/HrPayrollPage";
+import { HrPayslipPage } from "../features/hr/HrPayslipPage";
 import { HrLeavePage } from "../features/hr/HrLeavePage";
 import { HrAssetsPage } from "../features/hr/HrAssetsPage";
 import { HrExpensesPage } from "../features/hr/HrExpensesPage";
@@ -63,6 +64,7 @@ export const router = createBrowserRouter([
       { path: "/hr/people", element: <HrPeoplePage /> },
       { path: "/hr/organization", element: <HrOrganizationPage /> },
       { path: "/hr/payroll", element: <HrPayrollPage /> },
+      { path: "/hr/payslip", element: <HrPayslipPage /> },
       { path: "/hr/leave", element: <HrLeavePage /> },
       { path: "/hr/assets", element: <HrAssetsPage /> },
       { path: "/hr/expenses", element: <HrExpensesPage /> },

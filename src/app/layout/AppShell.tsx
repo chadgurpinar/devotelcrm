@@ -42,6 +42,7 @@ const navGroups = [
       { to: "/hr/people", label: "People", icon: "P" },
       { to: "/hr/organization", label: "Organization", icon: "O" },
       { to: "/hr/payroll", label: "Payroll & Compensation", icon: "Y" },
+      { to: "/hr/payslip", label: "My Payslip", icon: "₿" },
       { to: "/hr/leave", label: "Leave Management", icon: "L" },
       { to: "/hr/assets", label: "Assets & Software", icon: "A" },
       { to: "/hr/expenses", label: "Expenses", icon: "E" },
