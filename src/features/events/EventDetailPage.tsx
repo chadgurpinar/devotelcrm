@@ -387,7 +387,9 @@ export function EventDetailPage() {
                   </div>
                 </div>
                 <p className="text-slate-500">
-                  {formatDay(note.createdAt)} {formatTime(note.createdAt)} | Company:{" "}
+                  {formatDay(note.createdAt)} {formatTime(note.createdAt)} |{" "}
+                  By: <span className="font-medium text-slate-700">{getUserName(state, note.createdByUserId)}</span>{" "}
+                  | Company:{" "}
                   <Link className="text-brand-700" to={`/companies/${note.companyId}`}>
                     {getCompanyName(state, note.companyId)}
                   </Link>

@@ -124,7 +124,17 @@ export function CompaniesPage({ companyStatus, title }: CompaniesPageProps) {
                   <td>
                     <div>
                       <p className="font-semibold">{company.name}</p>
-                      <p className="text-[11px] text-slate-500">{company.companyStatus}</p>
+                      <Badge className={
+                        company.companyStatus === "CLIENT"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : company.companyStatus === "INTERCONNECTION"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-amber-100 text-amber-700"
+                      }>
+                        {company.companyStatus === "CLIENT" ? "Client"
+                          : company.companyStatus === "INTERCONNECTION" ? "Interconnection"
+                          : "Lead"}
+                      </Badge>
                     </div>
                   </td>
                   <td>

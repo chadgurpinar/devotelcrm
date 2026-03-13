@@ -8,14 +8,18 @@ export function NotesPage() {
   const state = useAppStore();
   const [eventFilter, setEventFilter] = useState("");
   const [days, setDays] = useState("30");
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [userFilter, setUserFilter] = useState("");
 
   const rows = useMemo(() => {
     const threshold = Date.now() - Number(days) * 24 * 60 * 60 * 1000;
     return state.notes
       .filter((note) => (eventFilter ? note.relatedEventId === eventFilter : true))
+      .filter((note) => (companyFilter ? note.companyId === companyFilter : true))
+      .filter((note) => (userFilter ? note.createdByUserId === userFilter : true))
       .filter((note) => new Date(note.createdAt).getTime() >= threshold)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [days, eventFilter, state.notes]);
+  }, [companyFilter, days, eventFilter, state.notes, userFilter]);
 
   return (
     <div className="space-y-4">
@@ -29,6 +33,24 @@ export function NotesPage() {
                 <option key={event.id} value={event.id}>
                   {event.name}
                 </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Company</FieldLabel>
+            <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}>
+              <option value="">All companies</option>
+              {state.companies.map((company) => (
+                <option key={company.id} value={company.id}>{company.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <FieldLabel>Account Manager</FieldLabel>
+            <select value={userFilter} onChange={(e) => setUserFilter(e.target.value)}>
+              <option value="">All users</option>
+              {state.users.map((user) => (
+                <option key={user.id} value={user.id}>{user.name}</option>
               ))}
             </select>
           </div>
@@ -59,6 +81,7 @@ export function NotesPage() {
               </p>
               <div className="mt-2 flex gap-2">
                 <Button onClick={() => state.convertNoteToTask(note.id, state.activeUserId)}>Create task</Button>
+                <Button variant="secondary" onClick={() => state.deleteNote(note.id)}>Delete</Button>
               </div>
             </div>
           ))}
