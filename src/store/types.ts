@@ -415,7 +415,7 @@ export type HrEmploymentType = "Full-time" | "Part-time" | "Contractor";
 export type HrGender = "Male" | "Female" | "Other" | "PreferNotToSay";
 export type HrMaritalStatus = "Single" | "Married" | "Other";
 export type HrSalaryDistributionMode = "Percent" | "Fixed";
-export type HrLeaveType = "Annual" | "Sick" | "Other";
+export type HrLeaveType = "Annual" | "Sick" | "Marriage" | "Bereavement" | "Paternity" | "Maternity" | "Unpaid" | "Other";
 export type HrLeaveStatus = "PendingManager" | "PendingHR" | "Approved" | "Rejected";
 export type HrExpenseStatus = "PendingManager" | "PendingFinance" | "Approved" | "Rejected" | "Paid" | "Cancelled";
 export type HrExpenseClaimType = "Reimbursement" | "Advance";
@@ -428,7 +428,7 @@ export interface HrAttachmentMeta {
   uploadedAt?: string;
 }
 export type HrAssetCategory = "Laptop" | "Phone" | "Accessory" | "Monitor" | "Other";
-export type HrAssetStatus = "Available" | "Assigned" | "Returned" | "Retired";
+export type HrAssetStatus = "Available" | "Assigned" | "Returned" | "Retired" | "Lost" | "Stolen";
 export type HrAssetAcceptanceStatus = "Pending" | "Accepted";
 export type HrSoftwareLicenseType = "Seat" | "Enterprise" | "Other";
 export type HrSoftwareSeatStatus = "Available" | "Assigned" | "Revoked" | "Expired";
@@ -493,6 +493,8 @@ export interface HrDepartment {
   id: string;
   name: string;
   parentDepartmentId?: string;
+  targetHeadcount?: number;
+  departmentHeadEmployeeId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -641,6 +643,8 @@ export interface HrCountryLeaveProfile {
   sickLeaveDays: number;
   carryOverPolicy: string;
   resetPolicy: string;
+  seniorityTiers?: Array<{ minYears: number; maxYears: number | null; days: number }>;
+  workingDays?: number[];
   createdAt: string;
   updatedAt: string;
 }
@@ -653,6 +657,8 @@ export interface HrLeaveRequest {
   endDate: string;
   employeeComment?: string;
   totalDays: number;
+  halfDay?: boolean;
+  doctorNoteFileName?: string;
   status: HrLeaveStatus;
   managerApprovedAt?: string;
   hrApprovedAt?: string;
@@ -697,6 +703,7 @@ export interface HrAssetAssignment {
   employeeId: string;
   assignedAt: string;
   returnedAt?: string;
+  returnCondition?: string;
   acceptanceStatus: HrAssetAcceptanceStatus;
   acceptedAt?: string;
   revokedAt?: string;
@@ -769,6 +776,8 @@ export interface HrExpense {
   travelStartDate?: string;
   travelEndDate?: string;
   advancePurpose?: string;
+  paymentMethod?: "CompanyCard" | "Personal";
+  costCenterTag?: string;
   rejectedAt?: string;
   status: HrExpenseStatus;
   managerApprovedAt?: string;
@@ -797,6 +806,23 @@ export interface HrAuditLogEntry {
   performedByUserId: string;
   comment?: string;
   timestamp: string;
+}
+
+export interface HrCompChangeLog {
+  id: string;
+  employeeId: string;
+  changedByUserId: string;
+  changedAt: string;
+  reason: string;
+  previousSalaryEur?: number;
+  newSalaryEur?: number;
+}
+
+export interface HrPublicHoliday {
+  id: string;
+  country: string;
+  date: string;
+  name: string;
 }
 
 export type OpsPortalId =
@@ -1152,6 +1178,8 @@ export interface DbState {
   hrProvisionRequests: HrProvisionRequest[];
   hrExpenses: HrExpense[];
   hrAuditLogs: HrAuditLogEntry[];
+  hrCompChangeLogs: HrCompChangeLog[];
+  hrPublicHolidays: HrPublicHoliday[];
   opsRequests: OpsRequest[];
   opsCases: OpsCase[];
   opsMonitoringSignals: OpsMonitoringSignal[];

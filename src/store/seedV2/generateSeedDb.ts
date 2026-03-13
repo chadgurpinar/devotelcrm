@@ -525,6 +525,53 @@ export function generateSeedDb(
     taskLabels: crmTasks.taskLabels.slice().sort((left, right) => left.id.localeCompare(right.id)),
     taskComments: crmTasks.taskComments.slice().sort((left, right) => left.id.localeCompare(right.id)),
     taskAttachments: [],
+    hrCompChangeLogs: (() => {
+      const logs = [];
+      const empSlice = hr.hrEmployees.filter((e) => e.active).slice(0, 5);
+      for (let i = 0; i < empSlice.length; i++) {
+        logs.push({
+          id: `seed-ccl-${i}-1`,
+          employeeId: empSlice[i].id,
+          changedByUserId: users[0].id,
+          changedAt: `2026-01-${String(10 + i).padStart(2, "0")}T10:00:00.000Z`,
+          reason: ["Annual salary review", "Promotion adjustment", "Market correction"][i % 3],
+          previousSalaryEur: 3000 + i * 500,
+          newSalaryEur: 3500 + i * 500,
+        });
+        if (i < 3) {
+          logs.push({
+            id: `seed-ccl-${i}-2`,
+            employeeId: empSlice[i].id,
+            changedByUserId: users[0].id,
+            changedAt: `2025-07-${String(15 + i).padStart(2, "0")}T10:00:00.000Z`,
+            reason: "Onboarding salary set",
+            previousSalaryEur: undefined,
+            newSalaryEur: 3000 + i * 500,
+          });
+        }
+      }
+      return logs;
+    })(),
+    hrPublicHolidays: [
+      { id: "ph-tr-1", country: "Turkey", date: "2026-01-01", name: "New Year's Day" },
+      { id: "ph-tr-2", country: "Turkey", date: "2026-04-23", name: "National Sovereignty and Children's Day" },
+      { id: "ph-tr-3", country: "Turkey", date: "2026-05-01", name: "Labour Day" },
+      { id: "ph-tr-4", country: "Turkey", date: "2026-05-19", name: "Commemoration of Atatürk, Youth and Sports Day" },
+      { id: "ph-tr-5", country: "Turkey", date: "2026-07-15", name: "Democracy and National Unity Day" },
+      { id: "ph-tr-6", country: "Turkey", date: "2026-10-29", name: "Republic Day" },
+      { id: "ph-uk-1", country: "United Kingdom", date: "2026-01-01", name: "New Year's Day" },
+      { id: "ph-uk-2", country: "United Kingdom", date: "2026-04-03", name: "Good Friday" },
+      { id: "ph-uk-3", country: "United Kingdom", date: "2026-04-06", name: "Easter Monday" },
+      { id: "ph-uk-4", country: "United Kingdom", date: "2026-05-04", name: "Early May Bank Holiday" },
+      { id: "ph-uk-5", country: "United Kingdom", date: "2026-05-25", name: "Spring Bank Holiday" },
+      { id: "ph-uk-6", country: "United Kingdom", date: "2026-12-25", name: "Christmas Day" },
+      { id: "ph-us-1", country: "United States", date: "2026-01-01", name: "New Year's Day" },
+      { id: "ph-us-2", country: "United States", date: "2026-01-19", name: "Martin Luther King Jr. Day" },
+      { id: "ph-us-3", country: "United States", date: "2026-02-16", name: "Presidents' Day" },
+      { id: "ph-us-4", country: "United States", date: "2026-05-25", name: "Memorial Day" },
+      { id: "ph-us-5", country: "United States", date: "2026-07-04", name: "Independence Day" },
+      { id: "ph-us-6", country: "United States", date: "2026-12-25", name: "Christmas Day" },
+    ],
     interconnectionProcesses: lifecycle.interconnectionProcesses.slice().sort((left, right) => left.id.localeCompare(right.id)),
     projects: projectsSeed.projects.slice().sort((left, right) => left.id.localeCompare(right.id)),
     projectWeeklyReports: projectsSeed.projectWeeklyReports

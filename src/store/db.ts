@@ -276,6 +276,9 @@ interface DbActions {
   resetDemoData: () => void;
   exportData: () => string;
   importData: (raw: string) => { ok: boolean; message: string };
+  logCompChange: (employeeId: string, reason: string, previousSalaryEur: number | undefined, newSalaryEur: number | undefined, userId: string) => void;
+  addPublicHoliday: (payload: { country: string; date: string; name: string }) => string;
+  deletePublicHoliday: (id: string) => void;
   addTaskAttachment: (taskId: string, file: File, userId: string) => void;
   removeTaskAttachment: (attachmentId: string) => void;
   processReminders: () => void;
@@ -3977,6 +3980,8 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           hrProvisionRequests: Array.isArray(data.hrProvisionRequests) ? data.hrProvisionRequests : state.hrProvisionRequests,
           hrExpenses: Array.isArray(data.hrExpenses) ? data.hrExpenses : state.hrExpenses,
           hrAuditLogs: Array.isArray(data.hrAuditLogs) ? data.hrAuditLogs : state.hrAuditLogs,
+          hrCompChangeLogs: Array.isArray(data.hrCompChangeLogs) ? data.hrCompChangeLogs : [],
+          hrPublicHolidays: Array.isArray(data.hrPublicHolidays) ? data.hrPublicHolidays : [],
           opsRequests: Array.isArray(data.opsRequests) ? data.opsRequests : state.opsRequests,
           opsCases: Array.isArray(data.opsCases) ? data.opsCases : state.opsCases,
           opsMonitoringSignals: Array.isArray(data.opsMonitoringSignals) ? data.opsMonitoringSignals : state.opsMonitoringSignals,
@@ -3989,6 +3994,35 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         return { ok: false, message: "Invalid JSON." };
       }
     },
+    logCompChange: (employeeId, reason, previousSalaryEur, newSalaryEur, userId) =>
+      set((state) => ({
+        ...state,
+        hrCompChangeLogs: [
+          ...state.hrCompChangeLogs,
+          {
+            id: uid("ccl"),
+            employeeId,
+            changedByUserId: userId,
+            changedAt: new Date().toISOString(),
+            reason,
+            previousSalaryEur,
+            newSalaryEur,
+          },
+        ],
+      })),
+    addPublicHoliday: (payload) => {
+      const id = uid("ph");
+      set((state) => ({
+        ...state,
+        hrPublicHolidays: [...state.hrPublicHolidays, { id, ...payload }],
+      }));
+      return id;
+    },
+    deletePublicHoliday: (id) =>
+      set((state) => ({
+        ...state,
+        hrPublicHolidays: state.hrPublicHolidays.filter((h) => h.id !== id),
+      })),
     addTaskAttachment: (taskId, file, userId) =>
       set((state) => {
         const task = state.tasks.find((t) => t.id === taskId);
@@ -4126,7 +4160,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 25,
+    version: 26,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {

@@ -15,6 +15,13 @@ function employeeName(row: Pick<HrEmployee, "firstName" | "lastName">): string {
   return `${row.firstName} ${row.lastName}`.trim();
 }
 
+export function formatDate(iso?: string): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 function optionalString(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
@@ -106,6 +113,9 @@ export function HrPeoplePageV2() {
   const [isModalOpen, setModalOpen] = useState(false);
   const [formTab, setFormTab] = useState<EmployeeFormTab>("Profile");
   const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [deactivateTarget, setDeactivateTarget] = useState<HrEmployee | null>(null);
+  const [deactivateReason, setDeactivateReason] = useState("");
+  const [exitNotes, setExitNotes] = useState("");
 
   const legalEntityOptions = useMemo(() => {
     const entities = state.hrLegalEntities.map((entity) => entity.id);
@@ -251,6 +261,13 @@ export function HrPeoplePageV2() {
       return;
     }
 
+    const emailLower = normalized.email.toLowerCase();
+    const duplicate = state.hrEmployees.find(e => e.email.toLowerCase() === emailLower);
+    if (duplicate && (!editingEmployeeId || duplicate.id !== editingEmployeeId)) {
+      setFormErrors(["⚠ An employee with this email already exists."]);
+      return;
+    }
+
     if (editingEmployeeId) {
       const existing = state.hrEmployees.find((row) => row.id === editingEmployeeId);
       if (!existing) return;
@@ -265,11 +282,53 @@ export function HrPeoplePageV2() {
   }
 
   function toggleEmployeeActive(employee: HrEmployee) {
+    if (employee.active) {
+      setDeactivateTarget(employee);
+      setDeactivateReason("");
+      setExitNotes("");
+    } else {
+      state.updateHrEmployee({
+        ...employee,
+        active: true,
+        endDate: undefined,
+      });
+    }
+  }
+
+  function confirmDeactivation() {
+    if (!deactivateTarget || !deactivateReason) return;
     state.updateHrEmployee({
-      ...employee,
-      active: !employee.active,
-      endDate: employee.active ? new Date().toISOString().slice(0, 10) : undefined,
+      ...deactivateTarget,
+      active: false,
+      endDate: new Date().toISOString().slice(0, 10),
     });
+    setDeactivateTarget(null);
+    setDeactivateReason("");
+    setExitNotes("");
+  }
+
+  function exportCSV() {
+    const headers = ["Name","Email","Department","Job Title","Entity","Employment Type","Start Date","Status"];
+    const csvRows = [headers.join(",")];
+    rows.forEach(emp => {
+      csvRows.push([
+        emp.displayName || `${emp.firstName} ${emp.lastName}`,
+        emp.email,
+        departmentById.get(emp.departmentId) ?? "",
+        emp.jobTitle ?? "",
+        emp.legalEntityId,
+        emp.employmentType,
+        emp.startDate,
+        emp.active ? "Active" : "Inactive",
+      ].map(v => `"${(v ?? "").replace(/"/g, '""')}"`).join(","));
+    });
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "employees.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -277,9 +336,10 @@ export function HrPeoplePageV2() {
       <Card
         title="People"
         actions={
-          <Button size="sm" onClick={openCreateModal}>
-            Add employee
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={exportCSV}>Export CSV</Button>
+            <Button size="sm" onClick={openCreateModal}>Add employee</Button>
+          </div>
         }
       >
         <div className="mb-3 grid gap-2 md:grid-cols-3">
@@ -411,6 +471,51 @@ export function HrPeoplePageV2() {
           }
         }}
       />
+
+      {deactivateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="mb-4 text-lg font-semibold text-slate-800">Confirm Deactivation</h2>
+            <p className="mb-4 text-sm text-slate-600">
+              You are about to deactivate{" "}
+              <span className="font-medium">{deactivateTarget.displayName || employeeName(deactivateTarget)}</span>.
+            </p>
+            <div className="mb-3">
+              <FieldLabel>Reason for leaving *</FieldLabel>
+              <select value={deactivateReason} onChange={(e) => setDeactivateReason(e.target.value)}>
+                <option value="">Select a reason...</option>
+                <option value="Resignation">Resignation</option>
+                <option value="Termination">Termination</option>
+                <option value="End of Contract">End of Contract</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="mb-4">
+              <FieldLabel>Exit interview notes</FieldLabel>
+              <textarea
+                className="w-full rounded border border-slate-300 p-2 text-sm"
+                rows={3}
+                value={exitNotes}
+                onChange={(e) => setExitNotes(e.target.value)}
+                placeholder="Optional notes..."
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setDeactivateTarget(null)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={!deactivateReason}
+                onClick={confirmDeactivation}
+              >
+                Confirm Deactivate
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

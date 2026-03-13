@@ -49,9 +49,9 @@ function seatStatusClass(status: HrSoftwareSeat["status"]): string {
   return "bg-slate-100 text-slate-700";
 }
 
-function assetStatusClass(status: "Available" | "Assigned" | "Returned" | "Retired"): string {
+function assetStatusClass(status: string): string {
   if (status === "Assigned") return "bg-emerald-100 text-emerald-700";
-  if (status === "Retired") return "bg-rose-100 text-rose-700";
+  if (status === "Retired" || status === "Lost" || status === "Stolen") return "bg-rose-100 text-rose-700";
   if (status === "Returned") return "bg-amber-100 text-amber-700";
   return "bg-slate-100 text-slate-700";
 }
@@ -100,7 +100,7 @@ export function HrAssetsPage() {
   const [assetName, setAssetName] = useState("");
   const [assetCategory, setAssetCategory] = useState<HrAssetCategory>("Laptop");
   const [assetNotes, setAssetNotes] = useState("");
-  const [assetStatusFilter, setAssetStatusFilter] = useState<"" | "Available" | "Assigned" | "Returned" | "Retired">("");
+  const [assetStatusFilter, setAssetStatusFilter] = useState<"" | "Available" | "Assigned" | "Returned" | "Retired" | "Lost" | "Stolen">("");
   const [assetCategoryFilter, setAssetCategoryFilter] = useState<"" | HrAssetCategory>("");
   const [assetSearch, setAssetSearch] = useState("");
 
@@ -144,6 +144,12 @@ export function HrAssetsPage() {
   const [seatAssignEmployeeId, setSeatAssignEmployeeId] = useState("");
   const [seatAssignEmail, setSeatAssignEmail] = useState("");
   const [seatAssignNote, setSeatAssignNote] = useState("");
+
+  const [assetHistoryId, setAssetHistoryId] = useState<string | null>(null);
+  const [returnConditionModal, setReturnConditionModal] = useState<string | null>(null);
+  const [returnConditionChoice, setReturnConditionChoice] = useState<"Good" | "Damaged" | "Needs Replacement">("Good");
+  const [lostStolenModal, setLostStolenModal] = useState<{ assetId: string; status: "Lost" | "Stolen" } | null>(null);
+  const [incidentNote, setIncidentNote] = useState("");
 
   const hrSoftwareProducts = state.hrSoftwareProducts ?? [];
   const hrAssetAssignments = state.hrAssetAssignments ?? [];
@@ -742,6 +748,8 @@ export function HrAssetsPage() {
                   <option value="Assigned">Assigned</option>
                   <option value="Returned">Returned</option>
                   <option value="Retired">Retired</option>
+                  <option value="Lost">Lost</option>
+                  <option value="Stolen">Stolen</option>
                 </select>
               </div>
               <div>
@@ -783,7 +791,7 @@ export function HrAssetsPage() {
                     const activeAssignment = openAssetAssignments.find((assignment) => assignment.assetId === asset.id);
                     const assignee = activeAssignment ? employeeById.get(activeAssignment.employeeId) : undefined;
                     return (
-                      <tr key={asset.id}>
+                      <tr key={asset.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setAssetHistoryId(asset.id)}>
                         <td>
                           <p className="font-semibold text-slate-700">{asset.name}</p>
                           <p className="text-[11px] text-slate-500">{asset.category}</p>
@@ -794,15 +802,25 @@ export function HrAssetsPage() {
                         <td>{assignee ? displayEmployee(assignee) : "-"}</td>
                         <td>{activeAssignment ? activeAssignment.acceptanceStatus : "-"}</td>
                         <td>
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
                             {asset.status === "Assigned" ? (
-                              <Button size="sm" variant="secondary" onClick={() => state.returnHrAsset(asset.id)}>
+                              <Button size="sm" variant="secondary" onClick={() => { setReturnConditionModal(asset.id); setReturnConditionChoice("Good"); }}>
                                 Return
                               </Button>
                             ) : null}
-                            {asset.status !== "Retired" ? (
+                            {asset.status !== "Retired" && asset.status !== "Lost" && asset.status !== "Stolen" ? (
                               <Button size="sm" variant="secondary" onClick={() => state.retireHrAsset(asset.id)}>
                                 Retire
+                              </Button>
+                            ) : null}
+                            {asset.status !== "Lost" && asset.status !== "Stolen" && asset.status !== "Retired" ? (
+                              <Button size="sm" variant="secondary" onClick={() => { setLostStolenModal({ assetId: asset.id, status: "Lost" }); setIncidentNote(""); }}>
+                                Mark Lost
+                              </Button>
+                            ) : null}
+                            {asset.status !== "Lost" && asset.status !== "Stolen" && asset.status !== "Retired" ? (
+                              <Button size="sm" variant="secondary" onClick={() => { setLostStolenModal({ assetId: asset.id, status: "Stolen" }); setIncidentNote(""); }}>
+                                Mark Stolen
                               </Button>
                             ) : null}
                           </div>
@@ -1567,6 +1585,138 @@ export function HrAssetsPage() {
           </div>
         </ModalShell>
       )}
+
+      {assetHistoryId && (() => {
+        const historyAsset = state.hrAssets.find((a) => a.id === assetHistoryId);
+        const assignments = (state.hrAssetAssignments ?? [])
+          .filter((a) => a.assetId === assetHistoryId)
+          .sort((a, b) => b.assignedAt.localeCompare(a.assignedAt));
+        return (
+          <ModalShell title={`Assignment History — ${historyAsset?.name ?? assetHistoryId}`} onClose={() => setAssetHistoryId(null)}>
+            {assignments.length === 0 ? (
+              <p className="py-4 text-center text-sm text-slate-500">No prior assignments.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Assigned At</th>
+                    <th>Returned At</th>
+                    <th>Acceptance</th>
+                    <th>Return Condition</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assignments.map((assignment) => {
+                    const emp = employeeById.get(assignment.employeeId);
+                    return (
+                      <tr key={assignment.id}>
+                        <td>{emp ? displayEmployee(emp) : assignment.employeeId}</td>
+                        <td>{formatDateTime(assignment.assignedAt)}</td>
+                        <td>{formatDateTime(assignment.returnedAt)}</td>
+                        <td>
+                          <Badge className={assignment.acceptanceStatus === "Accepted" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}>
+                            {assignment.acceptanceStatus}
+                          </Badge>
+                        </td>
+                        <td>{assignment.returnCondition ?? "-"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </ModalShell>
+        );
+      })()}
+
+      {returnConditionModal && (
+        <ModalShell title="Device condition on return" onClose={() => setReturnConditionModal(null)}>
+          <div className="space-y-3">
+            <div>
+              <FieldLabel>Condition</FieldLabel>
+              <div className="flex flex-col gap-2">
+                {(["Good", "Damaged", "Needs Replacement"] as const).map((option) => (
+                  <label key={option} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      name="returnCondition"
+                      checked={returnConditionChoice === option}
+                      onChange={() => setReturnConditionChoice(option)}
+                    />
+                    {option}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setReturnConditionModal(null)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const assetId = returnConditionModal;
+                  state.returnHrAsset(assetId);
+                  const assignment = (state.hrAssetAssignments ?? []).find((a) => a.assetId === assetId && a.returnedAt);
+                  if (assignment) {
+                    const updated = { ...assignment, returnCondition: returnConditionChoice };
+                    const updatedAssignments = (state.hrAssetAssignments ?? []).map((a) => (a.id === assignment.id ? updated : a));
+                    useAppStore.setState({ hrAssetAssignments: updatedAssignments });
+                  }
+                  setReturnConditionModal(null);
+                }}
+              >
+                Confirm return
+              </Button>
+            </div>
+          </div>
+        </ModalShell>
+      )}
+
+      {lostStolenModal && (() => {
+        const lsAsset = state.hrAssets.find((a) => a.id === lostStolenModal.assetId);
+        if (!lsAsset) return null;
+        return (
+          <ModalShell title={`Mark asset as ${lostStolenModal.status}`} onClose={() => setLostStolenModal(null)}>
+            <div className="space-y-3">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+                Asset: <span className="font-semibold">{lsAsset.name}</span> ({lsAsset.category})
+              </div>
+              <div>
+                <FieldLabel>Incident note</FieldLabel>
+                <textarea
+                  className="min-h-[100px] w-full rounded-md border border-slate-300 p-2 text-xs"
+                  value={incidentNote}
+                  onChange={(event) => setIncidentNote(event.target.value)}
+                  placeholder={`Describe the ${lostStolenModal.status.toLowerCase()} incident...`}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setLostStolenModal(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const now = new Date().toISOString();
+                    state.updateHrAsset({
+                      ...lsAsset,
+                      status: lostStolenModal.status,
+                      notes: incidentNote.trim() || lsAsset.notes,
+                      updatedAt: now,
+                    });
+                    setIncidentNote("");
+                    setLostStolenModal(null);
+                  }}
+                >
+                  Confirm
+                </Button>
+              </div>
+            </div>
+          </ModalShell>
+        );
+      })()}
     </div>
   );
 }

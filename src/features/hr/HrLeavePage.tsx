@@ -5,7 +5,7 @@ import { dateRangesOverlap, workingDaysBetween } from "../../store/hrUtils";
 import { useAppStore } from "../../store/db";
 import { HrEmployee, HrLeaveActionType, HrLeaveRequest, HrLeaveStatus, HrLeaveType } from "../../store/types";
 
-const leaveTypes: HrLeaveType[] = ["Annual", "Sick", "Other"];
+const leaveTypes: HrLeaveType[] = ["Annual", "Sick", "Marriage", "Bereavement", "Paternity", "Maternity", "Unpaid", "Other"];
 const activeLeaveStatuses: HrLeaveStatus[] = ["PendingManager", "PendingHR", "Approved"];
 const managerConflictStatuses: HrLeaveStatus[] = ["PendingManager", "PendingHR", "Approved"];
 const hrConflictStatuses: HrLeaveStatus[] = ["PendingHR", "Approved"];
@@ -200,6 +200,8 @@ type LeaveRequestModalProps = {
     startDate: string;
     endDate: string;
     employeeComment?: string;
+    halfDay?: boolean;
+    doctorNoteFileName?: string;
   }) => void;
 };
 
@@ -210,8 +212,11 @@ function LeaveRequestModal(props: LeaveRequestModalProps) {
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(tomorrow);
   const [employeeComment, setEmployeeComment] = useState("");
+  const [halfDay, setHalfDay] = useState(false);
+  const [doctorNoteFileName, setDoctorNoteFileName] = useState<string | undefined>(undefined);
 
-  const totalDays = workingDaysBetween(startDate, endDate);
+  const rawTotalDays = workingDaysBetween(startDate, endDate);
+  const totalDays = halfDay && leaveType === "Annual" ? 0.5 : rawTotalDays;
   const overlapExists = props.existingRows.some(
     (row) =>
       activeLeaveStatuses.includes(row.status) &&
@@ -257,6 +262,35 @@ function LeaveRequestModal(props: LeaveRequestModalProps) {
           </div>
         </div>
 
+        {leaveType === "Annual" && (
+          <div className="mb-3">
+            <FieldLabel>Duration</FieldLabel>
+            <div className="flex gap-2">
+              <Button size="sm" variant={!halfDay ? "primary" : "secondary"} onClick={() => setHalfDay(false)}>
+                Full day
+              </Button>
+              <Button size="sm" variant={halfDay ? "primary" : "secondary"} onClick={() => setHalfDay(true)}>
+                Half day
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {leaveType === "Sick" && (
+          <div className="mb-3">
+            <FieldLabel>Upload Doctor's Note (optional)</FieldLabel>
+            <input
+              type="file"
+              className="block w-full text-xs text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                setDoctorNoteFileName(file ? file.name : undefined);
+              }}
+            />
+            {doctorNoteFileName && <p className="mt-1 text-xs text-slate-500">Selected: {doctorNoteFileName}</p>}
+          </div>
+        )}
+
         <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs">
           <p className="font-semibold text-slate-700">Business day preview: {totalDays > 0 ? totalDays : 0} day(s)</p>
           <p className="text-slate-600">
@@ -289,6 +323,8 @@ function LeaveRequestModal(props: LeaveRequestModalProps) {
                 startDate,
                 endDate,
                 employeeComment: employeeComment.trim() ? employeeComment.trim() : undefined,
+                halfDay: leaveType === "Annual" && halfDay ? true : undefined,
+                doctorNoteFileName: leaveType === "Sick" && doctorNoteFileName ? doctorNoteFileName : undefined,
               })
             }
             disabled={submitDisabled}
@@ -323,6 +359,8 @@ export function HrLeavePage() {
   const [actionModal, setActionModal] = useState<LeaveActionModalState>(null);
   const [actionError, setActionError] = useState("");
   const [employeeStatusFilter, setEmployeeStatusFilter] = useState<"" | HrLeaveStatus>("");
+  const [employeeNameSearch, setEmployeeNameSearch] = useState("");
+  const [employeeLeaveTypeFilter, setEmployeeLeaveTypeFilter] = useState<"" | HrLeaveType>("");
   const [managerMemberFilter, setManagerMemberFilter] = useState("");
   const [managerDateFrom, setManagerDateFrom] = useState("");
   const [managerDateTo, setManagerDateTo] = useState("");
@@ -421,8 +459,16 @@ export function HrLeavePage() {
   const employeeRows = useMemo(() => {
     let rows = state.hrLeaveRequests.filter((row) => row.employeeId === employeeActorId);
     if (employeeStatusFilter) rows = rows.filter((row) => row.status === employeeStatusFilter);
+    if (employeeLeaveTypeFilter) rows = rows.filter((row) => row.leaveType === employeeLeaveTypeFilter);
+    if (employeeNameSearch.trim()) {
+      const term = employeeNameSearch.trim().toLowerCase();
+      rows = rows.filter((row) => {
+        const emp = employeeById.get(row.employeeId);
+        return emp ? displayEmployee(emp).toLowerCase().includes(term) : false;
+      });
+    }
     return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  }, [employeeActorId, employeeStatusFilter, state.hrLeaveRequests]);
+  }, [employeeActorId, employeeStatusFilter, employeeLeaveTypeFilter, employeeNameSearch, employeeById, state.hrLeaveRequests]);
 
   const employeePendingCount = useMemo(
     () => employeeRows.filter((row) => row.status === "PendingManager" || row.status === "PendingHR").length,
@@ -614,6 +660,8 @@ export function HrLeavePage() {
     startDate: string;
     endDate: string;
     employeeComment?: string;
+    halfDay?: boolean;
+    doctorNoteFileName?: string;
   }) => {
     if (!employeeActor) return;
     state.createHrLeaveRequest({
@@ -622,6 +670,8 @@ export function HrLeavePage() {
       startDate: payload.startDate,
       endDate: payload.endDate,
       employeeComment: payload.employeeComment,
+      halfDay: payload.halfDay,
+      doctorNoteFileName: payload.doctorNoteFileName,
     });
     setRequestModalOpen(false);
   };
@@ -714,8 +764,27 @@ export function HrLeavePage() {
             </div>
 
             <div className="mb-3 flex flex-wrap items-end gap-2">
-              <div className="w-56">
-                <FieldLabel>Status filter</FieldLabel>
+              <div className="w-48">
+                <FieldLabel>Employee name</FieldLabel>
+                <input
+                  type="text"
+                  value={employeeNameSearch}
+                  onChange={(event) => setEmployeeNameSearch(event.target.value)}
+                  placeholder="Search by name…"
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"
+                />
+              </div>
+              <div className="w-40">
+                <FieldLabel>Leave type</FieldLabel>
+                <select value={employeeLeaveTypeFilter} onChange={(event) => setEmployeeLeaveTypeFilter((event.target.value as HrLeaveType) || "")}>
+                  <option value="">All</option>
+                  {leaveTypes.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-40">
+                <FieldLabel>Status</FieldLabel>
                 <select value={employeeStatusFilter} onChange={(event) => setEmployeeStatusFilter((event.target.value as HrLeaveStatus) || "")}>
                   <option value="">All</option>
                   <option value="PendingManager">PendingManager</option>
@@ -746,7 +815,7 @@ export function HrLeavePage() {
                 <tbody>
                   {employeeRows.map((row) => (
                     <tr key={row.id}>
-                      <td>{row.leaveType}</td>
+                      <td>{row.leaveType}{row.doctorNoteFileName ? " 📎" : ""}</td>
                       <td>
                         {row.startDate} - {row.endDate}
                       </td>
@@ -758,6 +827,9 @@ export function HrLeavePage() {
                       <td className="text-xs">
                         <p>Manager: {formatDateTime(row.managerApprovedAt)}</p>
                         <p>HR: {formatDateTime(row.hrApprovedAt)}</p>
+                        {row.managerApprovedAt && row.hrApprovedAt && row.hrApprovedAt < row.managerApprovedAt && (
+                          <Badge className="bg-amber-100 text-amber-700">⚠ Approval order anomaly</Badge>
+                        )}
                       </td>
                       <td className="text-xs text-slate-600">{row.employeeComment ?? "-"}</td>
                       <td className="text-xs text-slate-600">{row.rejectionReason ?? "-"}</td>
@@ -862,15 +934,16 @@ export function HrLeavePage() {
                           return (
                             <tr key={row.id}>
                               <td>{employee ? displayEmployee(employee) : row.employeeId}</td>
-                              <td>{row.leaveType}</td>
+                              <td>{row.leaveType}{row.doctorNoteFileName ? " 📎" : ""}</td>
                               <td>
                                 {row.startDate} - {row.endDate}
                               </td>
                               <td>{row.totalDays}</td>
                               <td className="text-xs text-slate-600">{row.employeeComment ?? "-"}</td>
                               <td>
-                                <div className="flex flex-wrap gap-1">
-                                  <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_APPROVE" })}>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {row.totalDays === 0 && <Badge className="bg-amber-100 text-amber-700">⚠ 0 days</Badge>}
+                                  <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_APPROVE" })} disabled={row.totalDays === 0}>
                                     Approve
                                   </Button>
                                   <Button size="sm" variant="secondary" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_REJECT" })}>
@@ -1033,15 +1106,16 @@ export function HrLeavePage() {
                         <tr key={row.id}>
                           <td>{employee ? displayEmployee(employee) : row.employeeId}</td>
                           <td>{departmentName}</td>
-                          <td>{row.leaveType}</td>
+                          <td>{row.leaveType}{row.doctorNoteFileName ? " 📎" : ""}</td>
                           <td>
                             {row.startDate} - {row.endDate}
                           </td>
                           <td>{row.totalDays}</td>
                           <td className="text-xs text-slate-600">{row.employeeComment ?? "-"}</td>
                           <td>
-                            <div className="flex flex-wrap gap-1">
-                              <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "HR_APPROVE" })}>
+                            <div className="flex flex-wrap items-center gap-1">
+                              {row.totalDays === 0 && <Badge className="bg-amber-100 text-amber-700">⚠ 0 days</Badge>}
+                              <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "HR_APPROVE" })} disabled={row.totalDays === 0}>
                                 Approve
                               </Button>
                               <Button size="sm" variant="secondary" onClick={() => setActionModal({ requestId: row.id, action: "HR_REJECT" })}>
@@ -1173,7 +1247,7 @@ export function HrLeavePage() {
                           <td>{departmentName}</td>
                           <td>{manager ? displayEmployee(manager) : "-"}</td>
                           <td>{employee?.countryOfEmployment ?? "-"}</td>
-                          <td>{row.leaveType}</td>
+                          <td>{row.leaveType}{row.doctorNoteFileName ? " 📎" : ""}</td>
                           <td>
                             {row.startDate} - {row.endDate}
                           </td>
@@ -1182,7 +1256,12 @@ export function HrLeavePage() {
                             <Badge className={leaveStatusClass(row.status)}>{row.status}</Badge>
                           </td>
                           <td>{formatDateTime(row.managerApprovedAt)}</td>
-                          <td>{formatDateTime(row.hrApprovedAt)}</td>
+                          <td>
+                            {formatDateTime(row.hrApprovedAt)}
+                            {row.managerApprovedAt && row.hrApprovedAt && row.hrApprovedAt < row.managerApprovedAt && (
+                              <Badge className="ml-1 bg-amber-100 text-amber-700">⚠ Approval order anomaly</Badge>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}

@@ -86,7 +86,10 @@ export function HrPayrollPage() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const [draft, setDraft] = useState<CompensationDraft | null>(null);
   const [isCompModalOpen, setCompModalOpen] = useState(false);
+  const [compConfirmTarget, setCompConfirmTarget] = useState<string | null>(null);
+  const [compChangeReason, setCompChangeReason] = useState("");
   const [snapshotNotes, setSnapshotNotes] = useState("");
+  const [compHistoryOpen, setCompHistoryOpen] = useState(false);
   const [fxDraft, setFxDraft] = useState({
     from: "USD" as HrCurrencyCode,
     rate: 0.94,
@@ -169,7 +172,17 @@ export function HrPayrollPage() {
 
   function saveCompensation() {
     if (!draft) return;
+    const existing = state.hrCompensations.find((row) => row.employeeId === draft.employeeId);
+    const prevEur = existing?.baseSalaryNet;
+    const newEur = draft.baseSalaryNet;
     state.upsertHrCompensation(toCompensationPayload(draft));
+    state.logCompChange(
+      draft.employeeId,
+      compChangeReason || "Compensation updated",
+      prevEur,
+      newEur,
+      state.activeUserId || state.users[0]?.id || "",
+    );
     setCompModalOpen(false);
   }
 
@@ -336,9 +349,39 @@ export function HrPayrollPage() {
                     </td>
                     <td>{line.currency}</td>
                     <td>{line.net.toLocaleString()}</td>
-                    <td>{line.employerCost.toLocaleString()}</td>
-                    <td>{line.bonusesTotal.toLocaleString()}</td>
-                    <td>{line.netEur.toLocaleString()}</td>
+                    <td>
+                      <span>{line.employerCost.toLocaleString()}</span>
+                      {line.currency !== "EUR" && (() => {
+                        const fxEntry = latestFxByCurrency.get(line.currency);
+                        return fxEntry ? (
+                          <p className="text-[10px] text-slate-400" title={`Rate: ${fxEntry.rate} effective ${fxEntry.effectiveAt}`}>
+                            Rate date: {new Date(fxEntry.effectiveAt).toLocaleDateString()}
+                          </p>
+                        ) : null;
+                      })()}
+                    </td>
+                    <td>
+                      <span>{line.bonusesTotal.toLocaleString()}</span>
+                      {line.currency !== "EUR" && line.bonusesTotal > 0 && (() => {
+                        const fxEntry = latestFxByCurrency.get(line.currency);
+                        return fxEntry ? (
+                          <p className="text-[10px] text-slate-400" title={`Rate: ${fxEntry.rate} effective ${fxEntry.effectiveAt}`}>
+                            Rate date: {new Date(fxEntry.effectiveAt).toLocaleDateString()}
+                          </p>
+                        ) : null;
+                      })()}
+                    </td>
+                    <td>
+                      <span>{line.netEur.toLocaleString()}</span>
+                      {line.currency !== "EUR" && (() => {
+                        const fxEntry = latestFxByCurrency.get(line.currency);
+                        return fxEntry ? (
+                          <p className="text-[10px] text-slate-400" title={`Rate: ${fxEntry.rate} effective ${fxEntry.effectiveAt}`}>
+                            Rate date: {new Date(fxEntry.effectiveAt).toLocaleDateString()}
+                          </p>
+                        ) : null;
+                      })()}
+                    </td>
                     <td>
                       <div className="flex flex-wrap gap-1">
                         {line.distributionBreakdown.map((entry) => (
@@ -354,7 +397,8 @@ export function HrPayrollPage() {
                         variant="secondary"
                         onClick={() => {
                           if (!employee) return;
-                          openCompensationModal(employee.id);
+                          setCompConfirmTarget(employee.id);
+                          setCompChangeReason("");
                         }}
                       >
                         Edit comp
@@ -457,6 +501,49 @@ export function HrPayrollPage() {
           </tbody>
         </table>
       </Card>
+
+      {compConfirmTarget && !isCompModalOpen && (() => {
+        const targetEmployee = employeeById.get(compConfirmTarget);
+        const targetName = targetEmployee ? employeeName(targetEmployee.firstName, targetEmployee.lastName) : compConfirmTarget;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCompConfirmTarget(null)}>
+            <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
+              <h3 className="mb-3 text-sm font-semibold text-slate-800">Confirm compensation edit</h3>
+              <p className="mb-3 text-xs text-slate-700">
+                You are about to edit compensation for <strong>{targetName}</strong>. This action will be logged.
+              </p>
+              <div className="mb-3">
+                <FieldLabel>Reason for change *</FieldLabel>
+                <textarea
+                  className="w-full rounded-md border border-slate-300 p-2 text-xs"
+                  rows={3}
+                  value={compChangeReason}
+                  onChange={(event) => setCompChangeReason(event.target.value)}
+                  placeholder="Minimum 10 characters…"
+                />
+                {compChangeReason.length > 0 && compChangeReason.length < 10 && (
+                  <p className="mt-1 text-[11px] text-rose-600">{10 - compChangeReason.length} more characters needed</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="secondary" onClick={() => setCompConfirmTarget(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={compChangeReason.trim().length < 10}
+                  onClick={() => {
+                    openCompensationModal(compConfirmTarget);
+                    setCompConfirmTarget(null);
+                  }}
+                >
+                  Confirm
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {isCompModalOpen && draft && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCompModalOpen(false)}>
@@ -706,6 +793,36 @@ export function HrPayrollPage() {
                   </div>
                 ))}
               </div>
+            </section>
+
+            <section className="mt-3 rounded-md border border-slate-200 p-3">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-slate-500"
+                onClick={() => setCompHistoryOpen((prev) => !prev)}
+              >
+                <span>Change History</span>
+                <span>{compHistoryOpen ? "▲" : "▼"}</span>
+              </button>
+              {compHistoryOpen && (() => {
+                const logs = state.hrCompChangeLogs
+                  .filter((log) => log.employeeId === draft.employeeId)
+                  .sort((a, b) => b.changedAt.localeCompare(a.changedAt));
+                if (logs.length === 0) return <p className="mt-2 text-xs text-slate-500">No change history.</p>;
+                return (
+                  <ul className="mt-2 space-y-2">
+                    {logs.map((log) => (
+                      <li key={log.id} className="rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-700">
+                        <p className="font-semibold">{new Date(log.changedAt).toLocaleString()}</p>
+                        <p>Reason: {log.reason}</p>
+                        {log.previousSalaryEur != null && <p>Previous: {log.previousSalaryEur.toLocaleString()} EUR</p>}
+                        {log.newSalaryEur != null && <p>New: {log.newSalaryEur.toLocaleString()} EUR</p>}
+                        <p className="text-slate-500">By: {log.changedByUserId}</p>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
             </section>
 
             <div className="mt-3 flex items-center justify-end gap-2">

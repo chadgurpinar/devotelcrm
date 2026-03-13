@@ -171,10 +171,27 @@ function buildDepartments(idFactory: SeedIdFactory, baseNowIso: string, count: n
     names.push(`Department ${names.length + 1}`);
   }
   const selected = names.slice(0, Math.max(count, baseNames.length));
+  const targetHeadcounts: Record<string, number> = {
+    Management: 5,
+    Sales: 8,
+    Interconnection: 6,
+    NOC: 10,
+    Routing: 6,
+    Product: 4,
+    Finance: 4,
+    "Human Resources": 3,
+    "Product Development": 8,
+    "Branding & Marketing": 5,
+    "Telecom Operations": 12,
+    Operations: 10,
+    "Software Development": 10,
+    "Business Development & Sales": 8,
+  };
   const rows: HrDepartment[] = selected.map((name) => ({
     id: idFactory.next("hrDepartment"),
     name,
     parentDepartmentId: undefined,
+    targetHeadcount: targetHeadcounts[name] ?? 5,
     createdAt: baseNowIso,
     updatedAt: baseNowIso,
   }));
@@ -510,6 +527,13 @@ function seedLeaveProfiles(baseNowIso: string): HrCountryLeaveProfile[] {
       sickLeaveDays: 10,
       carryOverPolicy: "Up to 5 days",
       resetPolicy: "January 1",
+      seniorityTiers: [
+        { minYears: 0, maxYears: 1, days: 14 },
+        { minYears: 1, maxYears: 5, days: 14 },
+        { minYears: 5, maxYears: 15, days: 20 },
+        { minYears: 15, maxYears: null, days: 26 },
+      ],
+      workingDays: [1, 2, 3, 4, 5],
       createdAt: baseNowIso,
       updatedAt: baseNowIso,
     },

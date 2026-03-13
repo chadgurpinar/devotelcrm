@@ -11,6 +11,7 @@ type OrganizationTab = "OrgChart" | "Departments" | "Analytics";
 type DepartmentForm = {
   name: string;
   parentDepartmentId: string;
+  departmentHeadEmployeeId: string;
 };
 
 type DepartmentHierarchyRow = {
@@ -24,6 +25,7 @@ function emptyForm(): DepartmentForm {
   return {
     name: "",
     parentDepartmentId: "",
+    departmentHeadEmployeeId: "",
   };
 }
 
@@ -36,6 +38,7 @@ export function HrOrganizationPageV2() {
 
   const [tab, setTab] = useState<OrganizationTab>("OrgChart");
   const [departmentSearch, setDepartmentSearch] = useState("");
+  const [entityFilter, setEntityFilter] = useState("All");
   const [includeInactive, setIncludeInactive] = useState(false);
   const [orgSearch, setOrgSearch] = useState("");
   const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(new Set());
@@ -81,6 +84,18 @@ export function HrOrganizationPageV2() {
       .filter((employee) => employee.active)
       .forEach((employee) => {
         map.set(employee.departmentId, (map.get(employee.departmentId) ?? 0) + 1);
+      });
+    return map;
+  }, [hrEmployees]);
+
+  const entitiesByDepartment = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    hrEmployees
+      .filter((employee) => employee.active && employee.legalEntityId)
+      .forEach((employee) => {
+        const set = map.get(employee.departmentId) ?? new Set();
+        set.add(employee.legalEntityId!);
+        map.set(employee.departmentId, set);
       });
     return map;
   }, [hrEmployees]);
@@ -152,12 +167,21 @@ export function HrOrganizationPageV2() {
       });
 
     const q = departmentSearch.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((entry) => {
-      const parentName = entry.department.parentDepartmentId ? departmentById.get(entry.department.parentDepartmentId) ?? "" : "";
-      return entry.department.name.toLowerCase().includes(q) || parentName.toLowerCase().includes(q);
-    });
-  }, [departmentById, departmentSearch, hrDepartments]);
+    let filtered = rows;
+    if (entityFilter !== "All") {
+      filtered = filtered.filter((entry) => {
+        const entities = entitiesByDepartment.get(entry.department.id);
+        return entities != null && entities.has(entityFilter);
+      });
+    }
+    if (q) {
+      filtered = filtered.filter((entry) => {
+        const parentName = entry.department.parentDepartmentId ? departmentById.get(entry.department.parentDepartmentId) ?? "" : "";
+        return entry.department.name.toLowerCase().includes(q) || parentName.toLowerCase().includes(q);
+      });
+    }
+    return filtered;
+  }, [departmentById, departmentSearch, entityFilter, entitiesByDepartment, hrDepartments]);
 
   const focusedChain = useMemo(() => {
     if (!focusedEmployeeId) return [];
@@ -216,6 +240,7 @@ export function HrOrganizationPageV2() {
     setForm({
       name: department.name,
       parentDepartmentId: department.parentDepartmentId ?? "",
+      departmentHeadEmployeeId: department.departmentHeadEmployeeId ?? "",
     });
     setModalOpen(true);
   }
@@ -229,11 +254,13 @@ export function HrOrganizationPageV2() {
         ...existing,
         name: form.name.trim(),
         parentDepartmentId: form.parentDepartmentId || undefined,
+        departmentHeadEmployeeId: form.departmentHeadEmployeeId || undefined,
       });
     } else {
       createHrDepartment({
         name: form.name.trim(),
         parentDepartmentId: form.parentDepartmentId || undefined,
+        departmentHeadEmployeeId: form.departmentHeadEmployeeId || undefined,
       });
     }
     setModalOpen(false);
@@ -386,13 +413,22 @@ export function HrOrganizationPageV2() {
           }
         >
           <div className="mb-3 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
-            <div className="md:col-span-2">
+            <div>
               <FieldLabel>Search</FieldLabel>
               <input
                 value={departmentSearch}
                 onChange={(event) => setDepartmentSearch(event.target.value)}
                 placeholder="Department or parent department..."
               />
+            </div>
+            <div>
+              <FieldLabel>Legal entity</FieldLabel>
+              <select value={entityFilter} onChange={(event) => setEntityFilter(event.target.value)}>
+                <option value="All">All</option>
+                <option value="USA">USA</option>
+                <option value="UK">UK</option>
+                <option value="TR">TR</option>
+              </select>
             </div>
             <div className="rounded-md border border-slate-200 bg-white p-2">
               <p className="text-[11px] uppercase tracking-wide text-slate-400">Departments</p>
@@ -410,7 +446,11 @@ export function HrOrganizationPageV2() {
                 <tr>
                   <th>Department</th>
                   <th>Parent department</th>
+                  <th>Department Head</th>
                   <th>Headcount</th>
+                  <th>Target</th>
+                  <th>Filled</th>
+                  <th>Vacant</th>
                   <th>Updated</th>
                   <th />
                 </tr>
@@ -434,7 +474,29 @@ export function HrOrganizationPageV2() {
                     </td>
                     <td>{entry.department.parentDepartmentId ? departmentById.get(entry.department.parentDepartmentId) ?? "-" : "-"}</td>
                     <td>
+                      {(() => {
+                        const head = entry.department.departmentHeadEmployeeId
+                          ? hrEmployees.find((e) => e.id === entry.department.departmentHeadEmployeeId)
+                          : undefined;
+                        return head ? `${head.firstName} ${head.lastName}` : "-";
+                      })()}
+                    </td>
+                    <td>
                       <Badge className="bg-slate-100 text-slate-700">{headcountByDepartment.get(entry.department.id) ?? 0}</Badge>
+                    </td>
+                    <td>{entry.department.targetHeadcount ?? "-"}</td>
+                    <td>{headcountByDepartment.get(entry.department.id) ?? 0}</td>
+                    <td>
+                      {entry.department.targetHeadcount != null
+                        ? (() => {
+                            const vacant = entry.department.targetHeadcount - (headcountByDepartment.get(entry.department.id) ?? 0);
+                            return (
+                              <span className={vacant > 0 ? "text-rose-600" : "text-emerald-600"}>
+                                {vacant}
+                              </span>
+                            );
+                          })()
+                        : "-"}
                     </td>
                     <td>{new Date(entry.department.updatedAt).toLocaleString()}</td>
                     <td>
@@ -602,6 +664,22 @@ export function HrOrganizationPageV2() {
                     .map((department) => (
                       <option key={department.id} value={department.id}>
                         {department.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Department Head</FieldLabel>
+                <select
+                  value={form.departmentHeadEmployeeId}
+                  onChange={(event) => setForm((prev) => ({ ...prev, departmentHeadEmployeeId: event.target.value }))}
+                >
+                  <option value="">None</option>
+                  {hrEmployees
+                    .filter((employee) => employee.active)
+                    .map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.firstName} {employee.lastName}
                       </option>
                     ))}
                 </select>

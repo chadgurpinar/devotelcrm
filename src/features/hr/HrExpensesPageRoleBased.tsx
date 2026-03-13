@@ -29,6 +29,8 @@ type ClaimFormState = {
   travelStartDate: string;
   travelEndDate: string;
   advancePurpose: string;
+  paymentMethod: "" | "CompanyCard" | "Personal";
+  costCenterTag: string;
 };
 
 type ExpenseMutationPayload = Omit<
@@ -112,6 +114,8 @@ function defaultClaimForm(employeeId: string, claimType: HrExpense["claimType"])
     travelStartDate: "",
     travelEndDate: "",
     advancePurpose: "",
+    paymentMethod: "",
+    costCenterTag: "",
   };
 }
 
@@ -142,6 +146,8 @@ function buildPayloadFromForm(form: ClaimFormState): ExpenseMutationPayload | nu
     travelStartDate: claimType === "Advance" ? form.travelStartDate || undefined : undefined,
     travelEndDate: claimType === "Advance" ? form.travelEndDate || undefined : undefined,
     advancePurpose: claimType === "Advance" ? form.advancePurpose.trim() || undefined : undefined,
+    paymentMethod: form.paymentMethod || undefined,
+    costCenterTag: form.costCenterTag.trim() || undefined,
   };
 }
 
@@ -196,6 +202,8 @@ export function HrExpensesPageRoleBased() {
   const [drawerComment, setDrawerComment] = useState("");
   const [drawerActionComment, setDrawerActionComment] = useState("");
   const [pageMessage, setPageMessage] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<ExpenseMutationPayload | null>(null);
 
   const employeeById = useMemo(() => new Map(state.hrEmployees.map((employee) => [employee.id, employee])), [state.hrEmployees]);
   const departmentById = useMemo(() => new Map(state.hrDepartments.map((department) => [department.id, department.name])), [state.hrDepartments]);
@@ -276,7 +284,7 @@ export function HrExpensesPageRoleBased() {
           (row.advancePurpose ?? "").toLowerCase().includes(query),
       );
     }
-    return rows.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }, [employeeRangeFilter, employeeSearch, employeeStatusFilter, employeeTypeFilter, myClaims]);
 
   const managerRows = useMemo(() => {
@@ -319,7 +327,7 @@ export function HrExpensesPageRoleBased() {
   const financeRows = useMemo(() => {
     let rows = financeFilterBaseRows.filter((row) => row.status === financeQueue);
     if (financeStatusFilter) rows = rows.filter((row) => row.status === financeStatusFilter);
-    return rows.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }, [financeFilterBaseRows, financeQueue, financeStatusFilter]);
 
   const managerPendingAmountEUR = useMemo(
@@ -431,6 +439,7 @@ export function HrExpensesPageRoleBased() {
     modalAmountValid &&
     claimForm.description.trim().length > 0 &&
     (claimForm.claimType === "Advance" ? Boolean(claimForm.advanceType) : claimForm.category.trim().length > 0) &&
+    Boolean(claimForm.paymentMethod) &&
     !missingFx;
 
   function auditActorLabel(userId: string): string {
@@ -466,11 +475,13 @@ export function HrExpensesPageRoleBased() {
       travelStartDate: toDateInputValue(expense.travelStartDate),
       travelEndDate: toDateInputValue(expense.travelEndDate),
       advancePurpose: expense.advancePurpose ?? "",
+      paymentMethod: expense.paymentMethod ?? "",
+      costCenterTag: expense.costCenterTag ?? "",
     });
     setClaimModal({ mode: "edit", claimType: expense.claimType, expenseId: expense.id });
   }
 
-  function submitClaimModal() {
+  function submitClaimModal(forceSubmit = false) {
     if (!claimModal) return;
     const payload = buildPayloadFromForm(claimForm);
     if (!payload) {
@@ -482,6 +493,20 @@ export function HrExpensesPageRoleBased() {
       return;
     }
     if (claimModal.mode === "create") {
+      if (!forceSubmit) {
+        const isDuplicate = state.hrExpenses.some(
+          (e) =>
+            e.employeeId === payload.employeeId &&
+            Math.abs(e.amount - payload.amount) < 0.01 &&
+            e.category === payload.category &&
+            Math.abs(new Date(e.createdAt).getTime() - Date.now()) < 2 * 86400000,
+        );
+        if (isDuplicate) {
+          setPendingPayload(payload);
+          setDuplicateWarning(true);
+          return;
+        }
+      }
       const result = state.createHrExpense(payload);
       if (!result.ok) {
         setClaimFormError(result.message ?? "Unable to submit claim.");
@@ -489,6 +514,8 @@ export function HrExpensesPageRoleBased() {
       }
       setPageMessage("Claim submitted.");
       setClaimModal(null);
+      setDuplicateWarning(false);
+      setPendingPayload(null);
       return;
     }
     const { employeeId: _employeeId, ...updatePayload } = payload;
@@ -499,6 +526,19 @@ export function HrExpensesPageRoleBased() {
     }
     setPageMessage("Claim updated.");
     setClaimModal(null);
+  }
+
+  function confirmDuplicateSubmit() {
+    if (!pendingPayload) return;
+    const result = state.createHrExpense(pendingPayload);
+    if (!result.ok) {
+      setClaimFormError(result.message ?? "Unable to submit claim.");
+    } else {
+      setPageMessage("Claim submitted.");
+      setClaimModal(null);
+    }
+    setDuplicateWarning(false);
+    setPendingPayload(null);
   }
 
   function applyWorkflowAction(
@@ -662,6 +702,7 @@ export function HrExpensesPageRoleBased() {
                   <th>Amount</th>
                   <th>EUR</th>
                   <th>Status</th>
+                  <th>Paid with</th>
                   <th>Last update</th>
                   <th>Receipt</th>
                 </tr>
@@ -669,7 +710,7 @@ export function HrExpensesPageRoleBased() {
               <tbody>
                 {employeeRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-xs text-slate-500">
+                    <td colSpan={9} className="text-xs text-slate-500">
                       No claims found.
                     </td>
                   </tr>
@@ -685,6 +726,15 @@ export function HrExpensesPageRoleBased() {
                       <td>{formatMoney(row.convertedAmountEUR)} EUR</td>
                       <td>
                         <Badge className={statusBadgeClass(row.status)}>{row.status}</Badge>
+                      </td>
+                      <td>
+                        {row.paymentMethod ? (
+                          <Badge className={row.paymentMethod === "CompanyCard" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}>
+                            {row.paymentMethod === "CompanyCard" ? "Company" : "Personal"}
+                          </Badge>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       <td>{formatDateTime(row.updatedAt)}</td>
                       <td>
@@ -769,6 +819,7 @@ export function HrExpensesPageRoleBased() {
                   <th>Category</th>
                   <th>Amount</th>
                   <th>EUR</th>
+                  <th>Paid with</th>
                   <th>Receipt</th>
                   <th />
                 </tr>
@@ -776,7 +827,7 @@ export function HrExpensesPageRoleBased() {
               <tbody>
                 {managerRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-xs text-slate-500">
+                    <td colSpan={9} className="text-xs text-slate-500">
                       No pending manager approvals.
                     </td>
                   </tr>
@@ -793,6 +844,15 @@ export function HrExpensesPageRoleBased() {
                           {formatMoney(row.amount)} {row.currency}
                         </td>
                         <td>{formatMoney(row.convertedAmountEUR)} EUR</td>
+                        <td>
+                          {row.paymentMethod ? (
+                            <Badge className={row.paymentMethod === "CompanyCard" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}>
+                              {row.paymentMethod === "CompanyCard" ? "Company" : "Personal"}
+                            </Badge>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
                         <td>
                           {row.receiptUrl || row.attachmentMeta?.url ? (
                             <a
@@ -989,13 +1049,14 @@ export function HrExpensesPageRoleBased() {
                   <th>Amount</th>
                   <th>EUR</th>
                   <th>Status</th>
+                  <th>Paid with</th>
                   <th />
                 </tr>
               </thead>
               <tbody>
                 {financeRows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-xs text-slate-500">
+                    <td colSpan={9} className="text-xs text-slate-500">
                       No claims in selected queue.
                     </td>
                   </tr>
@@ -1014,6 +1075,15 @@ export function HrExpensesPageRoleBased() {
                         <td>{formatMoney(row.convertedAmountEUR)} EUR</td>
                         <td>
                           <Badge className={statusBadgeClass(row.status)}>{row.status}</Badge>
+                        </td>
+                        <td>
+                          {row.paymentMethod ? (
+                            <Badge className={row.paymentMethod === "CompanyCard" ? "bg-indigo-100 text-indigo-700" : "bg-orange-100 text-orange-700"}>
+                              {row.paymentMethod === "CompanyCard" ? "Company" : "Personal"}
+                            </Badge>
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td>
                           <div className="flex flex-wrap gap-1" onClick={(event) => event.stopPropagation()}>
@@ -1117,6 +1187,27 @@ export function HrExpensesPageRoleBased() {
               </select>
             </div>
 
+            <div>
+              <FieldLabel>Paid with *</FieldLabel>
+              <select
+                value={claimForm.paymentMethod}
+                onChange={(event) => setClaimForm((prev) => ({ ...prev, paymentMethod: event.target.value as ClaimFormState["paymentMethod"] }))}
+              >
+                <option value="">Select…</option>
+                <option value="CompanyCard">Company Card</option>
+                <option value="Personal">Personal (reimbursable)</option>
+              </select>
+            </div>
+
+            <div>
+              <FieldLabel>Cost Center / Project</FieldLabel>
+              <input
+                value={claimForm.costCenterTag}
+                onChange={(event) => setClaimForm((prev) => ({ ...prev, costCenterTag: event.target.value }))}
+                placeholder="e.g. PROJ-123"
+              />
+            </div>
+
             {claimForm.claimType === "Advance" && (
               <div>
                 <FieldLabel>Advance type</FieldLabel>
@@ -1210,8 +1301,24 @@ export function HrExpensesPageRoleBased() {
             <Button size="sm" variant="secondary" onClick={() => setClaimModal(null)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={submitClaimModal} disabled={!claimFormValid}>
+            <Button size="sm" onClick={() => submitClaimModal()} disabled={!claimFormValid}>
               {claimModal.mode === "create" ? "Submit" : "Save changes"}
+            </Button>
+          </div>
+        </ModalShell>
+      )}
+
+      {duplicateWarning && (
+        <ModalShell title="Possible duplicate claim" onClose={() => { setDuplicateWarning(false); setPendingPayload(null); }}>
+          <p className="mb-3 text-sm text-slate-700">
+            A similar expense (same employee, amount, and category) was submitted in the last 48 hours. Are you sure you want to submit this claim?
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => { setDuplicateWarning(false); setPendingPayload(null); }}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={confirmDuplicateSubmit}>
+              Submit anyway
             </Button>
           </div>
         </ModalShell>
@@ -1276,6 +1383,22 @@ export function HrExpensesPageRoleBased() {
                       </p>
                     </div>
                   </>
+                )}
+                <div>
+                  <FieldLabel>Payment method</FieldLabel>
+                  <p className="text-xs text-slate-700">
+                    {selectedExpense.paymentMethod
+                      ? selectedExpense.paymentMethod === "CompanyCard"
+                        ? "Company Card"
+                        : "Personal (reimbursable)"
+                      : "-"}
+                  </p>
+                </div>
+                {selectedExpense.costCenterTag && (
+                  <div>
+                    <FieldLabel>Cost Center / Project</FieldLabel>
+                    <p className="text-xs text-slate-700">{selectedExpense.costCenterTag}</p>
+                  </div>
                 )}
                 <div>
                   <FieldLabel>Receipt / document</FieldLabel>
