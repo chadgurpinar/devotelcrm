@@ -275,6 +275,9 @@ interface DbActions {
   deleteOpsShift: (shiftId: string) => void;
   addNocCase: (caseData: Omit<import("./types").NocCase, "id" | "status" | "createdAt">) => void;
   actionNocCase: (id: string, action: import("./types").NocCaseAction, payload: { ttNumber?: string; comment?: string; actionedBy: string }) => void;
+  addRoutingNocRequest: (data: Omit<import("./types").RoutingNocRequest, "id" | "status" | "submittedAt">) => void;
+  closeRoutingNocRequest: (id: string, status: import("./types").RoutingReqStatus, payload: { nocComment?: string; closedBy: string }) => void;
+  markRoutingNocRequestReviewed: (id: string) => void;
   resetDemoData: () => void;
   exportData: () => string;
   importData: (raw: string) => { ok: boolean; message: string };
@@ -3970,6 +3973,30 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
             : c,
         ),
       })),
+    addRoutingNocRequest: (data) =>
+      set((state) => ({
+        ...state,
+        routingNocRequests: [
+          ...state.routingNocRequests,
+          { ...data, id: uid("rnr"), status: "Open" as const, submittedAt: new Date().toISOString() },
+        ],
+      })),
+    closeRoutingNocRequest: (id, status, payload) =>
+      set((state) => ({
+        ...state,
+        routingNocRequests: state.routingNocRequests.map((r) =>
+          r.id === id
+            ? { ...r, status, nocComment: payload.nocComment, closedBy: payload.closedBy, closedAt: new Date().toISOString() }
+            : r,
+        ),
+      })),
+    markRoutingNocRequestReviewed: (id) =>
+      set((state) => ({
+        ...state,
+        routingNocRequests: state.routingNocRequests.map((r) =>
+          r.id === id ? { ...r, reviewedByAm: true } : r,
+        ),
+      })),
     resetDemoData: () =>
       set((state) => ({
         ...state,
@@ -4016,6 +4043,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           opsShifts: Array.isArray(data.opsShifts) ? data.opsShifts : state.opsShifts,
           opsSlaProfiles: Array.isArray(data.opsSlaProfiles) ? data.opsSlaProfiles : state.opsSlaProfiles,
           nocCases: Array.isArray(data.nocCases) ? data.nocCases : [],
+          routingNocRequests: Array.isArray(data.routingNocRequests) ? data.routingNocRequests : [],
         }));
         return { ok: true, message: "Data imported successfully." };
       } catch {
@@ -4188,7 +4216,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 27,
+    version: 28,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {

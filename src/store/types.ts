@@ -878,6 +878,35 @@ export interface NocCase {
   actionedAt?: string;
 }
 
+export type RoutingReqTab =
+  | "Routing Request"
+  | "TT Request"
+  | "Test Request"
+  | "Loss Accepted";
+
+export type RoutingReqStatus =
+  | "Open"
+  | "Routing Done"
+  | "TT Sent"
+  | "Test Successful"
+  | "Test Failed"
+  | "Loss Accepted"
+  | "Loss Not Accepted"
+  | "Cancelled";
+
+export interface RoutingNocRequest {
+  id: string;
+  tab: RoutingReqTab;
+  fields: Record<string, string>;
+  submittedBy: string;
+  submittedAt: string;
+  status: RoutingReqStatus;
+  nocComment?: string;
+  closedBy?: string;
+  closedAt?: string;
+  reviewedByAm?: boolean;
+}
+
 export type OpsPortalId =
   | "sms-noc"
   | "voice-noc"
@@ -1240,6 +1269,7 @@ export interface DbState {
   opsShifts: OpsShift[];
   opsSlaProfiles: OpsSlaProfile[];
   nocCases: NocCase[];
+  routingNocRequests: RoutingNocRequest[];
   weeklyStaffReports: WeeklyStaffReport[];
   weeklyReportManagerComments: WeeklyReportManagerComment[];
   weeklyReportAiSummaries: WeeklyReportAiSummary[];
