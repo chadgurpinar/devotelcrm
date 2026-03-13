@@ -686,9 +686,9 @@ export function generateSeedDb(
       type MonCT = "Urgent" | "High" | "Medium" | "TrafficComparison";
       type RtCT = "RoutingRequest" | "TTRequest" | "TestRequest" | "LossAccepted";
       const ma = (id: string, ct: MonCT, sla: boolean, bonus: boolean, ref?: string) =>
-        ({ id, caseType: ct as const, resolvedWithinSla: sla, bonusApplied: bonus, pointsEarned: monPts(ct, sla, bonus), caseRef: ref, recordedAt: "2026-03-15T10:00:00.000Z" });
+        ({ id, caseType: ct, resolvedWithinSla: sla, bonusApplied: bonus, pointsEarned: monPts(ct, sla, bonus), caseRef: ref, recordedAt: "2026-03-15T10:00:00.000Z" });
       const ra = (id: string, ct: RtCT, sla: boolean, bonus: boolean, ref?: string) =>
-        ({ id, caseType: ct as const, resolvedWithinSla: sla, bonusApplied: bonus, pointsEarned: rtPts(ct, sla, bonus), caseRef: ref, recordedAt: "2026-03-15T10:00:00.000Z" });
+        ({ id, caseType: ct, resolvedWithinSla: sla, bonusApplied: bonus, pointsEarned: rtPts(ct, sla, bonus), caseRef: ref, recordedAt: "2026-03-15T10:00:00.000Z" });
       return [
         // Elif Demir (noc-m-01) — Monitoring
         { id: "npw-01", memberId: "noc-m-01", month: "2026-03", week: 1 as const, disciplineScore: 90, caseActions: [ma("npa-001","Urgent",true,true,"MON-101"), ma("npa-002","High",true,false,"MON-102"), ma("npa-003","Medium",true,false,"MON-103"), ma("npa-004","TrafficComparison",false,false,"MON-104")] },
