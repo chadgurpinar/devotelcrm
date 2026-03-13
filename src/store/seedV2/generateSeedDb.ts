@@ -573,6 +573,7 @@ export function generateSeedDb(
       { id: "ph-us-5", country: "United States", date: "2026-07-04", name: "Independence Day" },
       { id: "ph-us-6", country: "United States", date: "2026-12-25", name: "Christmas Day" },
     ],
+    hrDigitalSignatures: [],
     interconnectionProcesses: lifecycle.interconnectionProcesses.slice().sort((left, right) => left.id.localeCompare(right.id)),
     projects: projectsSeed.projects.slice().sort((left, right) => left.id.localeCompare(right.id)),
     projectWeeklyReports: projectsSeed.projectWeeklyReports

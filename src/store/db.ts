@@ -290,6 +290,7 @@ interface DbActions {
   logCompChange: (employeeId: string, reason: string, previousSalaryEur: number | undefined, newSalaryEur: number | undefined, userId: string) => void;
   addPublicHoliday: (payload: { country: string; date: string; name: string }) => string;
   deletePublicHoliday: (id: string) => void;
+  saveDigitalSignature: (assetAssignmentId: string, employeeId: string, signatureDataUrl: string) => void;
   addTaskAttachment: (taskId: string, file: File, userId: string) => void;
   removeTaskAttachment: (attachmentId: string) => void;
   processReminders: () => void;
@@ -4135,6 +4136,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           hrAuditLogs: Array.isArray(data.hrAuditLogs) ? data.hrAuditLogs : state.hrAuditLogs,
           hrCompChangeLogs: Array.isArray(data.hrCompChangeLogs) ? data.hrCompChangeLogs : [],
           hrPublicHolidays: Array.isArray(data.hrPublicHolidays) ? data.hrPublicHolidays : [],
+          hrDigitalSignatures: Array.isArray(data.hrDigitalSignatures) ? data.hrDigitalSignatures : [],
           opsRequests: Array.isArray(data.opsRequests) ? data.opsRequests : state.opsRequests,
           opsCases: Array.isArray(data.opsCases) ? data.opsCases : state.opsCases,
           opsMonitoringSignals: Array.isArray(data.opsMonitoringSignals) ? data.opsMonitoringSignals : state.opsMonitoringSignals,
@@ -4181,6 +4183,20 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       set((state) => ({
         ...state,
         hrPublicHolidays: state.hrPublicHolidays.filter((h) => h.id !== id),
+      })),
+    saveDigitalSignature: (assetAssignmentId, employeeId, signatureDataUrl) =>
+      set((state) => ({
+        ...state,
+        hrDigitalSignatures: [
+          ...state.hrDigitalSignatures,
+          {
+            id: uid("dsig"),
+            assetAssignmentId,
+            employeeId,
+            signedAt: new Date().toISOString(),
+            signatureDataUrl,
+          },
+        ],
       })),
     addTaskAttachment: (taskId, file, userId) =>
       set((state) => {

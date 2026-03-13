@@ -542,6 +542,8 @@ export interface HrEmployee {
   ibanOrTrc20?: string;
   employeeFolderUrl?: string;
   masterContractSignedAt?: string;
+  profilePhotoBase64?: string;
+  projectIds?: string[];
   createdAt: string;
   updatedAt: string;
   systemUserId?: string;
@@ -677,6 +679,10 @@ export interface HrAsset {
   assignedAt?: string;
   returnedAt?: string;
   digitalAcceptance: boolean;
+  serialNumber?: string;
+  imei?: string;
+  purchaseDate?: string;
+  warrantyEndsAt?: string;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -703,7 +709,7 @@ export interface HrAssetAssignment {
   employeeId: string;
   assignedAt: string;
   returnedAt?: string;
-  returnCondition?: string;
+  returnCondition?: "Good" | "Damaged" | "Needs Replacement";
   acceptanceStatus: HrAssetAcceptanceStatus;
   acceptedAt?: string;
   revokedAt?: string;
@@ -823,6 +829,15 @@ export interface HrPublicHoliday {
   country: string;
   date: string;
   name: string;
+}
+
+export interface HrDigitalSignature {
+  id: string;
+  assetAssignmentId: string;
+  employeeId: string;
+  signedAt: string;
+  signatureDataUrl: string;
+  deviceInfo?: string;
 }
 
 export type NocPortalType = "SMS" | "Voice";
@@ -1353,6 +1368,7 @@ export interface DbState {
   hrAuditLogs: HrAuditLogEntry[];
   hrCompChangeLogs: HrCompChangeLog[];
   hrPublicHolidays: HrPublicHoliday[];
+  hrDigitalSignatures: HrDigitalSignature[];
   opsRequests: OpsRequest[];
   opsCases: OpsCase[];
   opsMonitoringSignals: OpsMonitoringSignal[];
