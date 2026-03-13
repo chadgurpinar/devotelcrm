@@ -215,8 +215,9 @@ function LeaveRequestModal(props: LeaveRequestModalProps) {
   const [halfDay, setHalfDay] = useState(false);
   const [doctorNoteFileName, setDoctorNoteFileName] = useState<string | undefined>(undefined);
 
-  const rawTotalDays = workingDaysBetween(startDate, endDate);
-  const totalDays = halfDay && leaveType === "Annual" ? 0.5 : rawTotalDays;
+  const msPerDay = 86400000;
+  const rawDays = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / msPerDay) + 1;
+  const totalDays = halfDay ? 0.5 : rawDays;
   const overlapExists = props.existingRows.some(
     (row) =>
       activeLeaveStatuses.includes(row.status) &&
@@ -827,8 +828,8 @@ export function HrLeavePage() {
                       <td className="text-xs">
                         <p>Manager: {formatDateTime(row.managerApprovedAt)}</p>
                         <p>HR: {formatDateTime(row.hrApprovedAt)}</p>
-                        {row.managerApprovedAt && row.hrApprovedAt && row.hrApprovedAt < row.managerApprovedAt && (
-                          <Badge className="bg-amber-100 text-amber-700">⚠ Approval order anomaly</Badge>
+                        {row.managerApprovedAt && row.hrApprovedAt && new Date(row.hrApprovedAt).getTime() < new Date(row.managerApprovedAt).getTime() && (
+                          <Badge className="bg-amber-100 text-amber-700">⚠ Order anomaly</Badge>
                         )}
                       </td>
                       <td className="text-xs text-slate-600">{row.employeeComment ?? "-"}</td>
@@ -942,8 +943,8 @@ export function HrLeavePage() {
                               <td className="text-xs text-slate-600">{row.employeeComment ?? "-"}</td>
                               <td>
                                 <div className="flex flex-wrap items-center gap-1">
-                                  {row.totalDays === 0 && <Badge className="bg-amber-100 text-amber-700">⚠ 0 days</Badge>}
-                                  <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_APPROVE" })} disabled={row.totalDays === 0}>
+                                  {row.totalDays === 0 && !row.halfDay && <Badge className="bg-rose-100 text-rose-700">⚠ 0 days — invalid</Badge>}
+                                  <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_APPROVE" })} disabled={row.totalDays === 0 && !row.halfDay}>
                                     Approve
                                   </Button>
                                   <Button size="sm" variant="secondary" onClick={() => setActionModal({ requestId: row.id, action: "MANAGER_REJECT" })}>
@@ -1114,8 +1115,8 @@ export function HrLeavePage() {
                           <td className="text-xs text-slate-600">{row.employeeComment ?? "-"}</td>
                           <td>
                             <div className="flex flex-wrap items-center gap-1">
-                              {row.totalDays === 0 && <Badge className="bg-amber-100 text-amber-700">⚠ 0 days</Badge>}
-                              <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "HR_APPROVE" })} disabled={row.totalDays === 0}>
+                              {row.totalDays === 0 && !row.halfDay && <Badge className="bg-rose-100 text-rose-700">⚠ 0 days — invalid</Badge>}
+                              <Button size="sm" onClick={() => setActionModal({ requestId: row.id, action: "HR_APPROVE" })} disabled={row.totalDays === 0 && !row.halfDay}>
                                 Approve
                               </Button>
                               <Button size="sm" variant="secondary" onClick={() => setActionModal({ requestId: row.id, action: "HR_REJECT" })}>
@@ -1258,8 +1259,8 @@ export function HrLeavePage() {
                           <td>{formatDateTime(row.managerApprovedAt)}</td>
                           <td>
                             {formatDateTime(row.hrApprovedAt)}
-                            {row.managerApprovedAt && row.hrApprovedAt && row.hrApprovedAt < row.managerApprovedAt && (
-                              <Badge className="ml-1 bg-amber-100 text-amber-700">⚠ Approval order anomaly</Badge>
+                            {row.managerApprovedAt && row.hrApprovedAt && new Date(row.hrApprovedAt).getTime() < new Date(row.managerApprovedAt).getTime() && (
+                              <Badge className="ml-1 bg-amber-100 text-amber-700">⚠ Order anomaly</Badge>
                             )}
                           </td>
                         </tr>

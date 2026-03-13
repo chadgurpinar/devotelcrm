@@ -284,7 +284,7 @@ export function HrExpensesPageRoleBased() {
           (row.advancePurpose ?? "").toLowerCase().includes(query),
       );
     }
-    return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [employeeRangeFilter, employeeSearch, employeeStatusFilter, employeeTypeFilter, myClaims]);
 
   const managerRows = useMemo(() => {
@@ -292,7 +292,7 @@ export function HrExpensesPageRoleBased() {
     if (managerEmployeeFilter) rows = rows.filter((row) => row.employeeId === managerEmployeeFilter);
     if (managerCategoryFilter) rows = rows.filter((row) => row.category === managerCategoryFilter);
     if (managerTypeFilter) rows = rows.filter((row) => row.claimType === managerTypeFilter);
-    return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [managerCategoryFilter, managerEmployeeFilter, managerTeamIds, managerTypeFilter, state.hrExpenses]);
 
   const financeFilterBaseRows = useMemo(() => {
@@ -327,7 +327,7 @@ export function HrExpensesPageRoleBased() {
   const financeRows = useMemo(() => {
     let rows = financeFilterBaseRows.filter((row) => row.status === financeQueue);
     if (financeStatusFilter) rows = rows.filter((row) => row.status === financeStatusFilter);
-    return rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [financeFilterBaseRows, financeQueue, financeStatusFilter]);
 
   const managerPendingAmountEUR = useMemo(

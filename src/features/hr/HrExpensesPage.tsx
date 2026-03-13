@@ -34,7 +34,7 @@ function HrExpensesPageLegacy() {
     let dataset = state.hrExpenses.slice();
     if (statusFilter) dataset = dataset.filter((row) => row.status === statusFilter);
     if (employeeFilter) dataset = dataset.filter((row) => row.employeeId === employeeFilter);
-    return dataset.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return dataset.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [employeeFilter, state.hrExpenses, statusFilter]);
 
   function createExpense() {
