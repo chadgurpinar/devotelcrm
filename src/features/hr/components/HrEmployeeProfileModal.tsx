@@ -109,11 +109,12 @@ export function HrEmployeeProfileModal(props: HrEmployeeProfileModalProps) {
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !employee) return;
+    const empId = employee.id;
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === "string") {
-        state.updateEmployeePhoto(employee.id, reader.result);
+        state.updateEmployeePhoto(empId, reader.result);
       }
     };
     reader.readAsDataURL(file);
