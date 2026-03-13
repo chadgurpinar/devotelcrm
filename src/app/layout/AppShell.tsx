@@ -30,7 +30,6 @@ const navGroups = [
       { to: "/ops/sms-noc", label: "SMS NOC Portal", icon: "S" },
       { to: "/ops/voice-noc", label: "Voice NOC Portal", icon: "V" },
       { to: "/ops/routing-noc", label: "Routing & NOC Portal", icon: "R" },
-      { to: "/ops/am-noc-routing", label: "AM & NOC & Routing Portal", icon: "A" },
       { to: "/ops/account-managers", label: "Account Managers Portal", icon: "M" },
       { to: "/ops/noc-performance-audit", label: "NOC Performance / Audit", icon: "P" },
     ],
