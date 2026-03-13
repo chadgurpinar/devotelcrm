@@ -273,6 +273,8 @@ interface DbActions {
   createOpsShift: (payload: Omit<OpsShift, "id" | "createdAt" | "updatedAt">) => string;
   updateOpsShift: (shift: OpsShift) => void;
   deleteOpsShift: (shiftId: string) => void;
+  addNocCase: (caseData: Omit<import("./types").NocCase, "id" | "status" | "createdAt">) => void;
+  actionNocCase: (id: string, action: import("./types").NocCaseAction, payload: { ttNumber?: string; comment?: string; actionedBy: string }) => void;
   resetDemoData: () => void;
   exportData: () => string;
   importData: (raw: string) => { ok: boolean; message: string };
@@ -3943,6 +3945,31 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         ...state,
         opsShifts: state.opsShifts.filter((entry) => entry.id !== shiftId),
       })),
+    addNocCase: (caseData) =>
+      set((state) => ({
+        ...state,
+        nocCases: [
+          ...state.nocCases,
+          { ...caseData, id: uid("noc"), status: "Open" as const, createdAt: new Date().toISOString() },
+        ],
+      })),
+    actionNocCase: (id, action, payload) =>
+      set((state) => ({
+        ...state,
+        nocCases: state.nocCases.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                status: "Actioned" as const,
+                action,
+                ttNumber: payload.ttNumber,
+                comment: payload.comment,
+                actionedBy: payload.actionedBy,
+                actionedAt: new Date().toISOString(),
+              }
+            : c,
+        ),
+      })),
     resetDemoData: () =>
       set((state) => ({
         ...state,
@@ -3988,6 +4015,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           opsAuditLogs: Array.isArray(data.opsAuditLogs) ? data.opsAuditLogs : state.opsAuditLogs,
           opsShifts: Array.isArray(data.opsShifts) ? data.opsShifts : state.opsShifts,
           opsSlaProfiles: Array.isArray(data.opsSlaProfiles) ? data.opsSlaProfiles : state.opsSlaProfiles,
+          nocCases: Array.isArray(data.nocCases) ? data.nocCases : [],
         }));
         return { ok: true, message: "Data imported successfully." };
       } catch {
@@ -4160,7 +4188,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 26,
+    version: 27,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {

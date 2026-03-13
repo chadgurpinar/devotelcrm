@@ -825,6 +825,59 @@ export interface HrPublicHoliday {
   name: string;
 }
 
+export type NocPortalType = "SMS" | "Voice";
+
+export type NocCaseType =
+  | "ProviderIssue"
+  | "Losses"
+  | "NewLostTraffic"
+  | "TrafficComparison"
+  | "ScheduleTest"
+  | "FailedSmsCall";
+
+export type NocSeverity =
+  | "MEDIUM"
+  | "HIGH"
+  | "URGENT"
+  | "DECREASE"
+  | "INCREASE";
+
+export type NocCaseAction =
+  | "TT_RAISED"
+  | "IGNORED"
+  | "CHECKED_NOISSUE"
+  | "ROUTING_CHANGED"
+  | "AC_MNG_INFORMED"
+  | "ROUTING_INFORMED";
+
+export type NocCaseStatus = "Open" | "Actioned";
+
+export interface NocCase {
+  id: string;
+  portalType: NocPortalType;
+  caseType: NocCaseType;
+  severity: NocSeverity;
+  status: NocCaseStatus;
+  createdAt: string;
+  providerName?: string;
+  customerName?: string;
+  destination?: string;
+  smsCount?: number;
+  callCount?: number;
+  dlrRate?: number;
+  asrRate?: number;
+  lossAmount?: number;
+  attemptCount?: number;
+  testResult?: string;
+  trafficDirection?: "DECREASE" | "INCREASE";
+  trafficChangePercent?: number;
+  action?: NocCaseAction;
+  ttNumber?: string;
+  comment?: string;
+  actionedBy?: string;
+  actionedAt?: string;
+}
+
 export type OpsPortalId =
   | "sms-noc"
   | "voice-noc"
@@ -1186,6 +1239,7 @@ export interface DbState {
   opsAuditLogs: OpsAuditLogEntry[];
   opsShifts: OpsShift[];
   opsSlaProfiles: OpsSlaProfile[];
+  nocCases: NocCase[];
   weeklyStaffReports: WeeklyStaffReport[];
   weeklyReportManagerComments: WeeklyReportManagerComment[];
   weeklyReportAiSummaries: WeeklyReportAiSummary[];

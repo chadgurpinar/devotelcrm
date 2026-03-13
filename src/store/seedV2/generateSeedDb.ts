@@ -601,6 +601,28 @@ export function generateSeedDb(
     opsAuditLogs: ops.opsAuditLogs,
     opsShifts: ops.opsShifts,
     opsSlaProfiles: ops.opsSlaProfiles,
+    nocCases: (() => {
+      const now = Date.now();
+      const ago = (m: number) => new Date(now - m * 60 * 1000).toISOString();
+      return [
+        { id: "noc-s-01", portalType: "SMS" as const, caseType: "ProviderIssue" as const, severity: "HIGH" as const, status: "Open" as const, createdAt: ago(45), providerName: "Turkcell", smsCount: 45230, dlrRate: 62 },
+        { id: "noc-s-02", portalType: "SMS" as const, caseType: "Losses" as const, severity: "URGENT" as const, status: "Open" as const, createdAt: ago(12), customerName: "Vodafone DE", destination: "Germany", lossAmount: 18400 },
+        { id: "noc-s-03", portalType: "SMS" as const, caseType: "FailedSmsCall" as const, severity: "MEDIUM" as const, status: "Actioned" as const, createdAt: ago(180), customerName: "Orange FR", destination: "France", attemptCount: 3200, action: "ROUTING_CHANGED" as const, actionedBy: "Ali Yılmaz", actionedAt: ago(120), comment: "Route switched to backup" },
+        { id: "noc-s-04", portalType: "SMS" as const, caseType: "NewLostTraffic" as const, severity: "HIGH" as const, status: "Open" as const, createdAt: ago(30), customerName: "T-Mobile US", destination: "United States", smsCount: 89100 },
+        { id: "noc-s-05", portalType: "SMS" as const, caseType: "TrafficComparison" as const, severity: "DECREASE" as const, status: "Actioned" as const, createdAt: ago(240), customerName: "MTN Nigeria", trafficDirection: "DECREASE" as const, trafficChangePercent: -28, action: "AC_MNG_INFORMED" as const, actionedBy: "Mehmet Kaya", actionedAt: ago(200), comment: "Account manager notified about volume drop" },
+        { id: "noc-s-06", portalType: "SMS" as const, caseType: "ScheduleTest" as const, severity: "MEDIUM" as const, status: "Open" as const, createdAt: ago(55), destination: "Brazil", testResult: "TIMEOUT", attemptCount: 500 },
+        { id: "noc-s-07", portalType: "SMS" as const, caseType: "ProviderIssue" as const, severity: "URGENT" as const, status: "Actioned" as const, createdAt: ago(300), providerName: "Etisalat", smsCount: 120000, dlrRate: 41, action: "TT_RAISED" as const, ttNumber: "TT-2026-0342", actionedBy: "Zeynep Demir", actionedAt: ago(280), comment: "DLR dropped to 41%, TT raised with provider" },
+        { id: "noc-s-08", portalType: "SMS" as const, caseType: "Losses" as const, severity: "HIGH" as const, status: "Open" as const, createdAt: ago(18), customerName: "Telefonica ES", destination: "Spain", lossAmount: 7250 },
+        { id: "noc-v-01", portalType: "Voice" as const, caseType: "ProviderIssue" as const, severity: "URGENT" as const, status: "Open" as const, createdAt: ago(8), providerName: "BT Wholesale", callCount: 12400, asrRate: 31 },
+        { id: "noc-v-02", portalType: "Voice" as const, caseType: "TrafficComparison" as const, severity: "DECREASE" as const, status: "Open" as const, createdAt: ago(22), customerName: "Global Telecom", trafficDirection: "DECREASE" as const, trafficChangePercent: -34 },
+        { id: "noc-v-03", portalType: "Voice" as const, caseType: "Losses" as const, severity: "HIGH" as const, status: "Actioned" as const, createdAt: ago(150), customerName: "Reliance Jio", destination: "India", lossAmount: 22100, action: "ROUTING_INFORMED" as const, actionedBy: "Can Özkan", actionedAt: ago(130), comment: "Routing team working on alternative path" },
+        { id: "noc-v-04", portalType: "Voice" as const, caseType: "FailedSmsCall" as const, severity: "MEDIUM" as const, status: "Open" as const, createdAt: ago(35), customerName: "Airtel Africa", destination: "Kenya", attemptCount: 1800, testResult: "FAILED" },
+        { id: "noc-v-05", portalType: "Voice" as const, caseType: "NewLostTraffic" as const, severity: "URGENT" as const, status: "Actioned" as const, createdAt: ago(90), customerName: "Claro Brazil", destination: "Brazil", callCount: 54000, action: "TT_RAISED" as const, ttNumber: "TT-2026-0356", actionedBy: "Ali Yılmaz", actionedAt: ago(75), comment: "New route lost, TT raised urgently" },
+        { id: "noc-v-06", portalType: "Voice" as const, caseType: "ScheduleTest" as const, severity: "MEDIUM" as const, status: "Actioned" as const, createdAt: ago(200), destination: "Pakistan", testResult: "FAILED", attemptCount: 250, action: "CHECKED_NOISSUE" as const, actionedBy: "Mehmet Kaya", actionedAt: ago(185), comment: "Test failure was transient, re-test passed" },
+        { id: "noc-v-07", portalType: "Voice" as const, caseType: "ProviderIssue" as const, severity: "HIGH" as const, status: "Open" as const, createdAt: ago(15), providerName: "Telia Carrier", callCount: 8900, asrRate: 48 },
+        { id: "noc-v-08", portalType: "Voice" as const, caseType: "TrafficComparison" as const, severity: "INCREASE" as const, status: "Open" as const, createdAt: ago(40), customerName: "Singtel", trafficDirection: "INCREASE" as const, trafficChangePercent: 52 },
+      ];
+    })(),
     weeklyStaffReports: mgmtReports.weeklyStaffReports,
     weeklyReportManagerComments: mgmtReports.weeklyReportManagerComments,
     weeklyReportAiSummaries: mgmtReports.weeklyReportAiSummaries,
