@@ -1,6 +1,7 @@
 import {
   Company,
   DbState,
+  NocPerfManagerOpinion,
   OurCompanyInfo,
   WeeklyStaffReport,
   WeeklyReportManagerComment,
@@ -659,6 +660,90 @@ export function generateSeedDb(
         { id: "am-06", tab: "Deal Offers" as const, customer: r({ Customer: "Vodafone UK", Destination: "UK", Rate: "15.0", Volume: "20K/day", "Deal Period": "3 months", Amount: "$45,000" }), provider: r({ Provider: "BICS", Destination: "UK", Rate: "13.5", Volume: "20K/day", "Deal Period": "3 months", Amount: "$38,000" }), submittedBy: "Sarah Mitchell", submittedAt: past(5), expiresAt: future(43), isArchived: false, comments: [c("amc-04", "Margin looks good, I support this deal", "Ceren Yıldız", 3)] },
         { id: "am-07", tab: "Route Request" as const, fields: r({ Destination: "Brazil Claro", "Target Rate": "6.0", Volume: "15K/day" }), submittedBy: "Rania Al-Hassan", submittedAt: past(72), expiresAt: past(24), isArchived: true, comments: [] },
         { id: "am-08", tab: "Deal Offers" as const, customer: r({ Customer: "MTN SA", Destination: "South Africa", Rate: "8.0", Volume: "40K/day", "Deal Period": "6 months", Amount: "$120,000" }), provider: r({ Provider: "Telia Carrier", Destination: "South Africa", Rate: "6.8", Volume: "40K/day", "Deal Period": "6 months", Amount: "$98,000" }), submittedBy: "Elif Demir", submittedAt: past(60), expiresAt: past(12), isArchived: true, comments: [c("amc-05", "Deal expired, provider did not respond in time", "Timur Aslan", 15)] },
+      ];
+    })(),
+    nocMembers: [
+      { id: "noc-m-01", name: "Elif Demir", teamType: "Monitoring" as const, role: "NOC Operator", active: true, joinedAt: "2025-01-15T09:00:00.000Z" },
+      { id: "noc-m-02", name: "James Carter", teamType: "Monitoring" as const, role: "NOC Lead", active: true, joinedAt: "2025-01-15T09:00:00.000Z" },
+      { id: "noc-m-03", name: "Rania Al-Hassan", teamType: "Monitoring" as const, role: "NOC Operator", active: true, joinedAt: "2025-01-15T09:00:00.000Z" },
+      { id: "noc-m-04", name: "Timur Aslan", teamType: "Routing" as const, role: "Routing NOC", active: true, joinedAt: "2025-01-15T09:00:00.000Z" },
+      { id: "noc-m-05", name: "Ceren Yıldız", teamType: "Routing" as const, role: "Routing NOC", active: true, joinedAt: "2025-01-15T09:00:00.000Z" },
+      { id: "noc-m-06", name: "Sarah Mitchell", teamType: "Routing" as const, role: "NOC Lead", active: true, joinedAt: "2025-01-15T09:00:00.000Z" },
+    ],
+    nocPerfWeekEntries: (() => {
+      const monPts = (ct: "Urgent" | "High" | "Medium" | "TrafficComparison", sla: boolean, bonus: boolean): number => {
+        const map = { Urgent: [50, -75], High: [20, -30], Medium: [10, -15], TrafficComparison: [40, -50] };
+        let pts = sla ? map[ct][0] : map[ct][1];
+        if (bonus && ct === "Urgent") pts += 10;
+        return pts;
+      };
+      const rtPts = (ct: "RoutingRequest" | "TTRequest" | "TestRequest" | "LossAccepted", sla: boolean, bonus: boolean): number => {
+        const map = { LossAccepted: [50, -60], RoutingRequest: [40, -50], TTRequest: [30, -40], TestRequest: [20, -20] };
+        let pts = sla ? map[ct][0] : map[ct][1];
+        if (bonus && ct === "LossAccepted") pts += 15;
+        return pts;
+      };
+      type MonCT = "Urgent" | "High" | "Medium" | "TrafficComparison";
+      type RtCT = "RoutingRequest" | "TTRequest" | "TestRequest" | "LossAccepted";
+      const ma = (id: string, ct: MonCT, sla: boolean, bonus: boolean, ref?: string) =>
+        ({ id, caseType: ct as const, resolvedWithinSla: sla, bonusApplied: bonus, pointsEarned: monPts(ct, sla, bonus), caseRef: ref, recordedAt: "2026-03-15T10:00:00.000Z" });
+      const ra = (id: string, ct: RtCT, sla: boolean, bonus: boolean, ref?: string) =>
+        ({ id, caseType: ct as const, resolvedWithinSla: sla, bonusApplied: bonus, pointsEarned: rtPts(ct, sla, bonus), caseRef: ref, recordedAt: "2026-03-15T10:00:00.000Z" });
+      return [
+        // Elif Demir (noc-m-01) — Monitoring
+        { id: "npw-01", memberId: "noc-m-01", month: "2026-03", week: 1 as const, disciplineScore: 90, caseActions: [ma("npa-001","Urgent",true,true,"MON-101"), ma("npa-002","High",true,false,"MON-102"), ma("npa-003","Medium",true,false,"MON-103"), ma("npa-004","TrafficComparison",false,false,"MON-104")] },
+        { id: "npw-02", memberId: "noc-m-01", month: "2026-03", week: 2 as const, disciplineScore: 90, caseActions: [ma("npa-005","Urgent",true,false,"MON-105"), ma("npa-006","High",false,false,"MON-106"), ma("npa-007","Medium",true,false,"MON-107")] },
+        { id: "npw-03", memberId: "noc-m-01", month: "2026-03", week: 3 as const, disciplineScore: 90, caseActions: [ma("npa-008","Urgent",false,false,"MON-108"), ma("npa-009","High",true,false,"MON-109"), ma("npa-010","TrafficComparison",true,false,"MON-110"), ma("npa-011","Medium",true,false,"MON-111")] },
+        { id: "npw-04", memberId: "noc-m-01", month: "2026-03", week: 4 as const, disciplineScore: 90, caseActions: [ma("npa-012","Urgent",true,true,"MON-112"), ma("npa-013","High",true,false,"MON-113"), ma("npa-014","Medium",false,false,"MON-114"), ma("npa-015","TrafficComparison",true,false,"MON-115"), ma("npa-016","High",true,false,"MON-116")] },
+        // James Carter (noc-m-02) — Monitoring
+        { id: "npw-05", memberId: "noc-m-02", month: "2026-03", week: 1 as const, disciplineScore: 100, caseActions: [ma("npa-017","Urgent",true,true,"MON-201"), ma("npa-018","High",true,false,"MON-202"), ma("npa-019","TrafficComparison",true,false,"MON-203"), ma("npa-020","Medium",true,false,"MON-204")] },
+        { id: "npw-06", memberId: "noc-m-02", month: "2026-03", week: 2 as const, disciplineScore: 100, caseActions: [ma("npa-021","Urgent",true,true,"MON-205"), ma("npa-022","High",true,false,"MON-206"), ma("npa-023","Medium",true,false,"MON-207"), ma("npa-024","TrafficComparison",true,false,"MON-208"), ma("npa-025","Urgent",true,false,"MON-209")] },
+        { id: "npw-07", memberId: "noc-m-02", month: "2026-03", week: 3 as const, disciplineScore: 100, caseActions: [ma("npa-026","Urgent",true,false,"MON-210"), ma("npa-027","High",true,false,"MON-211"), ma("npa-028","TrafficComparison",true,true,"MON-212")] },
+        { id: "npw-08", memberId: "noc-m-02", month: "2026-03", week: 4 as const, disciplineScore: 100, caseActions: [ma("npa-029","Urgent",true,true,"MON-213"), ma("npa-030","High",true,false,"MON-214"), ma("npa-031","Medium",true,false,"MON-215"), ma("npa-032","TrafficComparison",true,false,"MON-216")] },
+        // Rania Al-Hassan (noc-m-03) — Monitoring
+        { id: "npw-09", memberId: "noc-m-03", month: "2026-03", week: 1 as const, disciplineScore: 85, caseActions: [ma("npa-033","Urgent",true,false,"MON-301"), ma("npa-034","High",false,false,"MON-302"), ma("npa-035","Medium",true,false,"MON-303")] },
+        { id: "npw-10", memberId: "noc-m-03", month: "2026-03", week: 2 as const, disciplineScore: 85, caseActions: [ma("npa-036","Urgent",false,false,"MON-304"), ma("npa-037","High",true,false,"MON-305"), ma("npa-038","TrafficComparison",false,false,"MON-306"), ma("npa-039","Medium",false,false,"MON-307")] },
+        { id: "npw-11", memberId: "noc-m-03", month: "2026-03", week: 3 as const, disciplineScore: 85, caseActions: [ma("npa-040","Urgent",true,true,"MON-308"), ma("npa-041","High",true,false,"MON-309"), ma("npa-042","Medium",true,false,"MON-310")] },
+        { id: "npw-12", memberId: "noc-m-03", month: "2026-03", week: 4 as const, disciplineScore: 85, caseActions: [ma("npa-043","Urgent",false,false,"MON-311"), ma("npa-044","TrafficComparison",true,false,"MON-312"), ma("npa-045","High",false,false,"MON-313"), ma("npa-046","Medium",true,false,"MON-314")] },
+        // Timur Aslan (noc-m-04) — Routing
+        { id: "npw-13", memberId: "noc-m-04", month: "2026-03", week: 1 as const, disciplineScore: 95, caseActions: [ra("npa-047","RoutingRequest",true,false,"RT-401"), ra("npa-048","TTRequest",true,false,"RT-402"), ra("npa-049","LossAccepted",true,true,"RT-403")] },
+        { id: "npw-14", memberId: "noc-m-04", month: "2026-03", week: 2 as const, disciplineScore: 95, caseActions: [ra("npa-050","RoutingRequest",true,false,"RT-404"), ra("npa-051","TestRequest",true,false,"RT-405"), ra("npa-052","TTRequest",false,false,"RT-406"), ra("npa-053","LossAccepted",true,false,"RT-407")] },
+        { id: "npw-15", memberId: "noc-m-04", month: "2026-03", week: 3 as const, disciplineScore: 95, caseActions: [ra("npa-054","RoutingRequest",false,false,"RT-408"), ra("npa-055","TTRequest",true,false,"RT-409"), ra("npa-056","TestRequest",true,false,"RT-410")] },
+        { id: "npw-16", memberId: "noc-m-04", month: "2026-03", week: 4 as const, disciplineScore: 95, caseActions: [ra("npa-057","LossAccepted",true,true,"RT-411"), ra("npa-058","RoutingRequest",true,false,"RT-412"), ra("npa-059","TTRequest",true,false,"RT-413"), ra("npa-060","TestRequest",false,false,"RT-414")] },
+        // Ceren Yıldız (noc-m-05) — Routing
+        { id: "npw-17", memberId: "noc-m-05", month: "2026-03", week: 1 as const, disciplineScore: 88, caseActions: [ra("npa-061","LossAccepted",true,true,"RT-501"), ra("npa-062","RoutingRequest",true,false,"RT-502"), ra("npa-063","TTRequest",true,false,"RT-503"), ra("npa-064","TestRequest",true,false,"RT-504")] },
+        { id: "npw-18", memberId: "noc-m-05", month: "2026-03", week: 2 as const, disciplineScore: 88, caseActions: [ra("npa-065","RoutingRequest",true,false,"RT-505"), ra("npa-066","TTRequest",true,false,"RT-506"), ra("npa-067","LossAccepted",true,false,"RT-507")] },
+        { id: "npw-19", memberId: "noc-m-05", month: "2026-03", week: 3 as const, disciplineScore: 88, caseActions: [ra("npa-068","RoutingRequest",true,false,"RT-508"), ra("npa-069","TTRequest",false,false,"RT-509"), ra("npa-070","TestRequest",true,false,"RT-510"), ra("npa-071","LossAccepted",true,true,"RT-511")] },
+        { id: "npw-20", memberId: "noc-m-05", month: "2026-03", week: 4 as const, disciplineScore: 88, caseActions: [ra("npa-072","RoutingRequest",false,false,"RT-512"), ra("npa-073","TTRequest",true,false,"RT-513"), ra("npa-074","TestRequest",true,false,"RT-514"), ra("npa-075","LossAccepted",true,false,"RT-515"), ra("npa-076","RoutingRequest",true,false,"RT-516")] },
+        // Sarah Mitchell (noc-m-06) — Routing
+        { id: "npw-21", memberId: "noc-m-06", month: "2026-03", week: 1 as const, disciplineScore: 100, caseActions: [ra("npa-077","LossAccepted",true,true,"RT-601"), ra("npa-078","RoutingRequest",true,false,"RT-602"), ra("npa-079","TTRequest",true,false,"RT-603"), ra("npa-080","TestRequest",true,false,"RT-604")] },
+        { id: "npw-22", memberId: "noc-m-06", month: "2026-03", week: 2 as const, disciplineScore: 100, caseActions: [ra("npa-081","RoutingRequest",true,false,"RT-605"), ra("npa-082","TTRequest",true,false,"RT-606"), ra("npa-083","LossAccepted",true,true,"RT-607"), ra("npa-084","TestRequest",true,false,"RT-608"), ra("npa-085","RoutingRequest",true,false,"RT-609")] },
+        { id: "npw-23", memberId: "noc-m-06", month: "2026-03", week: 3 as const, disciplineScore: 100, caseActions: [ra("npa-086","LossAccepted",true,false,"RT-610"), ra("npa-087","RoutingRequest",true,false,"RT-611"), ra("npa-088","TTRequest",true,false,"RT-612")] },
+        { id: "npw-24", memberId: "noc-m-06", month: "2026-03", week: 4 as const, disciplineScore: 100, caseActions: [ra("npa-089","RoutingRequest",true,false,"RT-613"), ra("npa-090","TTRequest",true,false,"RT-614"), ra("npa-091","LossAccepted",true,true,"RT-615"), ra("npa-092","TestRequest",true,false,"RT-616")] },
+      ];
+    })(),
+    nocPerfMonthSummaries: (() => {
+      const ts = "2026-03-31T23:59:00.000Z";
+      const mk = (id: string, memberId: string, tech: number, disc: number, op: NocPerfManagerOpinion, comment: string) => {
+        const opScore = op.responsibility + op.teamwork + op.learning + op.proactivity + op.communication;
+        return {
+          id, memberId, month: "2026-03",
+          technicalScore: tech, disciplineScore: disc,
+          managerOpinionScore: opScore,
+          managerOpinionBreakdown: op,
+          finalScore: Math.round((tech * 0.60 + disc * 0.20 + opScore * 0.20) * 100) / 100,
+          managerComment: comment,
+          spotlightBonus: 0, behavioralPenalty: 0,
+          createdAt: ts, updatedAt: ts,
+        };
+      };
+      return [
+        mk("nps-01", "noc-m-01", 88, 90, { responsibility: 18, teamwork: 16, learning: 17, proactivity: 15, communication: 16 }, "Elif consistently handles urgent cases with composure. Could improve proactivity in flagging recurring patterns."),
+        mk("nps-02", "noc-m-02", 94, 100, { responsibility: 19, teamwork: 18, learning: 18, proactivity: 19, communication: 17 }, "James sets the bar for the monitoring team. Excellent SLA adherence and leadership during peak hours."),
+        mk("nps-03", "noc-m-03", 79, 85, { responsibility: 15, teamwork: 14, learning: 16, proactivity: 13, communication: 14 }, "Rania had a challenging month with several SLA misses. Needs more focus on urgent case triage speed."),
+        mk("nps-04", "noc-m-04", 82, 95, { responsibility: 17, teamwork: 16, learning: 15, proactivity: 17, communication: 16 }, "Timur is a reliable routing operator with strong discipline. Technical improvement needed on complex TT workflows."),
+        mk("nps-05", "noc-m-05", 91, 88, { responsibility: 18, teamwork: 17, learning: 18, proactivity: 16, communication: 17 }, "Ceren excels technically in routing tasks. Solid month overall with consistent SLA performance."),
+        mk("nps-06", "noc-m-06", 96, 100, { responsibility: 19, teamwork: 19, learning: 17, proactivity: 18, communication: 18 }, "Sarah leads by example in routing. Top performer this month with zero SLA breaches and excellent team coordination."),
       ];
     })(),
     weeklyStaffReports: mgmtReports.weeklyStaffReports,

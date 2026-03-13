@@ -933,6 +933,71 @@ export interface AmEntry {
   comments: AmComment[];
 }
 
+export type NocTeamType = "Monitoring" | "Routing";
+
+export type NocPerfCaseType =
+  | "Urgent"
+  | "High"
+  | "Medium"
+  | "TrafficComparison"
+  | "RoutingRequest"
+  | "TTRequest"
+  | "TestRequest"
+  | "LossAccepted";
+
+export interface NocPerfCaseAction {
+  id: string;
+  caseType: NocPerfCaseType;
+  resolvedWithinSla: boolean;
+  bonusApplied: boolean;
+  pointsEarned: number;
+  caseRef?: string;
+  recordedAt: string;
+}
+
+export interface NocPerfWeekEntry {
+  id: string;
+  memberId: string;
+  month: string;
+  week: 1 | 2 | 3 | 4;
+  caseActions: NocPerfCaseAction[];
+  disciplineScore: number;
+  weeklyManagerNote?: string;
+}
+
+export interface NocPerfManagerOpinion {
+  responsibility: number;
+  teamwork: number;
+  learning: number;
+  proactivity: number;
+  communication: number;
+}
+
+export interface NocPerfMonthSummary {
+  id: string;
+  memberId: string;
+  month: string;
+  technicalScore: number;
+  disciplineScore: number;
+  managerOpinionScore: number;
+  managerOpinionBreakdown: NocPerfManagerOpinion;
+  finalScore: number;
+  managerComment?: string;
+  spotlightBonus: number;
+  behavioralPenalty: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NocMember {
+  id: string;
+  name: string;
+  teamType: NocTeamType;
+  role?: string;
+  active: boolean;
+  joinedAt: string;
+}
+
 export type OpsPortalId =
   | "sms-noc"
   | "voice-noc"
@@ -1297,6 +1362,9 @@ export interface DbState {
   nocCases: NocCase[];
   routingNocRequests: RoutingNocRequest[];
   amEntries: AmEntry[];
+  nocMembers: NocMember[];
+  nocPerfWeekEntries: NocPerfWeekEntry[];
+  nocPerfMonthSummaries: NocPerfMonthSummary[];
   weeklyStaffReports: WeeklyStaffReport[];
   weeklyReportManagerComments: WeeklyReportManagerComment[];
   weeklyReportAiSummaries: WeeklyReportAiSummary[];

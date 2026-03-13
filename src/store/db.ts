@@ -281,6 +281,9 @@ interface DbActions {
   addAmEntry: (data: Omit<import("./types").AmEntry, "id" | "submittedAt" | "expiresAt" | "isArchived" | "comments">) => void;
   addAmComment: (entryId: string, text: string, authorName: string) => void;
   archiveExpiredAmEntries: () => void;
+  addNocPerfCaseAction: (weekEntryId: string, action: Omit<import("./types").NocPerfCaseAction, "id" | "recordedAt">) => void;
+  upsertNocPerfWeekEntry: (data: Omit<import("./types").NocPerfWeekEntry, "id" | "caseActions">) => string;
+  upsertNocPerfMonthSummary: (data: Omit<import("./types").NocPerfMonthSummary, "id" | "createdAt" | "updatedAt">) => void;
   resetDemoData: () => void;
   exportData: () => string;
   importData: (raw: string) => { ok: boolean; message: string };
@@ -4043,6 +4046,56 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           ),
         };
       }),
+    addNocPerfCaseAction: (weekEntryId, action) =>
+      set((state) => ({
+        ...state,
+        nocPerfWeekEntries: state.nocPerfWeekEntries.map((w) =>
+          w.id === weekEntryId
+            ? { ...w, caseActions: [...w.caseActions, { ...action, id: crypto.randomUUID(), recordedAt: new Date().toISOString() }] }
+            : w,
+        ),
+      })),
+    upsertNocPerfWeekEntry: (data) => {
+      const existing = get().nocPerfWeekEntries.find(
+        (w) => w.memberId === data.memberId && w.month === data.month && w.week === data.week,
+      );
+      if (existing) {
+        set((state) => ({
+          ...state,
+          nocPerfWeekEntries: state.nocPerfWeekEntries.map((w) =>
+            w.id === existing.id
+              ? { ...w, disciplineScore: data.disciplineScore, weeklyManagerNote: data.weeklyManagerNote }
+              : w,
+          ),
+        }));
+        return existing.id;
+      }
+      const id = crypto.randomUUID();
+      set((state) => ({
+        ...state,
+        nocPerfWeekEntries: [...state.nocPerfWeekEntries, { ...data, id, caseActions: [] }],
+      }));
+      return id;
+    },
+    upsertNocPerfMonthSummary: (data) => {
+      const now = new Date().toISOString();
+      const existing = get().nocPerfMonthSummaries.find(
+        (s) => s.memberId === data.memberId && s.month === data.month,
+      );
+      if (existing) {
+        set((state) => ({
+          ...state,
+          nocPerfMonthSummaries: state.nocPerfMonthSummaries.map((s) =>
+            s.id === existing.id ? { ...s, ...data, updatedAt: now } : s,
+          ),
+        }));
+      } else {
+        set((state) => ({
+          ...state,
+          nocPerfMonthSummaries: [...state.nocPerfMonthSummaries, { ...data, id: crypto.randomUUID(), createdAt: now, updatedAt: now }],
+        }));
+      }
+    },
     resetDemoData: () =>
       set((state) => ({
         ...state,
@@ -4091,6 +4144,9 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           nocCases: Array.isArray(data.nocCases) ? data.nocCases : [],
           routingNocRequests: Array.isArray(data.routingNocRequests) ? data.routingNocRequests : [],
           amEntries: Array.isArray(data.amEntries) ? data.amEntries : [],
+          nocMembers: Array.isArray(data.nocMembers) ? data.nocMembers : [],
+          nocPerfWeekEntries: Array.isArray(data.nocPerfWeekEntries) ? data.nocPerfWeekEntries : [],
+          nocPerfMonthSummaries: Array.isArray(data.nocPerfMonthSummaries) ? data.nocPerfMonthSummaries : [],
         }));
         return { ok: true, message: "Data imported successfully." };
       } catch {
