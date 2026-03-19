@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { UserCheck } from "lucide-react";
 import { Badge } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getUserName } from "../../store/selectors";
 import { AmTab } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 
 const ALL_TABS: AmTab[] = ["Route Request", "Traffic Request", "Targets", "Deal Offers"];
 
@@ -144,14 +147,20 @@ export function AccountManagersPortalPage() {
   const isDealTab = activeTab === "Deal Offers";
 
   return (
-    <div className="space-y-4">
-      {/* B1 — Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">Account Managers Portal</h1>
-        <p className="mt-1 text-sm text-slate-500">Internal collaboration board · entries expire after 48h</p>
+    <div className="space-y-5">
+      <UiPageHeader
+        title="Account Managers Portal"
+        subtitle="Internal collaboration board · entries expire after 48h"
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <UiKpiCard label="Total Active" value={state.amEntries.filter((e) => !e.isArchived).length} icon={<UserCheck className="h-5 w-5" />} />
+        <UiKpiCard label="Route Requests" value={tabSummaries.find((s) => s.tab === "Route Request")?.activeCount ?? 0} className="border-blue-200 bg-blue-50/40" />
+        <UiKpiCard label="Deal Offers" value={tabSummaries.find((s) => s.tab === "Deal Offers")?.activeCount ?? 0} className="border-purple-200 bg-purple-50/40" />
+        <UiKpiCard label="Archived" value={state.amEntries.filter((e) => e.isArchived).length} className="border-gray-200" />
       </div>
 
-      {/* B2 — Tab summary cards */}
+      {/* Tab summary cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {tabSummaries.map((s) => {
           const selected = s.tab === activeTab;
@@ -160,17 +169,14 @@ export function AccountManagersPortalPage() {
               key={s.tab}
               type="button"
               onClick={() => setActiveTab(s.tab)}
-              className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:shadow-md ${
-                selected ? "ring-2 ring-brand-500 border-brand-500" : "border-slate-200"
+              className={`rounded-xl border bg-white p-3.5 text-left shadow-sm transition hover:shadow-md ${
+                selected ? "ring-2 ring-indigo-500 border-indigo-500" : "border-gray-200"
               }`}
             >
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{s.tab}</p>
-              <div className="mt-2">
-                {s.activeCount === 0 ? (
-                  <Badge className="bg-emerald-100 text-emerald-700">✓ 0</Badge>
-                ) : (
-                  <Badge className="bg-blue-100 text-blue-700">💬 {s.activeCount}</Badge>
-                )}
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{s.tab}</p>
+              <div className="mt-1.5">
+                <span className={`text-lg font-bold ${s.activeCount > 0 ? "text-gray-900" : "text-gray-400"}`}>{s.activeCount}</span>
+                <span className="ml-1 text-xs text-gray-400">active</span>
               </div>
             </button>
           );

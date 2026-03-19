@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { Network, Plus } from "lucide-react";
 import { Badge, Button } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getUserName } from "../../store/selectors";
 import { RoutingReqStatus, RoutingReqTab } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 
 const ALL_TABS: RoutingReqTab[] = ["Routing Request", "TT Request", "Test Request", "Loss Accepted"];
 
@@ -148,15 +151,24 @@ export function RoutingNocPortalPage() {
   const formFields = TAB_FIELDS[activeTab];
   const expandedEntry = expandedId ? tabRequests.find((r) => r.id === expandedId) ?? null : null;
 
+  const totalRequests = state.routingNocRequests.length;
+  const totalOpen = state.routingNocRequests.filter((r) => r.status === "Open").length;
+  const totalResolved = totalRequests - totalOpen;
+
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Routing &amp; NOC Portal</h1>
-        <p className="mt-1 text-sm text-slate-500">Account Manager requests · NOC/Routing responses</p>
+    <div className="space-y-5">
+      <UiPageHeader
+        title="Routing & NOC Portal"
+        subtitle="Account Manager requests · NOC/Routing responses"
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <UiKpiCard label="Total Requests" value={totalRequests} icon={<Network className="h-5 w-5" />} />
+        <UiKpiCard label="Open" value={totalOpen} className="border-blue-200 bg-blue-50/40" />
+        <UiKpiCard label="Resolved" value={totalResolved} className="border-emerald-200 bg-emerald-50/40" />
       </div>
 
-      {/* BÖLÜM 1 — Tab summary cards */}
+      {/* Tab summary cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {tabSummaries.map((s) => {
           const selected = s.tab === activeTab;
@@ -165,17 +177,14 @@ export function RoutingNocPortalPage() {
               key={s.tab}
               type="button"
               onClick={() => setActiveTab(s.tab)}
-              className={`rounded-xl border bg-white p-4 text-left shadow-sm transition hover:shadow-md ${
-                selected ? "ring-2 ring-brand-500 border-brand-500" : "border-slate-200"
+              className={`rounded-xl border bg-white p-3.5 text-left shadow-sm transition hover:shadow-md ${
+                selected ? "ring-2 ring-indigo-500 border-indigo-500" : "border-gray-200"
               }`}
             >
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{s.tab}</p>
-              <div className="mt-2">
-                {s.openCount === 0 ? (
-                  <Badge className="bg-emerald-100 text-emerald-700">✓ 0</Badge>
-                ) : (
-                  <Badge className="bg-blue-100 text-blue-700">📋 {s.openCount}</Badge>
-                )}
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{s.tab}</p>
+              <div className="mt-1.5">
+                <span className={`text-lg font-bold ${s.openCount > 0 ? "text-gray-900" : "text-gray-400"}`}>{s.openCount}</span>
+                <span className="ml-1 text-xs text-gray-400">open</span>
               </div>
             </button>
           );

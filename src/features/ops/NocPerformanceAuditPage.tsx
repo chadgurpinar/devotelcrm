@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
+import { ClipboardList, Search, Trophy, Users } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { NocMember, NocPerfMonthSummary } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 import { NocMemberDetailView } from "./NocMemberDetailView";
 
 function scoreColor(score: number): string {
@@ -130,44 +133,58 @@ export function NocPerformanceAuditPage() {
     return <NocMemberDetailView memberId={selectedMemberId} month={selectedMonth} onBack={() => setSelectedMemberId(null)} />;
   }
 
+  const avgScore = filteredMembers.length > 0
+    ? Math.round(filteredMembers.reduce((s, m) => s + (getSummary(m.id)?.finalScore ?? 0), 0) / filteredMembers.length * 10) / 10
+    : 0;
+  const topPerformers = filteredMembers.filter((m) => (getSummary(m.id)?.finalScore ?? 0) >= 90).length;
+  const needsImprovement = filteredMembers.filter((m) => { const s = getSummary(m.id)?.finalScore ?? 0; return s > 0 && s < 70; }).length;
+
   return (
-    <div className="space-y-4">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">NOC Performance Audit</h1>
-          <p className="mt-1 text-sm text-slate-500">Manager view · Monthly performance overview</p>
-        </div>
-        <select
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 bg-white"
-        >
-          {availableMonths.map((m) => (
-            <option key={m} value={m}>
-              {formatMonth(m)}
-            </option>
-          ))}
-        </select>
+    <div className="space-y-5">
+      <UiPageHeader
+        title="NOC Performance Audit"
+        subtitle="Manager view · Monthly performance overview"
+        actions={
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 bg-white focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          >
+            {availableMonths.map((m) => (
+              <option key={m} value={m}>{formatMonth(m)}</option>
+            ))}
+          </select>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <UiKpiCard label="Team Members" value={filteredMembers.length} icon={<Users className="h-5 w-5" />} />
+        <UiKpiCard label="Avg Score" value={avgScore} icon={<ClipboardList className="h-5 w-5" />} className={avgScore >= 80 ? "border-emerald-200 bg-emerald-50/40" : "border-amber-200 bg-amber-50/40"} />
+        <UiKpiCard label="Top Performers" value={topPerformers} icon={<Trophy className="h-5 w-5 text-emerald-400" />} className="border-emerald-200 bg-emerald-50/40" />
+        <UiKpiCard label="Needs Improvement" value={needsImprovement} className={needsImprovement > 0 ? "border-rose-200 bg-rose-50/40" : ""} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-center gap-3">
         {(["All", "Monitoring", "Routing"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setTeamFilter(f)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-              teamFilter === f ? "bg-brand-600 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              teamFilter === f ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
             {f}
           </button>
         ))}
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name..."
-          className="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-brand-300"
-        />
+        <div className="ml-auto flex h-9 w-48 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3">
+          <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name..."
+            className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
