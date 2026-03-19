@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Badge, Button, Card, FieldLabel, StatCard } from "../../components/ui";
+import { TrendingUp, Plus, ChevronRight } from "lucide-react";
+import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getEventName, getUserName } from "../../store/selectors";
 import { CommercialFit, Company, CompanyType, OurEntity, TechnicalFit } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 import { getInterconnectionStartReadiness } from "./readiness";
+
+const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
+const selectCls = inputCls;
 
 type AgeBucket = "all" | "0-7" | "8-30" | "30+";
 type CreatedRange = "all" | "this_month" | "last_30_days";
@@ -307,69 +313,84 @@ export function LeadsPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <Card title="Lead dashboard">
-        <div className="grid gap-2 md:grid-cols-3 lg:grid-cols-4">
-          <button type="button" onClick={() => applyDrilldown("Open Leads", { showRejected: false, leadDisposition: "Open" })}>
-            <StatCard label="Total Leads" value={totalLeads} size="xs" className={drilldownLabel === "Open Leads" ? "ring-2 ring-brand-300" : ""} />
-          </button>
+    <div className="space-y-5">
+      <UiPageHeader
+        title="Leads"
+        subtitle={`${visibleLeads.length} leads · ${openLeads.length} open`}
+        actions={
           <button
-            type="button"
-            onClick={() =>
-              applyDrilldown("Leads >30 Days", {
-                showRejected: false,
-                leadDisposition: "Open",
-                ageBucket: "30+",
-              })
-            }
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition"
           >
-            <StatCard label="Leads >30 days" value={olderThan30} size="xs" className={drilldownLabel === "Leads >30 Days" ? "ring-2 ring-brand-300" : ""} />
+            <Plus className="h-4 w-4" /> New Lead
           </button>
+        }
+      />
+
+      {/* KPI Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <button type="button" className="text-left" onClick={() => applyDrilldown("Open Leads", { showRejected: false, leadDisposition: "Open" })}>
+          <UiKpiCard
+            label="Total Open Leads"
+            value={totalLeads}
+            icon={<TrendingUp className="h-5 w-5" />}
+            className={`border-amber-200 bg-amber-50/40 ${drilldownLabel === "Open Leads" ? "ring-2 ring-amber-400" : ""}`}
+          />
+        </button>
+        <button type="button" className="text-left" onClick={() => applyDrilldown("Created This Month", { showRejected: false, leadDisposition: "Open", createdRange: "this_month" })}>
+          <UiKpiCard
+            label="Created This Month"
+            value={createdThisMonth}
+            icon={<Plus className="h-5 w-5" />}
+            className={`border-blue-200 bg-blue-50/40 ${drilldownLabel === "Created This Month" ? "ring-2 ring-blue-400" : ""}`}
+          />
+        </button>
+        <button type="button" className="text-left" onClick={() => applyDrilldown("Leads >30 Days", { showRejected: false, leadDisposition: "Open", ageBucket: "30+" })}>
+          <UiKpiCard
+            label="Avg Lead Age"
+            value={`${avgLeadAge} days`}
+            className={drilldownLabel === "Leads >30 Days" ? "ring-2 ring-indigo-400" : ""}
+          />
+        </button>
+      </div>
+
+      {/* Quick stats row */}
+      <div className="flex flex-wrap gap-2">
+        {([
+          { label: `On Hold: ${onHoldLeads.length}`, key: "On Hold Leads", patch: { showRejected: false, leadDisposition: "OnHold" as const } },
+          { label: `Rejected: ${rejectedLeads.length}`, key: "Rejected Leads", patch: { showRejected: true } },
+          { label: `>30 Days: ${olderThan30}`, key: "Leads >30 Days", patch: { showRejected: false, leadDisposition: "Open" as const, ageBucket: "30+" as const } },
+          { label: `→ Interconnection: ${movedToInterconnection}`, key: "interconnection", patch: {} },
+        ] as const).map((item) => (
           <button
+            key={item.key}
             type="button"
-            onClick={() =>
-              applyDrilldown("Created This Month", {
-                showRejected: false,
-                leadDisposition: "Open",
-                createdRange: "this_month",
-              })
-            }
+            onClick={() => item.key === "interconnection" ? navigate("/interconnection") : applyDrilldown(item.key, item.patch)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+              drilldownLabel === item.key ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            }`}
           >
-            <StatCard label="Created this month" value={createdThisMonth} size="xs" className={drilldownLabel === "Created This Month" ? "ring-2 ring-brand-300" : ""} />
+            {item.label}
           </button>
-          <button type="button" onClick={() => navigate("/interconnection")}>
-            <StatCard
-              label="Moved to Interconnection"
-              value={movedToInterconnection}
-              size="xs"
-            />
+        ))}
+        <div className="mx-1 h-6 w-px bg-gray-200 self-center" />
+        {([
+          { label: `SMS: ${workscopeStats.sms}`, key: "Workscope SMS", patch: { workscope: "SMS" } },
+          { label: `Voice: ${workscopeStats.voice}`, key: "Workscope Voice", patch: { workscope: "Voice" } },
+          { label: `Both: ${workscopeStats.both}`, key: "Workscope SMS + Voice", patch: { workscope: "SMS + Voice" } },
+        ]).map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => applyDrilldown(item.key, item.patch)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+              drilldownLabel === item.key ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            {item.label}
           </button>
-          <button type="button" onClick={() => applyDrilldown("On Hold Leads", { showRejected: false, leadDisposition: "OnHold" })}>
-            <StatCard label="On Hold" value={onHoldLeads.length} size="xs" className={drilldownLabel === "On Hold Leads" ? "ring-2 ring-brand-300" : ""} />
-          </button>
-          <button type="button" onClick={() => applyDrilldown("Rejected Leads", { showRejected: true })}>
-            <StatCard label="Rejected" value={rejectedLeads.length} size="xs" className={drilldownLabel === "Rejected Leads" ? "ring-2 ring-brand-300" : ""} />
-          </button>
-          <StatCard label="Avg Lead age" value={`${avgLeadAge}d`} size="xs" />
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
-          <button type="button" onClick={() => applyDrilldown("Workscope SMS", { workscope: "SMS" })}>
-            <Badge>SMS: {workscopeStats.sms}</Badge>
-          </button>
-          <button type="button" onClick={() => applyDrilldown("Workscope Voice", { workscope: "Voice" })}>
-            <Badge>Voice: {workscopeStats.voice}</Badge>
-          </button>
-          <button type="button" onClick={() => applyDrilldown("Workscope SMS + Voice", { workscope: "SMS + Voice" })}>
-            <Badge>SMS+Voice: {workscopeStats.both}</Badge>
-          </button>
-          <button type="button" onClick={() => applyDrilldown("Workscope Data", { workscope: "Data" })}>
-            <Badge>Data: {workscopeStats.data}</Badge>
-          </button>
-          <button type="button" onClick={() => applyDrilldown("Workscope Other", { workscope: "Other" })}>
-            <Badge>Other: {workscopeStats.other}</Badge>
-          </button>
-        </div>
-      </Card>
+        ))}
+      </div>
 
       <div ref={tableAnchorRef} />
       <Card
@@ -397,10 +418,11 @@ export function LeadsPage() {
           </div>
         }
       >
-        <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl bg-slate-50/80 p-2">
+        <div className="mb-3 flex flex-wrap items-end gap-3 rounded-xl border border-gray-100 bg-gray-50/50 p-3">
           <div className="min-w-[280px] flex-1">
             <FieldLabel>Search</FieldLabel>
             <input
+              className={inputCls}
               value={filters.search}
               onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
               placeholder="Search company..."
@@ -408,7 +430,7 @@ export function LeadsPage() {
           </div>
           <div className="w-[180px]">
             <FieldLabel>Owner</FieldLabel>
-            <select value={filters.ownerUserId} onChange={(e) => setFilters((prev) => ({ ...prev, ownerUserId: e.target.value }))}>
+            <select className={selectCls} value={filters.ownerUserId} onChange={(e) => setFilters((prev) => ({ ...prev, ownerUserId: e.target.value }))}>
               <option value="">All</option>
               {state.users.map((user) => (
                 <option key={user.id} value={user.id}>
@@ -419,7 +441,7 @@ export function LeadsPage() {
           </div>
           <div className="w-[130px]">
             <FieldLabel>Our entity</FieldLabel>
-            <select value={filters.ourEntity} onChange={(e) => setFilters((prev) => ({ ...prev, ourEntity: e.target.value as "" | OurEntity }))}>
+            <select className={selectCls} value={filters.ourEntity} onChange={(e) => setFilters((prev) => ({ ...prev, ourEntity: e.target.value as "" | OurEntity }))}>
               <option value="">All</option>
               <option value="USA">USA</option>
               <option value="UK">UK</option>
@@ -428,7 +450,7 @@ export function LeadsPage() {
           </div>
           <div className="w-[150px]">
             <FieldLabel>Age bucket</FieldLabel>
-            <select value={filters.ageBucket} onChange={(e) => setFilters((prev) => ({ ...prev, ageBucket: e.target.value as AgeBucket }))}>
+            <select className={selectCls} value={filters.ageBucket} onChange={(e) => setFilters((prev) => ({ ...prev, ageBucket: e.target.value as AgeBucket }))}>
               <option value="all">All</option>
               <option value="0-7">0-7 days</option>
               <option value="8-30">8-30 days</option>
@@ -615,130 +637,109 @@ export function LeadsPage() {
           </div>
         )}
 
-        <div className="max-h-[72vh] overflow-auto rounded-lg border border-slate-200/80">
-          <table>
-            <thead className="sticky top-0 z-[1] bg-white">
-              <tr>
-                <th>Company</th>
-                <th>Disposition</th>
-                <th>Owner</th>
-                <th>Type</th>
-                <th>Workscope</th>
-                <th>Technical</th>
-                <th>Commercial</th>
-                <th>Lead age</th>
-                <th>Next action</th>
-                <th>Readiness</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {visibleLeads.map((company) => {
-                const processes = processByCompany.get(company.id) ?? [];
-                const hasSmsProcess = processes.some((row) => row.track === "SMS");
-                const hasVoiceProcess = processes.some((row) => row.track === "Voice");
-                const contactsForCompany = contactsByCompany.get(company.id) ?? [];
-                const smsStartReadiness = getInterconnectionStartReadiness(company, contactsForCompany, "SMS");
-                const voiceStartReadiness = getInterconnectionStartReadiness(company, contactsForCompany, "Voice");
-                const watchers = Array.from(new Set([...(company.watcherUserIds ?? []), company.ownerUserId]));
-                const sourceLabel = company.createdFromEventId ? getEventName(state, company.createdFromEventId) : "Manual";
-                const canShowQuickStart =
-                  company.companyStatus === "LEAD" && company.leadDisposition !== "Rejected" && !filters.showRejected;
-                return (
-                  <tr
-                    key={company.id}
-                    className="group cursor-pointer border-b border-slate-100 transition-colors odd:bg-white even:bg-slate-50/40 hover:bg-brand-50/40"
-                    onClick={() => navigate(`/companies/${company.id}`)}
-                  >
-                    <td>
-                      <div>
-                        <p className="font-semibold">{company.name}</p>
-                        <p className="text-[11px] text-slate-500">
-                          {sourceLabel}
-                          {company.ourEntity ? ` · ${company.ourEntity}` : ""}
-                          {company.region ? ` · ${company.region}` : ""}
-                        </p>
-                      </div>
-                    </td>
-                    <td>
-                      <Badge className={dispositionBadgeClass(company.leadDisposition)}>{company.leadDisposition}</Badge>
-                    </td>
-                    <td>
-                      <p className="text-sm text-slate-800">{getUserName(state, company.ownerUserId)}</p>
-                      <p className="text-[11px] text-slate-500">
-                        Watchers: {watchers.map((userId) => getUserName(state, userId)).join(", ")}
-                      </p>
-                    </td>
-                    <td>{company.type}</td>
-                    <td>{workscopeGroup(company)}</td>
-                    <td>
-                      <Badge className={technicalBadgeClass(technicalStatus(company))}>{technicalStatus(company)}</Badge>
-                    </td>
-                    <td>
-                      <Badge className={commercialBadgeClass(commercialStatus(company))}>{commercialStatus(company)}</Badge>
-                    </td>
-                    <td>{leadAgeDays(company)}d</td>
-                    <td>
-                      <p className="max-w-[240px] truncate text-sm font-medium text-slate-800">{company.evaluation?.nextAction ?? "-"}</p>
-                    </td>
-                    <td>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1">
-                          <Badge className={readinessBadgeClass(smsStartReadiness.ready)}>
-                            SMS: {smsStartReadiness.ready ? "Ready" : "Missing"}
-                          </Badge>
+        {visibleLeads.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16">
+            <TrendingUp className="h-10 w-10 text-gray-300 mb-3" />
+            <p className="text-sm font-medium text-gray-500">No leads yet</p>
+            <p className="text-xs text-gray-400 mt-1 mb-4">Get started by creating your first lead</p>
+            <button
+              onClick={() => navigate("/")}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
+            >
+              <Plus className="h-4 w-4" /> Create first lead
+            </button>
+          </div>
+        ) : (
+          <div className="max-h-[72vh] overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+            <table className="w-full text-left">
+              <thead className="sticky top-0 z-[1] border-b border-gray-100 bg-gray-50/80 backdrop-blur-sm">
+                <tr>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Company</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Status</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Owner</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Workscope</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Technical</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Commercial</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Age</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Readiness</th>
+                  <th className="w-10" />
+                </tr>
+              </thead>
+              <tbody>
+                {visibleLeads.map((company) => {
+                  const contactsForCompany = contactsByCompany.get(company.id) ?? [];
+                  const smsStartReadiness = getInterconnectionStartReadiness(company, contactsForCompany, "SMS");
+                  const voiceStartReadiness = getInterconnectionStartReadiness(company, contactsForCompany, "Voice");
+                  const ownerName = getUserName(state, company.ownerUserId);
+                  const ownerInitials = ownerName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+                  const companyInitials = company.name.slice(0, 2).toUpperCase();
+                  return (
+                    <tr
+                      key={company.id}
+                      className="group cursor-pointer border-b border-gray-50 transition-colors hover:bg-indigo-50/40"
+                      onClick={() => navigate(`/companies/${company.id}`)}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">
+                            {companyInitials}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-gray-900">{company.name}</p>
+                            <p className="truncate text-[11px] text-gray-500">
+                              {company.type}{company.ourEntity ? ` · ${company.ourEntity}` : ""}{company.region ? ` · ${company.region}` : ""}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Badge className={readinessBadgeClass(voiceStartReadiness.ready)}>
-                            Voice: {voiceStartReadiness.ready ? "Ready" : "Missing"}
-                          </Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={dispositionBadgeClass(company.leadDisposition)}>{company.leadDisposition}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-[9px] font-bold text-gray-500">
+                            {ownerInitials}
+                          </div>
+                          <span className="text-sm text-gray-700">{ownerName}</span>
                         </div>
-                      </div>
-                    </td>
-                    <td className="w-[220px]">
-                      <div
-                        className="flex items-center justify-end gap-1 whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Link
-                          to={`/companies/${company.id}`}
-                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-50"
-                        >
-                          Open
-                        </Link>
-                        {canShowQuickStart && (
-                          <>
-                            {!hasSmsProcess && (
-                              <Button
-                                size="sm"
-                                disabled={!smsStartReadiness.ready}
-                                title={!smsStartReadiness.ready ? `Missing: ${smsStartReadiness.missing.join(", ")}` : undefined}
-                                onClick={() => state.startInterconnectionProcess(company.id, "SMS")}
-                              >
-                                Start SMS
-                              </Button>
-                            )}
-                            {!hasVoiceProcess && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={!voiceStartReadiness.ready}
-                                title={!voiceStartReadiness.ready ? `Missing: ${voiceStartReadiness.missing.join(", ")}` : undefined}
-                                onClick={() => state.startInterconnectionProcess(company.id, "Voice")}
-                              >
-                                Start Voice
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {company.workscope.map((ws) => (
+                            <span key={ws} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">{ws}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={technicalBadgeClass(technicalStatus(company))}>{technicalStatus(company)}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge className={commercialBadgeClass(commercialStatus(company))}>{commercialStatus(company)}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{leadAgeDays(company)}d</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1">
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${smsStartReadiness.ready ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-600"}`}>
+                            SMS {smsStartReadiness.ready ? "✓" : "—"}
+                          </span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${voiceStartReadiness.ready ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-600"}`}>
+                            Voice {voiceStartReadiness.ready ? "✓" : "—"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-indigo-400 transition-colors" />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="border-t border-gray-100 px-4 py-2">
+              <p className="text-xs text-gray-400">{visibleLeads.length} lead{visibleLeads.length !== 1 ? "s" : ""}</p>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
