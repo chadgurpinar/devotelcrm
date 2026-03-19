@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
+import { Plus, Download, Search } from "lucide-react";
 import { Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { HrEmployee, HrEmploymentType, HrGender, HrMaritalStatus, OurEntity } from "../../store/types";
 import { formatDate } from "../../utils/datetime";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 import { EmployeeTable } from "./components/EmployeeTable";
 import { EmployeeForm, EmployeeFormTab, HrEmployeeEditModal } from "./components/HrEmployeeEditModal";
 import { HrEmployeeProfileModal } from "./components/HrEmployeeProfileModal";
@@ -337,103 +340,71 @@ export function HrPeoplePageV2() {
     URL.revokeObjectURL(url);
   }
 
+  const selectCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
+
   return (
-    <div className="space-y-4">
-      <Card
+    <div className="space-y-5">
+      <UiPageHeader
         title="People"
+        subtitle={`${activeEmployees} active · ${state.hrEmployees.length} total`}
         actions={
           <div className="flex gap-2">
-            <Button size="sm" variant="secondary" onClick={exportCSV}>⬇ Export CSV</Button>
-            <Button size="sm" onClick={openCreateModal}>Add employee</Button>
+            <button onClick={exportCSV} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition">
+              <Download className="h-4 w-4" /> Export CSV
+            </button>
+            <button onClick={openCreateModal} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition">
+              <Plus className="h-4 w-4" /> Add Employee
+            </button>
           </div>
         }
-      >
-        <div className="mb-3 grid gap-2 md:grid-cols-3">
-          <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Active employees</p>
-            <p className="text-lg font-semibold text-slate-800">{activeEmployees}</p>
-          </div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Total employees</p>
-            <p className="text-lg font-semibold text-slate-800">{state.hrEmployees.length}</p>
-          </div>
-          <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Inactive employees</p>
-            <p className="text-lg font-semibold text-slate-800">{inactiveEmployees}</p>
-          </div>
-        </div>
+      />
 
-        <div className="mb-3 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-8">
-          <div className="md:col-span-2">
-            <FieldLabel>Search</FieldLabel>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Name, email, phone, job title..." />
-          </div>
-          <div>
-            <FieldLabel>Department</FieldLabel>
-            <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
-              <option value="">All</option>
-              {state.hrDepartments.map((department) => (
-                <option key={department.id} value={department.id}>
-                  {department.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Manager</FieldLabel>
-            <select value={managerFilter} onChange={(event) => setManagerFilter(event.target.value)}>
-              <option value="">All</option>
-              {managerFilterOptions.map((manager) => {
-                const directReports = directReportsCountByManagerId.get(manager.id) ?? 0;
-                return (
-                  <option key={manager.id} value={manager.id}>
-                    {(manager.displayName || employeeName(manager)) + ` (Direct: ${directReports})`}
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Legal entity</FieldLabel>
-            <select value={legalEntityFilter} onChange={(event) => setLegalEntityFilter((event.target.value as OurEntity) || "")}>
-              <option value="">All</option>
-              {legalEntityOptions.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Employment type</FieldLabel>
-            <select value={employmentFilter} onChange={(event) => setEmploymentFilter((event.target.value as HrEmploymentType) || "")}>
-              <option value="">All</option>
-              {employmentTypes.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Country</FieldLabel>
-            <select value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}>
-              <option value="">All</option>
-              {countryOptions.map((country) => (
-                <option key={country} value={country}>
-                  {country}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <select value={activeFilter} onChange={(event) => setActiveFilter(event.target.value as "all" | "active" | "inactive")}>
-              <option value="all">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
+      {/* KPI row */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <UiKpiCard label="Active Employees" value={activeEmployees} className="border-emerald-200 bg-emerald-50/40" />
+        <UiKpiCard label="Total" value={state.hrEmployees.length} />
+        <UiKpiCard label="Inactive" value={inactiveEmployees} className={inactiveEmployees > 0 ? "border-gray-200" : ""} />
+      </div>
+
+      {/* Search bar — prominent */}
+      <div className="flex h-11 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 shadow-sm">
+        <Search className="h-5 w-5 text-gray-400 flex-shrink-0" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by name, email, phone, or job title..."
+          className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
+        />
+        {search && <button onClick={() => setSearch("")} className="text-xs text-gray-400 hover:text-gray-600">Clear</button>}
+      </div>
+
+      {/* Department filter chips */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setDepartmentFilter("")}
+          className={`rounded-full px-3 py-1 text-xs font-medium transition ${!departmentFilter ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+        >
+          All Departments
+        </button>
+        {state.hrDepartments.map((dept) => (
+          <button
+            key={dept.id}
+            onClick={() => setDepartmentFilter(departmentFilter === dept.id ? "" : dept.id)}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition ${departmentFilter === dept.id ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            {dept.name}
+          </button>
+        ))}
+      </div>
+
+      {/* Filters row */}
+      <Card padded={false} className="p-0">
+        <div className="flex flex-wrap items-end gap-3 border-b border-gray-100 px-5 py-3">
+          <div className="w-36"><FieldLabel>Entity</FieldLabel><select className={selectCls} value={legalEntityFilter} onChange={(e) => setLegalEntityFilter((e.target.value as OurEntity) || "")}><option value="">All</option>{legalEntityOptions.map((e) => <option key={e} value={e}>{e}</option>)}</select></div>
+          <div className="w-36"><FieldLabel>Type</FieldLabel><select className={selectCls} value={employmentFilter} onChange={(e) => setEmploymentFilter((e.target.value as HrEmploymentType) || "")}><option value="">All</option>{employmentTypes.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+          <div className="w-36"><FieldLabel>Status</FieldLabel><select className={selectCls} value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "inactive")}><option value="all">All</option><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+          <div className="w-36"><FieldLabel>Country</FieldLabel><select className={selectCls} value={countryFilter} onChange={(e) => setCountryFilter(e.target.value)}><option value="">All</option>{countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+          <p className="ml-auto text-xs text-gray-400">{rows.length} result{rows.length !== 1 ? "s" : ""}</p>
         </div>
 
         <div className="overflow-x-auto">

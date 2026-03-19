@@ -1,7 +1,10 @@
 import { useMemo } from "react";
+import { Users, CalendarOff, UserPlus, Briefcase, Cake } from "lucide-react";
 import { Badge, Card } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { computePayrollPreview, dateRangesOverlap } from "../../store/hrUtils";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 
 function pctChange(current: number, previous: number): { label: string; color: string } | null {
   if (previous === 0) return null;
@@ -217,10 +220,69 @@ export function HrDashboardPage() {
     return <p className={`text-[10px] font-medium ${change.color}`}>{change.label}</p>;
   }
 
+  const onLeaveToday = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return state.hrLeaveRequests.filter((r) => r.status === "Approved" && r.startDate <= today && r.endDate >= today).length;
+  }, [state.hrLeaveRequests]);
+  const newThisMonth = useMemo(() => {
+    const m = new Date().toISOString().slice(0, 7);
+    return state.hrEmployees.filter((e) => e.active && e.startDate.slice(0, 7) === m).length;
+  }, [state.hrEmployees]);
+
   return (
-    <div className="space-y-4">
-      {/* DASH 1 — Action Required */}
-      <Card title="⚡ Action Required">
+    <div className="space-y-5">
+      <UiPageHeader title="HR Dashboard" subtitle="Overview of people, leave, and payroll" />
+
+      {/* KPI Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <UiKpiCard label="Total Employees" value={state.hrEmployees.filter((e) => e.active).length} icon={<Users className="h-5 w-5" />} />
+        <UiKpiCard label="On Leave Today" value={onLeaveToday} icon={<CalendarOff className="h-5 w-5" />} className={onLeaveToday > 0 ? "border-amber-200 bg-amber-50/40" : ""} />
+        <UiKpiCard label="New This Month" value={newThisMonth} icon={<UserPlus className="h-5 w-5" />} className="border-emerald-200 bg-emerald-50/40" />
+        <UiKpiCard label="Pending Actions" value={pendingLeaveCount + pendingExpenseCount} icon={<Briefcase className="h-5 w-5" />} className={pendingLeaveCount + pendingExpenseCount > 0 ? "border-rose-200 bg-rose-50/40" : ""} />
+      </div>
+
+      {/* Two-column: Activity + Birthdays */}
+      <div className="grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          {!allClear && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm mb-4">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">Action Required</h3>
+              <div className="space-y-2">
+                {pendingLeaveCount > 0 && <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">📋 {pendingLeaveCount} leave requests awaiting approval</p>}
+                {pendingExpenseCount > 0 && <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2">💰 {pendingExpenseCount} expenses awaiting approval</p>}
+                {newStartersThisWeek.length > 0 && <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2">👋 New starters: {newStartersThisWeek.join(", ")}</p>}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Cake className="h-4 w-4 text-indigo-500" />
+            <h3 className="text-sm font-semibold text-gray-800">This Week</h3>
+          </div>
+          {birthdaysThisWeek.length === 0 && newStartersThisWeek.length === 0 ? (
+            <p className="text-xs text-gray-400 text-center py-4">No birthdays or new starters</p>
+          ) : (
+            <div className="space-y-2.5">
+              {birthdaysThisWeek.map((name) => (
+                <div key={name} className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-100 text-[10px] font-bold text-pink-600">{name.split(" ").map((n) => n[0]).join("").slice(0, 2)}</div>
+                  <div><p className="text-sm font-medium text-gray-800">{name}</p><p className="text-[10px] text-gray-400">🎂 Birthday</p></div>
+                </div>
+              ))}
+              {newStartersThisWeek.map((name) => (
+                <div key={name} className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-600">{name.split(" ").map((n) => n[0]).join("").slice(0, 2)}</div>
+                  <div><p className="text-sm font-medium text-gray-800">{name}</p><p className="text-[10px] text-gray-400">👋 New starter</p></div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* DASH 1 — Legacy Action Required - removed, replaced above */}
+      <Card title="⚡ Action Required" className="hidden">
         {allClear ? (
           <p className="text-sm font-medium text-emerald-600">✓ All clear — no actions needed</p>
         ) : (
