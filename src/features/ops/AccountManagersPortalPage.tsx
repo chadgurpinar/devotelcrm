@@ -185,34 +185,34 @@ export function AccountManagersPortalPage() {
 
       {/* B4 — Inline form */}
       {isDealTab ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">New Deal Offer</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">New Deal Offer</p>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <p className="text-[10px] font-semibold uppercase text-slate-400 mb-2">Customer Side</p>
+              <p className="text-[10px] font-semibold uppercase text-gray-400 mb-2">Customer Side</p>
               <div className="grid grid-cols-2 gap-2">
                 {DEAL_CUSTOMER_FIELDS.map((f) => (
                   <div key={f} className="flex flex-col">
-                    <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">{f}</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{f}</label>
                     <input
                       value={dealCustomer[f] ?? ""}
                       onChange={(e) => setDealCustomer((p) => ({ ...p, [f]: e.target.value }))}
-                      className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+                      className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm h-8 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>
                 ))}
               </div>
             </div>
             <div>
-              <p className="text-[10px] font-semibold uppercase text-slate-400 mb-2">Provider Side</p>
+              <p className="text-[10px] font-semibold uppercase text-gray-400 mb-2">Provider Side</p>
               <div className="grid grid-cols-2 gap-2">
                 {DEAL_PROVIDER_FIELDS.map((f) => (
                   <div key={f} className="flex flex-col">
-                    <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">{f}</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{f}</label>
                     <input
                       value={dealProvider[f] ?? ""}
                       onChange={(e) => setDealProvider((p) => ({ ...p, [f]: e.target.value }))}
-                      className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+                      className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm h-8 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>
                 ))}
@@ -220,43 +220,24 @@ export function AccountManagersPortalPage() {
             </div>
           </div>
           <div className="mt-3 flex gap-2">
-            <button
-              onClick={handleDealSend}
-              disabled={!dealCustomer["Customer"]?.trim()}
-              className="h-8 px-4 rounded-lg bg-brand-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-40"
-            >
-              Send
-            </button>
-            <button onClick={clearDeal} className="h-8 px-3 rounded-lg border border-slate-200 text-slate-500 text-sm hover:bg-slate-50">
-              Clear
-            </button>
+            <button onClick={handleDealSend} disabled={!dealCustomer["Customer"]?.trim()} className="h-8 px-4 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 transition">Send</button>
+            <button onClick={clearDeal} className="h-8 px-3 rounded-lg border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 transition">Clear</button>
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           {(TAB_FIELDS[activeTab] ?? []).map((field) => (
             <div key={field} className="flex flex-col min-w-[120px]">
-              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">{field}</label>
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{field}</label>
               <input
                 value={form[field] ?? ""}
                 onChange={(e) => setForm((p) => ({ ...p, [field]: e.target.value }))}
-                className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+                className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm h-8 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               />
             </div>
           ))}
-          <button
-            onClick={handleSend}
-            disabled={!form["Destination"]?.trim()}
-            className="h-8 px-4 rounded-lg bg-brand-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-40 flex-shrink-0 self-end"
-          >
-            Send
-          </button>
-          <button
-            onClick={() => setForm(emptyForm(activeTab))}
-            className="h-8 px-3 rounded-lg border border-slate-200 text-slate-500 text-sm hover:bg-slate-50 flex-shrink-0 self-end"
-          >
-            Clear
-          </button>
+          <button onClick={handleSend} disabled={!form["Destination"]?.trim()} className="h-8 px-4 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 flex-shrink-0 self-end transition">Send</button>
+          <button onClick={() => setForm(emptyForm(activeTab))} className="h-8 px-3 rounded-lg border border-gray-200 text-gray-500 text-sm hover:bg-gray-50 flex-shrink-0 self-end transition">Clear</button>
         </div>
       )}
 

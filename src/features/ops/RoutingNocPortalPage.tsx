@@ -191,15 +191,15 @@ export function RoutingNocPortalPage() {
         })}
       </div>
 
-      {/* BÖLÜM 2 — Compact inline form */}
-      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      {/* Compact inline form */}
+      <div className="flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         {formFields.map((field) => {
           if (isRoutingTab && field === "Comment") return null;
           return (
             <div key={field} className="flex flex-col min-w-[120px]">
-              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">{field}</label>
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{field}</label>
               <input
-                className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+                className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm h-8 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                 value={form[field] ?? ""}
                 onChange={(e) => setForm((prev) => ({ ...prev, [field]: e.target.value }))}
               />
@@ -210,9 +210,9 @@ export function RoutingNocPortalPage() {
         {isRoutingTab && providers.map((pv, i) => (
           <div key={i} className="flex items-end gap-1">
             <div className="flex flex-col min-w-[120px]">
-              <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Provider {i + 1}</label>
+              <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Provider {i + 1}</label>
               <input
-                className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+                className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm h-8 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                 value={pv}
                 onChange={(e) => setProviders((prev) => prev.map((v, idx) => idx === i ? e.target.value : v))}
               />
@@ -239,9 +239,9 @@ export function RoutingNocPortalPage() {
 
         {isRoutingTab && (
           <div className="flex flex-col min-w-[120px]">
-            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-0.5">Comment</label>
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">Comment</label>
             <input
-              className="rounded border border-slate-200 px-2 py-1 text-sm h-8"
+              className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm h-8 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               value={form["Comment"] ?? ""}
               onChange={(e) => setForm((prev) => ({ ...prev, Comment: e.target.value }))}
             />
@@ -252,7 +252,7 @@ export function RoutingNocPortalPage() {
           type="button"
           onClick={handleSend}
           disabled={!form["Customer"]?.trim()}
-          className="h-8 px-4 rounded-lg bg-brand-600 text-white text-sm font-medium hover:opacity-90 disabled:opacity-40 flex-shrink-0 self-end"
+          className="h-8 px-4 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 flex-shrink-0 self-end transition"
         >
           Send
         </button>
@@ -267,19 +267,28 @@ export function RoutingNocPortalPage() {
 
       {/* Filter bar */}
       <div className="flex items-center gap-3">
-        <p className="text-xs text-slate-500">{openCount} open · {closedCount} closed</p>
+        <p className="text-xs text-gray-500">{openCount} open · {closedCount} closed</p>
         <div className="flex gap-1">
           {(["All", "Open", "Closed"] as const).map((s) => (
-            <Button key={s} size="sm" variant={filterStatus === s ? "primary" : "secondary"} onClick={() => setFilterStatus(s)}>
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                filterStatus === s ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
               {s}
-            </Button>
+            </button>
           ))}
         </div>
       </div>
 
       {/* BÖLÜM 3 — Compact request card grid + expand panel */}
       {tabRequests.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-400">No requests match this filter.</p>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16">
+          <Network className="h-10 w-10 text-gray-300 mb-3" />
+          <p className="text-sm text-gray-500">No requests match this filter</p>
+        </div>
       ) : (
         <div className="space-y-3">
           <div className="grid grid-cols-3 gap-3 xl:grid-cols-4">

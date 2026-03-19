@@ -47,16 +47,16 @@ function MemberCard({ member, summary, onClick }: { member: NocMember; summary: 
   return (
     <article
       onClick={onClick}
-      className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:border-brand-300 hover:shadow-md transition-all"
+      className="cursor-pointer rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:border-indigo-200 hover:shadow-md transition-all"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-sm flex-shrink-0">
+          <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm flex-shrink-0">
             {member.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
           </div>
           <div>
-            <p className="font-semibold text-slate-800">{member.name}</p>
-            <p className="text-xs text-slate-500">
+            <p className="font-semibold text-gray-900">{member.name}</p>
+            <p className="text-xs text-gray-500">
               {member.teamType} NOC{member.role ? ` · ${member.role}` : ""}
             </p>
           </div>
@@ -65,10 +65,10 @@ function MemberCard({ member, summary, onClick }: { member: NocMember; summary: 
         {summary ? (
           <div className="text-right">
             <p className={`text-2xl font-bold ${scoreColor(summary.finalScore)}`}>{summary.finalScore.toFixed(1)}</p>
-            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Final Score</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Final Score</p>
           </div>
         ) : (
-          <span className="text-xs text-slate-400 italic">No data</span>
+          <span className="text-xs text-gray-400 italic">No data</span>
         )}
       </div>
 
@@ -79,13 +79,13 @@ function MemberCard({ member, summary, onClick }: { member: NocMember; summary: 
             <ScorePill label="Discipline" value={summary.disciplineScore} />
             <ScorePill label="Opinion" value={summary.managerOpinionScore} />
           </div>
-          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+          <div className="h-1.5 w-full rounded-full bg-gray-100 overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${scoreBarColor(summary.finalScore)}`}
               style={{ width: `${Math.min(summary.finalScore, 100)}%` }}
             />
           </div>
-          <p className="mt-1 text-[10px] text-slate-400 text-right">{scoreTier(summary.finalScore)}</p>
+          <p className="mt-1.5 text-[10px] text-gray-400 text-right">{scoreTier(summary.finalScore)}</p>
         </div>
       )}
     </article>
