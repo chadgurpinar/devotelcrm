@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
+import { Settings } from "lucide-react";
 import { Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { OurCompanyInfo, OurEntity } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
 
 function normalizeHexColor(input: string): string | null {
   const value = input.trim();
@@ -58,8 +60,11 @@ export function SettingsPage() {
   );
 
   return (
-    <div className="space-y-4">
-      <Card title="User Colors">
+    <div className="space-y-5">
+      <UiPageHeader title="Settings" subtitle="System configuration, users, and company info" />
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-800 mb-4">User Preferences</h3>
         <div className="space-y-2">
           {state.users.map((user) => {
             const draft = colorDrafts[user.id] ?? user.color;
@@ -118,9 +123,10 @@ export function SettingsPage() {
             );
           })}
         </div>
-      </Card>
+      </div>
 
-      <Card title="Our Company Info">
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-800 mb-4">Our Company Info</h3>
         <div className="mb-3 flex flex-wrap gap-2">
           {ourEntities.map((item) => (
             <Button key={item} size="sm" variant={entityTab === item ? "primary" : "secondary"} onClick={() => setEntityTab(item)}>
@@ -405,9 +411,10 @@ export function SettingsPage() {
             </p>
           </section>
         </div>
-      </Card>
+      </div>
 
-      <Card title="Demo data controls">
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-800 mb-4">Demo Data Controls</h3>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
@@ -443,20 +450,22 @@ export function SettingsPage() {
             </Button>
           </div>
         </div>
-        {message && <p className="mt-2 text-xs text-slate-600">{message}</p>}
-      </Card>
+        {message && <p className="mt-2 text-xs text-gray-600">{message}</p>}
+      </div>
 
-      <Card title="Reminder outbox simulation">
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">Notification Outbox</h3>
+        <p className="text-xs text-gray-500 mb-3">Simulated email notifications — requires backend mail service for real delivery</p>
         {state.outbox.length === 0 ? (
-          <p className="text-xs text-slate-500">No simulated emails yet.</p>
+          <p className="text-xs text-gray-400 text-center py-4">No simulated emails yet.</p>
         ) : (
-          <ul className="list-disc space-y-1 pl-5 text-xs text-slate-700">
+          <ul className="list-disc space-y-1 pl-5 text-xs text-gray-700">
             {state.outbox.slice().reverse().map((line, idx) => (
               <li key={`${line}-${idx}`}>{line}</li>
             ))}
           </ul>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
