@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { CalendarOff, Clock, CheckCircle } from "lucide-react";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { dateRangesOverlap, workingDaysBetween } from "../../store/hrUtils";
 import { useAppStore } from "../../store/db";
 import { HrEmployee, HrLeaveActionType, HrLeaveRequest, HrLeaveStatus, HrLeaveType } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 
 const leaveTypes: HrLeaveType[] = ["Annual", "Sick", "Marriage", "Bereavement", "Paternity", "Maternity", "Unpaid", "Other"];
 const activeLeaveStatuses: HrLeaveStatus[] = ["PendingManager", "PendingHR", "Approved"];
@@ -731,17 +734,29 @@ export function HrLeavePage() {
     setActionModal(null);
   };
 
+  const kpiPending = state.hrLeaveRequests.filter((r) => r.status === "PendingManager" || r.status === "PendingHR").length;
+  const kpiApprovedMonth = (() => { const m = new Date().toISOString().slice(0, 7); return state.hrLeaveRequests.filter((r) => r.status === "Approved" && (r.hrApprovedAt ?? r.updatedAt).slice(0, 7) === m).length; })();
+  const kpiOnLeaveToday = (() => { const d = new Date().toISOString().slice(0, 10); return state.hrLeaveRequests.filter((r) => r.status === "Approved" && r.startDate <= d && r.endDate >= d).length; })();
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <UiPageHeader title="Leave Management" subtitle="Track and approve employee leave requests" />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <UiKpiCard label="Pending Requests" value={kpiPending} icon={<Clock className="h-5 w-5" />} className={kpiPending > 0 ? "border-amber-200 bg-amber-50/40" : ""} />
+        <UiKpiCard label="Approved This Month" value={kpiApprovedMonth} icon={<CheckCircle className="h-5 w-5" />} className="border-emerald-200 bg-emerald-50/40" />
+        <UiKpiCard label="On Leave Today" value={kpiOnLeaveToday} icon={<CalendarOff className="h-5 w-5" />} />
+      </div>
+
       <Card title="Leave Management">
         <div className="mb-3 space-y-2">
           <div>
             <FieldLabel>View</FieldLabel>
             <div className="flex flex-wrap gap-2">
               {(["Employee", "Manager", "HR"] as const).map((role) => (
-                <Button key={role} size="sm" variant={viewAs === role ? "primary" : "secondary"} onClick={() => setViewAs(role)}>
+                <button key={role} onClick={() => setViewAs(role)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${viewAs === role ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
                   {role}
-                </Button>
+                </button>
               ))}
             </div>
           </div>

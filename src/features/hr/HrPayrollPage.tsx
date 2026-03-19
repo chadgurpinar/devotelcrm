@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
+import { DollarSign } from "lucide-react";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { computePayrollPreview } from "../../store/hrUtils";
 import { HrCurrencyCode, HrEmployeeCompensation, HrEmploymentType, HrPayrollFilters, OurEntity } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 
 type DistributionDraft = {
   id: string;
@@ -237,8 +240,18 @@ export function HrPayrollPage() {
     });
   }
 
+  const avgSalary = preview.totals.headcount > 0 ? Math.round(preview.totals.netEur / preview.totals.headcount) : 0;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <UiPageHeader title="Payroll & Compensation" subtitle={`${month} · ${preview.totals.headcount} employees`} />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <UiKpiCard label="Total Monthly Cost (EUR)" value={preview.totals.employerCostEur.toLocaleString()} icon={<DollarSign className="h-5 w-5" />} />
+        <UiKpiCard label="Avg Net Salary (EUR)" value={avgSalary.toLocaleString()} className="border-blue-200 bg-blue-50/40" />
+        <UiKpiCard label="Headcount" value={preview.totals.headcount} className="border-emerald-200 bg-emerald-50/40" />
+      </div>
+
       <Card title="Payroll & Compensation">
         <div className="mb-3 grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-6">
           <div>

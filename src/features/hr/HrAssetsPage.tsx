@@ -1,8 +1,11 @@
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Monitor, Plus } from "lucide-react";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { HrAssetCategory, HrCurrencyCode, HrEmployee, HrProvisionRequest, HrSoftwareProduct, HrSoftwareSeat } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 
 const hardwareCategories: HrAssetCategory[] = ["Laptop", "Phone", "Accessory", "Monitor", "Other"];
 const currencyOptions: HrCurrencyCode[] = ["EUR", "USD", "GBP", "TRY"];
@@ -495,9 +498,25 @@ export function HrAssetsPage() {
   }, [employeeActorId, hrProvisionRequests, requestModal]);
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border-2 border-indigo-200 bg-indigo-50 p-4">
-        <p className="mb-2 text-sm font-bold uppercase tracking-wide text-indigo-800">Role-based view — Employee / Manager / HR</p>
+    <div className="space-y-5">
+      <UiPageHeader
+        title="Assets & Software"
+        subtitle={`${state.hrAssets.length} assets · ${(state.hrSoftwareSeats ?? []).length} software seats`}
+        actions={
+          <button className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition">
+            <Plus className="h-4 w-4" /> Add Asset
+          </button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <UiKpiCard label="Total Assets" value={state.hrAssets.length} icon={<Monitor className="h-5 w-5" />} />
+        <UiKpiCard label="Assigned" value={state.hrAssets.filter((a) => a.status === "Assigned").length} className="border-emerald-200 bg-emerald-50/40" />
+        <UiKpiCard label="Available" value={state.hrAssets.filter((a) => a.status === "Available").length} className="border-blue-200 bg-blue-50/40" />
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Role-based view</p>
         <div className="flex flex-wrap gap-2">
           {(["Employee", "Manager", "HR"] as const).map((role) => (
             <Button key={role} size="sm" variant={viewAs === role ? "primary" : "secondary"} onClick={() => setViewAs(role)}>
