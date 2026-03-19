@@ -1,8 +1,13 @@
 import { ChangeEvent, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { FileText, AlertTriangle, ChevronRight, Search } from "lucide-react";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { Contract, ContractFile, ContractStatus, ContractType, InterconnectionTrack, OurEntity } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
+import { UiKpiCard } from "../../ui/UiKpiCard";
+
+const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
 
 const statuses: Array<ContractStatus | "all"> = [
   "all",
@@ -265,98 +270,75 @@ export function ContractsPage() {
     }
   }
 
+  const totalContracts = state.contracts.length;
+  const activeContracts = state.contracts.filter((c) => c.status === "FullySigned" || c.status === "InternalSignatureRequested" || c.status === "CounterpartySignatureRequested").length;
+  const expiringSoon = state.contracts.filter((c) => {
+    if (c.status !== "FullySigned") return false;
+    const age = Date.now() - new Date(c.updatedAt).getTime();
+    return age > 180 * 86400000;
+  }).length;
+
   return (
-    <div className="space-y-4">
-      <Card title="Contracts">
-        <div className="mb-3 grid gap-2 md:grid-cols-6">
-          <div className="md:col-span-2">
-            <FieldLabel>Search</FieldLabel>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Company, track, status..." />
-          </div>
-          <div>
-            <FieldLabel>Track</FieldLabel>
-            <select value={track} onChange={(e) => setTrack(e.target.value as InterconnectionTrack | "all")}>
-              {tracks.map((value) => (
-                <option key={value} value={value}>
-                  {value === "all" ? "All" : value}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Our entity</FieldLabel>
-            <select value={ourEntity} onChange={(e) => setOurEntity(e.target.value as OurEntity | "all")}>
-              {entities.map((value) => (
-                <option key={value} value={value}>
-                  {value === "all" ? "All" : value}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <select value={status} onChange={(e) => setStatus(e.target.value as ContractStatus | "all")}>
-              {statuses.map((value) => (
-                <option key={value} value={value}>
-                  {value === "all" ? "All" : value}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Company</FieldLabel>
-            <select value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
-              <option value="">All</option>
-              {state.companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Created from</FieldLabel>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          </div>
-          <div>
-            <FieldLabel>Created to</FieldLabel>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+    <div className="space-y-5">
+      <UiPageHeader title="Contracts" subtitle={`${totalContracts} contracts across ${companyRows.length} companies`} />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <UiKpiCard label="Total Contracts" value={totalContracts} icon={<FileText className="h-5 w-5" />} />
+        <UiKpiCard label="Active" value={activeContracts} className="border-emerald-200 bg-emerald-50/40" />
+        <UiKpiCard label="Expiring Soon" value={expiringSoon} className={expiringSoon > 0 ? "border-rose-200 bg-rose-50/40" : ""} icon={expiringSoon > 0 ? <AlertTriangle className="h-5 w-5 text-rose-400" /> : undefined} />
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-3.5">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[220px] flex-1">
+              <label className="mb-1 block text-[11px] font-medium text-gray-500">Search</label>
+              <div className="flex h-9 items-center gap-2 rounded-lg border border-gray-300 bg-white px-3">
+                <Search className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Company, track, status..." className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400" />
+              </div>
+            </div>
+            <div className="w-28"><label className="mb-1 block text-[11px] font-medium text-gray-500">Track</label><select className={inputCls} value={track} onChange={(e) => setTrack(e.target.value as InterconnectionTrack | "all")}>{tracks.map((v) => <option key={v} value={v}>{v === "all" ? "All" : v}</option>)}</select></div>
+            <div className="w-28"><label className="mb-1 block text-[11px] font-medium text-gray-500">Entity</label><select className={inputCls} value={ourEntity} onChange={(e) => setOurEntity(e.target.value as OurEntity | "all")}>{entities.map((v) => <option key={v} value={v}>{v === "all" ? "All" : v}</option>)}</select></div>
+            <div className="w-40"><label className="mb-1 block text-[11px] font-medium text-gray-500">Status</label><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value as ContractStatus | "all")}>{statuses.map((v) => <option key={v} value={v}>{v === "all" ? "All" : v}</option>)}</select></div>
+            <div className="w-32"><label className="mb-1 block text-[11px] font-medium text-gray-500">From</label><input className={inputCls} type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} /></div>
+            <div className="w-32"><label className="mb-1 block text-[11px] font-medium text-gray-500">To</label><input className={inputCls} type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} /></div>
           </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Company</th>
-              <th>Our entity</th>
-              <th>Tracks</th>
-              <th>Contracts</th>
-              <th>Total</th>
-              <th>Last update</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {companyRows.map((row) => {
-              const company = companyById.get(row.companyId);
-              const trackSet = Array.from(new Set(row.contracts.map((contract) => contract.track)));
-              return (
-                <tr key={row.companyId} className="cursor-pointer hover:bg-slate-50" onClick={() => openCompanyModal(row.companyId)}>
-                  <td>
-                    <p className="font-semibold">{row.companyName}</p>
-                    <p className="text-[11px] text-slate-500">{row.companyId}</p>
-                  </td>
-                  <td>
-                    <Badge>{company?.ourEntity ?? "-"}</Badge>
-                  </td>
-                  <td>
-                    <div className="flex flex-wrap gap-1">
-                      {trackSet.map((entry) => (
-                        <Badge key={`${row.companyId}-${entry}`}>{entry}</Badge>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="border-b border-gray-100 bg-gray-50/80">
+              <tr>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Company</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Entity</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Tracks</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Contracts</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Total</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Last Update</th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {companyRows.map((row) => {
+                const company = companyById.get(row.companyId);
+                const trackSet = Array.from(new Set(row.contracts.map((c) => c.track)));
+                const initials = row.companyName.slice(0, 2).toUpperCase();
+                return (
+                  <tr key={row.companyId} className="group cursor-pointer border-b border-gray-50 transition-colors hover:bg-indigo-50/40" onClick={() => openCompanyModal(row.companyId)}>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">{initials}</div>
+                        <span className="text-sm font-semibold text-gray-900">{row.companyName}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3"><Badge>{company?.ourEntity ?? "-"}</Badge></td>
+                    <td className="px-5 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {trackSet.map((t) => <span key={`${row.companyId}-${t}`} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">{t}</span>)}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3">
                     <div className="flex flex-wrap gap-1">
                       {row.contracts.slice(0, 4).map((contract) => (
                         <Badge key={contract.id} className={statusBadgeClass(contract.status)}>
@@ -366,26 +348,21 @@ export function ContractsPage() {
                       {row.contracts.length > 4 && <Badge>+{row.contracts.length - 4} more</Badge>}
                     </div>
                   </td>
-                  <td>{row.contracts.length}</td>
-                  <td>{new Date(row.latestUpdatedAt).toLocaleString()}</td>
-                  <td>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openCompanyModal(row.companyId);
-                      }}
-                    >
-                      Open
-                    </Button>
-                  </td>
+                  <td className="px-5 py-3 text-sm text-gray-700">{row.contracts.length}</td>
+                  <td className="px-5 py-3 text-xs text-gray-500">{new Date(row.latestUpdatedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                  <td className="px-5 py-3"><ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-indigo-400 transition-colors" /></td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-      </Card>
+        </div>
+        {companyRows.length > 0 && (
+          <div className="border-t border-gray-100 px-5 py-2.5">
+            <p className="text-xs text-gray-400">{companyRows.length} compan{companyRows.length !== 1 ? "ies" : "y"}</p>
+          </div>
+        )}
+      </div>
 
       {selectedCompany && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/30 p-4" onClick={closeCompanyModal}>
