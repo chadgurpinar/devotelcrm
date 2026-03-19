@@ -102,7 +102,7 @@ export function AppShell() {
       title: "Daily Management",
       items: [
         { to: "/projects", label: "Projects & Tasks", icon: "P" },
-        { to: "/tasks", label: "All Tasks", icon: "T", badge: badge(tasksOpenCount, "bg-sky-500") },
+        { to: "/tasks/all", label: "All Tasks", icon: "T", badge: badge(tasksOpenCount, "bg-sky-500") },
         { to: "/management-reports", label: "Management Reports", icon: "R" },
       ],
     },

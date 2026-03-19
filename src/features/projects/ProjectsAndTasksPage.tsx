@@ -56,7 +56,7 @@ export function ProjectsAndTasksPage() {
         subtitle="Overview of projects and their tasks"
         actions={
           <button
-            onClick={() => navigate("/tasks")}
+            onClick={() => navigate("/tasks/all")}
             className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-gray-400">
