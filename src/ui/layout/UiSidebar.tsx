@@ -4,7 +4,7 @@ import { NavLink, useLocation } from "react-router-dom";
 export interface SidebarNavItem {
   to: string;
   label: string;
-  icon: string;
+  icon: ReactNode;
   badge?: ReactNode;
 }
 
@@ -79,8 +79,10 @@ export function UiSidebar({ groups, collapsed, onToggleCollapse, headerSlot, foo
                     title={collapsed ? item.label : undefined}
                   >
                     <span
-                      className={`inline-flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-md text-[10px] font-bold ${
-                        isActive ? "bg-indigo-500/20 text-indigo-400" : "bg-white/5 text-slate-500 group-hover:text-slate-300"
+                      className={`inline-flex flex-shrink-0 items-center justify-center ${
+                        collapsed ? "[&>svg]:h-[18px] [&>svg]:w-[18px]" : "[&>svg]:h-4 [&>svg]:w-4"
+                      } ${
+                        isActive ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300"
                       }`}
                     >
                       {item.icon}

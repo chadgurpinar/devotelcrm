@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  LayoutDashboard, CheckSquare, BarChart2, Calendar, TrendingUp, GitMerge,
+  Building2, FileText, StickyNote, Radio, Phone, Network, UserCheck,
+  ClipboardList, PieChart, Users, UserCircle, Monitor, GitBranch, DollarSign,
+  Receipt, CalendarOff, CreditCard, Settings2, Home, Landmark, Settings,
+} from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { Button } from "../../components/ui";
 import { CompanyType, InterconnectionType, OurEntity, Workscope } from "../../store/types";
@@ -101,53 +107,53 @@ export function AppShell() {
     {
       title: "Daily Management",
       items: [
-        { to: "/projects", label: "Projects & Tasks", icon: "P" },
-        { to: "/tasks/all", label: "All Tasks", icon: "T", badge: badge(tasksOpenCount, "bg-sky-500") },
-        { to: "/management-reports", label: "Management Reports", icon: "R" },
+        { to: "/projects", label: "Projects & Tasks", icon: <LayoutDashboard /> },
+        { to: "/tasks/all", label: "All Tasks", icon: <CheckSquare />, badge: badge(tasksOpenCount, "bg-sky-500") },
+        { to: "/management-reports", label: "Management Reports", icon: <BarChart2 /> },
       ],
     },
     {
       title: "CRM",
       items: [
-        { to: "/events", label: "Events", icon: "E" },
-        { to: "/leads", label: "Leads", icon: "L", badge: badge(leadsCount, "bg-amber-500") },
-        { to: "/interconnection", label: "Interconnection", icon: "I", badge: badge(interconnectionCount, "bg-cyan-500") },
-        { to: "/accounts", label: "Clients", icon: "C" },
-        { to: "/contracts", label: "Contracts", icon: "K" },
-        { to: "/notes", label: "Notes", icon: "N" },
+        { to: "/events", label: "Events", icon: <Calendar /> },
+        { to: "/leads", label: "Leads", icon: <TrendingUp />, badge: badge(leadsCount, "bg-amber-500") },
+        { to: "/interconnection", label: "Interconnection", icon: <GitMerge />, badge: badge(interconnectionCount, "bg-cyan-500") },
+        { to: "/accounts", label: "Clients", icon: <Building2 /> },
+        { to: "/contracts", label: "Contracts", icon: <FileText /> },
+        { to: "/notes", label: "Notes", icon: <StickyNote /> },
       ],
     },
     {
       title: "Operations Command Center",
       items: [
-        { to: "/ops/sms-noc", label: "SMS NOC Portal", icon: "S", badge: opsUrgentCount > 0 ? badge(opsUrgentCount, "bg-rose-500") : undefined },
-        { to: "/ops/voice-noc", label: "Voice NOC Portal", icon: "V" },
-        { to: "/ops/routing-noc", label: "Routing & NOC", icon: "R" },
-        { to: "/ops/account-managers", label: "Account Managers", icon: "M" },
-        { to: "/ops/noc-performance-audit", label: "Performance Audit", icon: "A" },
-        { to: "/ops/analytics", label: "A2P Analytics", icon: "X" },
+        { to: "/ops/sms-noc", label: "SMS NOC Portal", icon: <Radio />, badge: opsUrgentCount > 0 ? badge(opsUrgentCount, "bg-rose-500") : undefined },
+        { to: "/ops/voice-noc", label: "Voice NOC Portal", icon: <Phone /> },
+        { to: "/ops/routing-noc", label: "Routing & NOC", icon: <Network /> },
+        { to: "/ops/account-managers", label: "Account Managers", icon: <UserCheck /> },
+        { to: "/ops/noc-performance-audit", label: "Performance Audit", icon: <ClipboardList /> },
+        { to: "/ops/analytics", label: "A2P Analytics", icon: <PieChart /> },
       ],
     },
     {
       title: "Human Resources",
       items: [
-        { to: "/hr/dashboard", label: "HR Dashboard", icon: "H" },
-        { to: "/hr/people", label: "People", icon: "P" },
-        { to: "/hr/assets", label: "Assets & Software", icon: "A" },
-        { to: "/hr/organization", label: "Organization", icon: "O" },
-        { to: "/hr/payroll", label: "Payroll & Comp", icon: "Y" },
-        { to: "/hr/payslip", label: "My Payslip", icon: "₿" },
-        { to: "/hr/leave", label: "Leave Management", icon: "L" },
-        { to: "/hr/expenses", label: "Expenses", icon: "E" },
-        { to: "/hr/settings", label: "HR Settings", icon: "S" },
+        { to: "/hr/dashboard", label: "HR Dashboard", icon: <Users /> },
+        { to: "/hr/people", label: "People", icon: <UserCircle /> },
+        { to: "/hr/assets", label: "Assets & Software", icon: <Monitor /> },
+        { to: "/hr/organization", label: "Organization", icon: <GitBranch /> },
+        { to: "/hr/payroll", label: "Payroll & Comp", icon: <DollarSign /> },
+        { to: "/hr/payslip", label: "My Payslip", icon: <Receipt /> },
+        { to: "/hr/leave", label: "Leave Management", icon: <CalendarOff /> },
+        { to: "/hr/expenses", label: "Expenses", icon: <CreditCard /> },
+        { to: "/hr/settings", label: "HR Settings", icon: <Settings2 /> },
       ],
     },
     {
       title: "Other",
       items: [
-        { to: "/", label: "Dashboard", icon: "D" },
-        { to: "/finance", label: "Finance", icon: "F" },
-        { to: "/settings", label: "Settings", icon: "S" },
+        { to: "/", label: "Dashboard", icon: <Home /> },
+        { to: "/finance", label: "Finance", icon: <Landmark /> },
+        { to: "/settings", label: "Settings", icon: <Settings /> },
       ],
     },
   ];
