@@ -105,7 +105,7 @@ const SECTION_TABS: { key: TaskSection; label: string }[] = [
   { key: "AssignedToMe", label: "Assigned to Me" },
   { key: "AssignedByMe", label: "Assigned by Me" },
   { key: "Completed", label: "Completed" },
-  { key: "Archive", label: "Starred" },
+  { key: "Archive", label: "Archived" },
 ];
 
 export function TasksPage() {
@@ -281,7 +281,7 @@ export function TasksPage() {
               <input className={`${inputCls} pl-9`} placeholder="Search tasks or comments..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
           </div>
-          <div><label className="mb-1 block text-xs font-medium text-gray-500">Status</label><select className={inputCls} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "Any")}><option value="Any">Any</option>{!isDoneSection && <><option value="Backlog">Backlog</option><option value="InProgress">In Progress</option></>}{isDoneSection && <><option value="Done">Done</option><option value="Completed">Completed</option><option value="Archived">Starred</option></>}</select></div>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Status</label><select className={inputCls} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "Any")}><option value="Any">Any</option>{!isDoneSection && <><option value="Backlog">Backlog</option><option value="InProgress">In Progress</option></>}{isDoneSection && <><option value="Done">Done</option><option value="Completed">Completed</option><option value="Archived">Archived</option></>}</select></div>
           <div><label className="mb-1 block text-xs font-medium text-gray-500">Priority</label><select className={inputCls} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | "Any")}><option value="Any">Any</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>
           <div><label className="mb-1 block text-xs font-medium text-gray-500">Due</label><select className={inputCls} value={dueFilter} onChange={(e) => setDueFilter(e.target.value as DueFilter)}><option value="Any">Any</option><option value="DueSoon">Due soon (7d)</option><option value="Overdue">Overdue</option><option value="NoDueDate">No due date</option></select></div>
           <div><label className="mb-1 block text-xs font-medium text-gray-500">Linked</label><select className={inputCls} value={linkedFilter} onChange={(e) => setLinkedFilter(e.target.value as LinkedFilter)}><option value="Any">Any</option><option value="Company">Company</option><option value="Event">Event</option><option value="Interconnection">Interconnection</option><option value="Project">Project</option></select></div>
@@ -319,7 +319,7 @@ export function TasksPage() {
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">{section === "Completed" ? "No completed tasks yet." : section === "Archive" ? "No starred tasks yet." : "No tasks found."}</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">{section === "Completed" ? "No completed tasks yet." : section === "Archive" ? "No archived tasks yet." : "No tasks found."}</td></tr>
                 )}
                 {rows.map((task) => {
                   const linkTarget = getTaskLinkTarget(task);

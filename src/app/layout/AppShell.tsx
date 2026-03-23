@@ -30,7 +30,7 @@ export function AppShell() {
     (s) => s.companies.filter((c) => c.companyStatus === "LEAD" && c.leadDisposition === "Open").length,
   );
   const interconnectionCount = useAppStore((s) => s.companies.filter((c) => c.companyStatus === "INTERCONNECTION").length);
-  const tasksOpenCount = useAppStore((s) => s.tasks.filter((t) => t.status !== "Done").length);
+  const tasksOpenCount = useAppStore((s) => s.tasks.filter((t) => (t.assigneeUserId === s.activeUserId || t.createdByUserId === s.activeUserId) && t.status !== "Done" && t.status !== "Completed" && t.status !== "Archived").length);
   const opsUrgentCount = useAppStore(
     (s) => s.opsCases.filter((entry) => (entry.status === "NEW" || entry.status === "IN_PROGRESS") && entry.severity === "URGENT").length,
   );
