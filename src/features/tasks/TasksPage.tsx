@@ -42,7 +42,7 @@ const SECTION_TABS: { key: TaskSection; label: string }[] = [
 
 export function TasksPage() {
   const state = useAppStore();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<TasksViewMode>(getStoredViewMode);
   const [section, setSection] = useState<TaskSection>("MyPersonalTasks");
   const [search, setSearch] = useState("");
@@ -61,6 +61,16 @@ export function TasksPage() {
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [editLabelName, setEditLabelName] = useState("");
   const [editLabelColor, setEditLabelColor] = useState("");
+
+  // Open task from URL param (e.g. /tasks?taskId=xxx)
+  useEffect(() => {
+    const taskId = searchParams.get("taskId");
+    if (taskId) {
+      setSelectedTaskId(taskId);
+      setSearchParams((prev) => { const next = new URLSearchParams(prev); next.delete("taskId"); return next; });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const projectNames = useMemo(() => new Set(state.projects.map((p) => p.name)), [state.projects]);
   const setViewModePersisted = useCallback((mode: TasksViewMode) => { setViewMode(mode); try { localStorage.setItem(TASKS_VIEW_MODE_KEY, mode); } catch { /* */ } }, []);
