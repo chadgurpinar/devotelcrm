@@ -606,6 +606,20 @@ function toProjectAttachmentLinks(value: unknown): ProjectAttachmentLink[] {
     .filter((entry): entry is ProjectAttachmentLink => Boolean(entry));
 }
 
+export function isAfterWeeklyDeadline(lockDay: number, lockTime: string): boolean {
+  const now = new Date();
+  const currentDay = now.getDay();
+  const [lockH, lockM] = lockTime.split(":").map(Number);
+  let daysSinceLock = currentDay - lockDay;
+  if (daysSinceLock < 0) daysSinceLock += 7;
+  if (daysSinceLock === 0) {
+    const lockMinutes = lockH * 60 + lockM;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    return nowMinutes > lockMinutes;
+  }
+  return daysSinceLock > 0 && daysSinceLock < 7;
+}
+
 function normalizeProjectRoleReport(raw: unknown, fallbackUserId: string): ProjectRoleReport | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const entry = raw as Record<string, unknown>;
@@ -1518,6 +1532,24 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     updateProjectWeeklyReport: (report) =>
       set((state) => {
         const now = new Date().toISOString();
+        const project = state.projects.find((p) => p.id === report.projectId);
+        if (project?.reportDeadlines) {
+          const dl = project.reportDeadlines;
+          const oldReport = state.projectWeeklyReports.find((r) => r.id === report.id);
+          const roleKeys = ["technical", "sales", "product"] as const;
+          for (const key of roleKeys) {
+            const wasSubmitted = oldReport?.roleReports[key]?.submittedAt;
+            const nowSubmitted = report.roleReports[key]?.submittedAt;
+            if (!wasSubmitted && nowSubmitted && isAfterWeeklyDeadline(dl.memberLockDay, dl.memberLockTime)) {
+              return state;
+            }
+          }
+          const wasManagerSubmitted = oldReport?.managerSummary?.submittedAt;
+          const nowManagerSubmitted = report.managerSummary?.submittedAt;
+          if (!wasManagerSubmitted && nowManagerSubmitted && isAfterWeeklyDeadline(dl.managerLockDay, dl.managerLockTime)) {
+            return state;
+          }
+        }
         const exists = state.projectWeeklyReports.some((row) => row.id === report.id);
         if (exists) {
           return {

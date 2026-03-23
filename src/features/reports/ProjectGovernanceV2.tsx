@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Badge, Button, Card, FieldLabel } from "../../components/ui";
-import { useAppStore } from "../../store/db";
+import { useAppStore, isAfterWeeklyDeadline } from "../../store/db";
 import { getUserName } from "../../store/selectors";
 import {
   Project,
@@ -57,6 +57,10 @@ type ProjectFormState = {
   managerUserIds: string[];
   watcherUserIds: string[];
   tagsText: string;
+  memberLockDay: string;
+  memberLockTime: string;
+  managerLockDay: string;
+  managerLockTime: string;
 };
 
 type ProjectMeta = {
@@ -247,6 +251,10 @@ function emptyProjectForm(activeUserId: string): ProjectFormState {
     managerUserIds: [activeUserId],
     watcherUserIds: [activeUserId],
     tagsText: "",
+    memberLockDay: "",
+    memberLockTime: "",
+    managerLockDay: "",
+    managerLockTime: "",
   };
 }
 
@@ -640,6 +648,10 @@ export function ProjectGovernanceV2() {
       managerUserIds: project.managerUserIds,
       watcherUserIds: project.watcherUserIds,
       tagsText: (project.tags ?? []).join(", "),
+      memberLockDay: project.reportDeadlines ? String(project.reportDeadlines.memberLockDay) : "",
+      memberLockTime: project.reportDeadlines?.memberLockTime ?? "",
+      managerLockDay: project.reportDeadlines ? String(project.reportDeadlines.managerLockDay) : "",
+      managerLockTime: project.reportDeadlines?.managerLockTime ?? "",
     });
     setProjectDrawerOpen(true);
   };
@@ -685,6 +697,9 @@ export function ProjectGovernanceV2() {
       .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean);
+    const reportDeadlines = projectForm.memberLockDay !== "" && projectForm.memberLockTime && projectForm.managerLockDay !== "" && projectForm.managerLockTime
+      ? { memberLockDay: Number(projectForm.memberLockDay), memberLockTime: projectForm.memberLockTime, managerLockDay: Number(projectForm.managerLockDay), managerLockTime: projectForm.managerLockTime }
+      : undefined;
     if (editingProjectId) {
       const existing = state.projects.find((project) => project.id === editingProjectId);
       if (!existing) return;
@@ -701,6 +716,7 @@ export function ProjectGovernanceV2() {
         status: projectForm.status,
         strategicPriority: projectForm.strategicPriority,
         tags,
+        reportDeadlines,
       });
     } else {
       state.createProject({
@@ -715,6 +731,7 @@ export function ProjectGovernanceV2() {
         status: projectForm.status,
         strategicPriority: projectForm.strategicPriority,
         tags,
+        reportDeadlines,
       });
     }
     setProjectDrawerOpen(false);
@@ -819,13 +836,23 @@ export function ProjectGovernanceV2() {
             />
           </div>
         </div>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex items-center gap-2">
           <Button size="sm" variant="secondary" onClick={() => saveRoleReport(project, weekStartDate, role, false)} disabled={!canEdit}>
             Save draft
           </Button>
-          <Button size="sm" onClick={() => saveRoleReport(project, weekStartDate, role, true)} disabled={!canEdit}>
-            Submit {title}
-          </Button>
+          {(() => {
+            const dl = project.reportDeadlines;
+            const locked = dl && isAfterWeeklyDeadline(dl.memberLockDay, dl.memberLockTime);
+            return (
+              <>
+                <Button size="sm" onClick={() => saveRoleReport(project, weekStartDate, role, true)} disabled={!canEdit || !!locked}>
+                  Submit {title}
+                </Button>
+                {locked && <span className="text-[10px] text-rose-600">🔒 Submissions locked</span>}
+                {dl && !locked && <span className="text-[10px] text-gray-400">Deadline: {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dl.memberLockDay]} {dl.memberLockTime}</span>}
+              </>
+            );
+          })()}
         </div>
       </section>
     );
@@ -923,13 +950,23 @@ export function ProjectGovernanceV2() {
             />
           </div>
         </div>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex items-center gap-2">
           <Button size="sm" variant="secondary" onClick={() => saveManagerSummary(project, weekStartDate, false)} disabled={!managerCanEdit}>
             Save draft
           </Button>
-          <Button size="sm" onClick={() => saveManagerSummary(project, weekStartDate, true)} disabled={!managerCanEdit}>
-            Submit manager summary
-          </Button>
+          {(() => {
+            const dl = project.reportDeadlines;
+            const locked = dl && isAfterWeeklyDeadline(dl.managerLockDay, dl.managerLockTime);
+            return (
+              <>
+                <Button size="sm" onClick={() => saveManagerSummary(project, weekStartDate, true)} disabled={!managerCanEdit || !!locked}>
+                  Submit manager summary
+                </Button>
+                {locked && <span className="text-[10px] text-rose-600">🔒 Submissions locked</span>}
+                {dl && !locked && <span className="text-[10px] text-gray-400">Deadline: {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dl.managerLockDay]} {dl.managerLockTime}</span>}
+              </>
+            );
+          })()}
         </div>
       </section>
     );
@@ -1657,6 +1694,35 @@ export function ProjectGovernanceV2() {
                       {user.name}
                     </label>
                   ))}
+                </div>
+              </div>
+
+              <div className="rounded-md border border-slate-200 p-3">
+                <FieldLabel>Report Deadlines (optional)</FieldLabel>
+                <p className="mb-2 text-[10px] text-slate-400">Set weekly submission deadlines for role reporters and managers</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 mb-1">Member Lock</p>
+                    <div className="flex gap-2">
+                      <select value={projectForm.memberLockDay} onChange={(e) => setProjectForm((p) => ({ ...p, memberLockDay: e.target.value }))} className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs">
+                        <option value="">— Day —</option>
+                        <option value="1">Mon</option><option value="2">Tue</option><option value="3">Wed</option><option value="4">Thu</option><option value="5">Fri</option><option value="6">Sat</option><option value="0">Sun</option>
+                      </select>
+                      <input type="time" value={projectForm.memberLockTime} onChange={(e) => setProjectForm((p) => ({ ...p, memberLockTime: e.target.value }))} className="rounded border border-slate-200 px-2 py-1 text-xs" />
+                    </div>
+                    <p className="mt-0.5 text-[9px] text-slate-400">Technical, Sales, Product cannot submit after this time</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 mb-1">Manager Lock</p>
+                    <div className="flex gap-2">
+                      <select value={projectForm.managerLockDay} onChange={(e) => setProjectForm((p) => ({ ...p, managerLockDay: e.target.value }))} className="flex-1 rounded border border-slate-200 px-2 py-1 text-xs">
+                        <option value="">— Day —</option>
+                        <option value="1">Mon</option><option value="2">Tue</option><option value="3">Wed</option><option value="4">Thu</option><option value="5">Fri</option><option value="6">Sat</option><option value="0">Sun</option>
+                      </select>
+                      <input type="time" value={projectForm.managerLockTime} onChange={(e) => setProjectForm((p) => ({ ...p, managerLockTime: e.target.value }))} className="rounded border border-slate-200 px-2 py-1 text-xs" />
+                    </div>
+                    <p className="mt-0.5 text-[9px] text-slate-400">Managers cannot submit after this time</p>
+                  </div>
                 </div>
               </div>
 

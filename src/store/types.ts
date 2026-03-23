@@ -250,6 +250,12 @@ export interface Project {
   status: ProjectStatus;
   strategicPriority: StrategicPriority;
   tags?: string[];
+  reportDeadlines?: {
+    memberLockDay: number;
+    memberLockTime: string;
+    managerLockDay: number;
+    managerLockTime: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
