@@ -97,7 +97,7 @@ export function DashboardPage() {
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
             <h3 className="text-sm font-semibold text-gray-800">My Open Tasks</h3>
-            <button onClick={() => navigate("/tasks/all")} className="text-xs font-medium text-indigo-600 hover:text-indigo-700">View all →</button>
+            <button onClick={() => navigate("/tasks")} className="text-xs font-medium text-indigo-600 hover:text-indigo-700">View all →</button>
           </div>
           <div className="divide-y divide-gray-50">
             {myTasks.length === 0 ? (
