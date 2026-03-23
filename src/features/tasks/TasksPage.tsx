@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Tag, List, LayoutGrid, Search, X } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { getCompanyName, getEventName, getProjectName, getUserName } from "../../store/selectors";
@@ -257,9 +257,8 @@ export function TasksPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1 w-fit">
           {SECTION_TABS.map((t) => (
-            <button key={t.key} onClick={() => setSection(t.key)} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${section === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+            <button key={t.key} onClick={() => setSection(t.key)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${section === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
               {t.label}
-              <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-600">{sectionCounts[t.key]}</span>
             </button>
           ))}
         </div>
@@ -272,7 +271,7 @@ export function TasksPage() {
       </div>
 
       {/* 3. Filter Bar */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-3">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
           <div className="col-span-2 relative">
             <label className="mb-1 block text-xs font-medium text-gray-500">Search</label>
@@ -312,41 +311,29 @@ export function TasksPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Due</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Delegation</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Linked</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Assignee</th>
+                  <th className="w-20" />
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">{section === "Completed" ? "No completed tasks yet." : section === "Archive" ? "No archived tasks yet." : "No tasks found."}</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">{section === "Completed" ? "No completed tasks yet." : section === "Archive" ? "No archived tasks yet." : "No tasks found."}</td></tr>
                 )}
                 {rows.map((task) => {
-                  const linkTarget = getTaskLinkTarget(task);
                   const overdue = isOverdue(task);
                   const urgent = task.isUrgent === true;
                   const rowCls = urgent ? "bg-rose-50 border-l-4 border-l-rose-500" : overdue ? "bg-amber-50/50" : "";
                   return (
                     <tr key={task.id} className={`border-b border-gray-100 hover:bg-indigo-50/30 transition-colors cursor-pointer ${rowCls}`} onClick={() => setSelectedTaskId(task.id)}>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2">
                         <p className="font-semibold text-gray-900 text-sm">{task.title}</p>
-                        {task.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{task.description}</p>}
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {urgent && <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700">URGENT</span>}
-                          {overdue && <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-rose-50 text-rose-600">Overdue</span>}
-                          {(task.labelIds ?? []).map((lid) => { const l = state.taskLabels.find((l) => l.id === lid); return l ? <span key={l.id} className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${l.color}`}>{l.name}</span> : null; })}
-                        </div>
                       </td>
-                      <td className="px-4 py-3"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[task.status] ?? "bg-gray-100 text-gray-600"}`}>{task.status === "InProgress" ? "In Progress" : task.status}</span></td>
-                      <td className="px-4 py-3"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${PRIORITY_BADGE[task.priority]}`}>{task.priority}</span></td>
-                      <td className="px-4 py-3">{(() => { const b = dueDateBadgeInfo(task); return b ? <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${b.className}`}>{b.label}</span> : <span className="text-xs text-gray-400">—</span>; })()}</td>
-                      <td className="px-4 py-3 text-xs text-gray-600"><p>By: {getUserName(state, task.createdByUserId)}</p><p>To: {getUserName(state, task.assigneeUserId)}</p></td>
-                      <td className="px-4 py-3">{linkTarget ? <Link className="text-xs font-medium text-indigo-600 hover:underline" to={linkTarget.href} onClick={(e) => e.stopPropagation()}>{linkTarget.label}</Link> : <span className="text-xs text-gray-400">—</span>}</td>
-                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex gap-1">
-                          <button className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition" onClick={() => setSelectedTaskId(task.id)}>Open</button>
-                          {!isTerminalStatus(task.status) && <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition" onClick={() => state.updateTask({ ...task, status: "Done" })}>Mark done</button>}
-                        </div>
+                      <td className="px-4 py-2"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[task.status] ?? "bg-gray-100 text-gray-600"}`}>{task.status === "InProgress" ? "In Progress" : task.status}</span></td>
+                      <td className="px-4 py-2"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${PRIORITY_BADGE[task.priority]}`}>{task.priority}</span></td>
+                      <td className="px-4 py-2">{(() => { const b = dueDateBadgeInfo(task); return b ? <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${b.className}`}>{b.label}</span> : <span className="text-xs text-gray-400">—</span>; })()}</td>
+                      <td className="px-4 py-2 text-xs text-gray-600">{getUserName(state, task.assigneeUserId)}</td>
+                      <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                        <button className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition" onClick={() => setSelectedTaskId(task.id)}>Open</button>
                       </td>
                     </tr>
                   );
