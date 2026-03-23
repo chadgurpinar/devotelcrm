@@ -32,6 +32,7 @@ import { HrExpensesPage } from "../features/hr/HrExpensesPage";
 import { HrSettingsPage } from "../features/hr/HrSettingsPage";
 import { ManagementReportsPage } from "../features/management-reports/ManagementReportsPage";
 import { ProjectsAndTasksPage } from "../features/projects/ProjectsAndTasksPage";
+import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { AllTasksPage } from "../features/tasks/AllTasksPage";
 
 export const router = createBrowserRouter([
@@ -48,6 +49,7 @@ export const router = createBrowserRouter([
       { path: "/contracts", element: <ContractsPage /> },
       { path: "/companies/:companyId", element: <CompanyDetailPage /> },
       { path: "/projects", element: <ProjectsAndTasksPage /> },
+      { path: "/projects/:projectId", element: <ProjectDetailPage /> },
       { path: "/tasks/all", element: <AllTasksPage /> },
       { path: "/tasks", element: <TasksPage /> },
       { path: "/notes", element: <NotesPage /> },

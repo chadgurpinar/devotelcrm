@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { Briefcase, CheckSquare, Clock, Plus } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { UiPageHeader } from "../../ui/UiPageHeader";
 import { UiKpiCard } from "../../ui/UiKpiCard";
@@ -35,83 +36,42 @@ export function ProjectsAndTasksPage() {
           const inProgress = tasks.filter((t) => t.status === "InProgress").length;
           const done = tasks.filter((t) => t.status === "Done" || t.status === "Completed").length;
           const owner = userById.get(project.ownerUserId);
-          return {
-            project,
-            ownerName: owner?.name ?? "Unknown",
-            totalTasks: tasks.length,
-            taskCounts: [
-              { label: "To Do", count: todo, color: "bg-gray-400" },
-              { label: "In Progress", count: inProgress, color: "bg-blue-500" },
-              { label: "Done", count: done, color: "bg-emerald-500" },
-            ],
-          };
+          return { project, ownerName: owner?.name ?? "Unknown", totalTasks: tasks.length, taskCounts: [
+            { label: "To Do", count: todo, color: "bg-gray-400" },
+            { label: "In Progress", count: inProgress, color: "bg-blue-500" },
+            { label: "Done", count: done, color: "bg-emerald-500" },
+          ] };
         }),
     [state.projects, state.tasks, userById],
   );
 
   return (
-    <div>
+    <div className="space-y-6">
       <UiPageHeader
-        title="Projects & Tasks"
-        subtitle="Overview of projects and their tasks"
+        title="Projects"
+        subtitle={`${totalProjects} active projects`}
         actions={
-          <button
-            onClick={() => navigate("/tasks/all")}
-            className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-gray-400">
-              <rect x="2" y="3" width="12" height="2" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-              <rect x="2" y="7" width="12" height="2" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-              <rect x="2" y="11" width="8" height="2" rx="0.5" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
-            View All Tasks
+          <button onClick={() => alert("Coming soon")} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition">
+            <Plus className="h-4 w-4" /> New Project
           </button>
         }
       />
 
-      {/* KPI Cards */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <UiKpiCard
-          label="Total Projects"
-          value={totalProjects}
-          icon={
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <rect x="2" y="4" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M6 4V2.5A1.5 1.5 0 017.5 1h5A1.5 1.5 0 0114 2.5V4" stroke="currentColor" strokeWidth="1.5" />
-            </svg>
-          }
-        />
-        <UiKpiCard
-          label="Total Tasks"
-          value={totalTasks}
-          icon={
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M4 5H16M4 10H16M4 15H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          }
-        />
-        <UiKpiCard
-          label="Overdue Tasks"
-          value={overdueTasks}
-          icon={
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M10 6V10L13 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          }
-          className={overdueTasks > 0 ? "border-rose-200 bg-rose-50/50" : ""}
-        />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <UiKpiCard label="Total Projects" value={totalProjects} icon={<Briefcase className="h-5 w-5" />} />
+        <UiKpiCard label="Total Tasks" value={totalTasks} icon={<CheckSquare className="h-5 w-5" />} />
+        <UiKpiCard label="Overdue Tasks" value={overdueTasks} icon={<Clock className="h-5 w-5" />} className={overdueTasks > 0 ? "border-rose-200 bg-rose-50/50" : ""} />
       </div>
 
-      {/* Projects Grid */}
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-gray-800">Projects</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold text-gray-800">All Projects</h2>
         <span className="text-xs text-gray-500">{totalProjects} project{totalProjects !== 1 ? "s" : ""}</span>
       </div>
 
       {projectsWithCounts.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-12 text-center">
-          <p className="text-sm text-gray-500">No projects yet.</p>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16">
+          <Briefcase className="h-10 w-10 text-gray-300 mb-3" />
+          <p className="text-sm text-gray-500">No projects yet</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -125,7 +85,7 @@ export function ProjectsAndTasksPage() {
               priority={project.strategicPriority}
               totalTasks={taskTotal}
               taskCounts={taskCounts}
-              onClick={() => navigate(`/reports`)}
+              onClick={() => navigate(`/projects/${project.id}`)}
             />
           ))}
         </div>
