@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Badge, Button, Card, FieldLabel } from "../../components/ui";
+import { Plus, Tag, List, LayoutGrid, Search, X } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { getCompanyName, getEventName, getProjectName, getUserName } from "../../store/selectors";
 import { Task, TaskLabel, TaskPriority, TaskStatus, TaskVisibility } from "../../store/types";
+import { UiPageHeader } from "../../ui/UiPageHeader";
 import { TaskDrawer } from "./TaskDrawer";
 import { TaskKanbanBoard } from "./TaskKanbanBoard";
 
@@ -20,6 +21,8 @@ const LABEL_COLOR_PRESETS = [
   "bg-slate-500",
   "bg-pink-500",
 ];
+
+const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
 
 function isProjectLabel(label: TaskLabel, projectNames: Set<string>): boolean {
   return projectNames.has(label.name);
@@ -44,19 +47,29 @@ type CreateTaskForm = {
   labelIds: string[];
 };
 
-const priorityWeight: Record<TaskPriority, number> = {
-  Critical: 4,
-  High: 3,
-  Medium: 2,
-  Low: 1,
+const priorityWeight: Record<TaskPriority, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 };
+
+const STATUS_BADGE: Record<string, string> = {
+  Backlog: "bg-gray-100 text-gray-600",
+  Open: "bg-blue-50 text-blue-700",
+  InProgress: "bg-indigo-50 text-indigo-700",
+  Done: "bg-emerald-50 text-emerald-700",
+  Completed: "bg-emerald-100 text-emerald-800",
+  Archived: "bg-amber-50 text-amber-700",
+};
+
+const PRIORITY_BADGE: Record<TaskPriority, string> = {
+  Critical: "bg-rose-50 text-rose-700",
+  High: "bg-orange-50 text-orange-700",
+  Medium: "bg-amber-50 text-amber-700",
+  Low: "bg-gray-100 text-gray-500",
 };
 
 function isDueSoon(dueAt?: string): boolean {
   if (!dueAt) return false;
   const now = Date.now();
   const due = new Date(dueAt).getTime();
-  const sevenDays = 7 * 24 * 60 * 60 * 1000;
-  return due >= now && due <= now + sevenDays;
+  return due >= now && due <= now + 7 * 86400000;
 }
 
 function isOverdue(task: Task): boolean {
@@ -65,50 +78,39 @@ function isOverdue(task: Task): boolean {
 }
 
 function dueDateBadgeInfo(task: Task): { label: string; className: string } | null {
-  if (!task.dueAt) return null;
-  if (task.status === "Completed" || task.status === "Archived") return null;
+  if (!task.dueAt || task.status === "Completed" || task.status === "Archived") return null;
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const due = new Date(task.dueAt);
   const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
-  const diffMs = dueDay.getTime() - today.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round((dueDay.getTime() - today.getTime()) / 86400000);
   const short = due.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  if (diffDays < 0) return { label: `Overdue · ${short}`, className: "bg-rose-100 text-rose-700" };
-  if (diffDays === 0) return { label: "Due today", className: "bg-amber-100 text-amber-700" };
-  if (diffDays <= 3) return { label: `Due ${short}`, className: "bg-yellow-100 text-yellow-700" };
-  return { label: `Due ${short}`, className: "bg-slate-100 text-slate-600" };
+  if (diffDays < 0) return { label: `Overdue · ${short}`, className: "bg-rose-50 text-rose-700" };
+  if (diffDays === 0) return { label: "Due today", className: "bg-amber-50 text-amber-700" };
+  if (diffDays <= 3) return { label: `Due ${short}`, className: "bg-yellow-50 text-yellow-700" };
+  return { label: `Due ${short}`, className: "bg-gray-100 text-gray-600" };
 }
 
 function emptyCreateTaskForm(activeUserId: string): CreateTaskForm {
-  return {
-    title: "",
-    description: "",
-    assigneeUserId: activeUserId,
-    priority: "Medium",
-    dueAt: "",
-    visibility: "Private",
-    linkedType: "None",
-    linkedId: "",
-    initialComment: "",
-    isUrgent: false,
-    labelIds: [],
-  };
+  return { title: "", description: "", assigneeUserId: activeUserId, priority: "Medium", dueAt: "", visibility: "Private", linkedType: "None", linkedId: "", initialComment: "", isUrgent: false, labelIds: [] };
 }
 
 function getStoredViewMode(): TasksViewMode {
-  try {
-    const stored = localStorage.getItem(TASKS_VIEW_MODE_KEY);
-    if (stored === "LIST" || stored === "KANBAN") return stored;
-  } catch {
-    /* ignore */
-  }
+  try { const s = localStorage.getItem(TASKS_VIEW_MODE_KEY); if (s === "LIST" || s === "KANBAN") return s; } catch { /* */ }
   return "LIST";
 }
 
+const SECTION_TABS: { key: TaskSection; label: string }[] = [
+  { key: "MyPersonalTasks", label: "My Tasks" },
+  { key: "AssignedToMe", label: "Assigned to Me" },
+  { key: "AssignedByMe", label: "Assigned by Me" },
+  { key: "Completed", label: "Completed" },
+  { key: "Archive", label: "Starred" },
+];
+
 export function TasksPage() {
   const state = useAppStore();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [viewMode, setViewMode] = useState<TasksViewMode>(getStoredViewMode);
   const [section, setSection] = useState<TaskSection>("MyPersonalTasks");
   const [search, setSearch] = useState("");
@@ -128,152 +130,83 @@ export function TasksPage() {
   const [editLabelName, setEditLabelName] = useState("");
   const [editLabelColor, setEditLabelColor] = useState("");
 
-  const projectNames = useMemo(
-    () => new Set(state.projects.map((p) => p.name)),
-    [state.projects],
-  );
-  const setViewModePersisted = useCallback((mode: TasksViewMode) => {
-    setViewMode(mode);
-    try {
-      localStorage.setItem(TASKS_VIEW_MODE_KEY, mode);
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  const projectNames = useMemo(() => new Set(state.projects.map((p) => p.name)), [state.projects]);
+  const setViewModePersisted = useCallback((mode: TasksViewMode) => { setViewMode(mode); try { localStorage.setItem(TASKS_VIEW_MODE_KEY, mode); } catch { /* */ } }, []);
 
   const commentsByTaskId = useMemo(() => {
     const map = new Map<string, typeof state.taskComments>();
-    state.taskComments
-      .slice()
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .forEach((comment) => {
-        const list = map.get(comment.taskId) ?? [];
-        list.push(comment);
-        map.set(comment.taskId, list);
-      });
+    state.taskComments.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt)).forEach((c) => { const l = map.get(c.taskId) ?? []; l.push(c); map.set(c.taskId, l); });
     return map;
   }, [state.taskComments]);
 
-  const selectedTask = useMemo(
-    () => state.tasks.find((task) => task.id === selectedTaskId) ?? null,
-    [selectedTaskId, state.tasks],
-  );
+  const selectedTask = useMemo(() => state.tasks.find((t) => t.id === selectedTaskId) ?? null, [selectedTaskId, state.tasks]);
 
   const linkedOptions = useMemo(() => {
     switch (form.linkedType) {
-      case "Company":
-        return state.companies.map((company) => ({ id: company.id, label: company.name }));
-      case "Event":
-        return state.events.map((event) => ({ id: event.id, label: event.name }));
-      case "Interconnection":
-        return state.interconnectionProcesses.map((process) => ({
-          id: process.id,
-          label: `${getCompanyName(state, process.companyId)} (${process.track})`,
-        }));
-      case "Project":
-        return state.projects.map((project) => ({ id: project.id, label: project.name }));
-      default:
-        return [];
+      case "Company": return state.companies.map((c) => ({ id: c.id, label: c.name }));
+      case "Event": return state.events.map((e) => ({ id: e.id, label: e.name }));
+      case "Interconnection": return state.interconnectionProcesses.map((p) => ({ id: p.id, label: `${getCompanyName(state, p.companyId)} (${p.track})` }));
+      case "Project": return state.projects.map((p) => ({ id: p.id, label: p.name }));
+      default: return [];
     }
   }, [form.linkedType, state]);
 
   useEffect(() => {
-    if (!linkedOptions.length) {
-      if (form.linkedId) setForm((prev) => ({ ...prev, linkedId: "" }));
-      return;
-    }
-    if (form.linkedId && linkedOptions.some((option) => option.id === form.linkedId)) {
-      return;
-    }
-    setForm((prev) => ({ ...prev, linkedId: linkedOptions[0]?.id ?? "" }));
+    if (!linkedOptions.length) { if (form.linkedId) setForm((p) => ({ ...p, linkedId: "" })); return; }
+    if (form.linkedId && linkedOptions.some((o) => o.id === form.linkedId)) return;
+    setForm((p) => ({ ...p, linkedId: linkedOptions[0]?.id ?? "" }));
   }, [form.linkedId, linkedOptions]);
 
   const isDoneSection = section === "Completed" || section === "Archive";
 
   useEffect(() => {
-    if (isDoneSection) {
-      setViewModePersisted("LIST");
-      if (statusFilter === "Open" || statusFilter === "InProgress") {
-        setStatusFilter("Any");
-      }
-      return;
-    }
-    if (statusFilter === "Done" || statusFilter === "Completed" || statusFilter === "Archived") {
-      setStatusFilter("Any");
-    }
+    if (isDoneSection) { setViewModePersisted("LIST"); if (statusFilter === "Open" || statusFilter === "InProgress") setStatusFilter("Any"); return; }
+    if (statusFilter === "Done" || statusFilter === "Completed" || statusFilter === "Archived") setStatusFilter("Any");
   }, [isDoneSection, statusFilter, setViewModePersisted]);
 
   const isTerminalStatus = (s: string) => s === "Completed" || s === "Archived";
 
   const sectionTasks = useMemo(() => {
-    if (section === "Completed") {
-      return state.tasks.filter((task) => task.status === "Completed");
-    }
-    if (section === "Archive") {
-      return state.tasks.filter((task) => task.status === "Archived");
-    }
-    if (section === "AssignedToMe") {
-      return state.tasks.filter(
-        (task) =>
-          !isTerminalStatus(task.status) &&
-          task.assigneeUserId === state.activeUserId &&
-          task.createdByUserId !== state.activeUserId,
-      );
-    }
-    if (section === "AssignedByMe") {
-      return state.tasks.filter(
-        (task) =>
-          !isTerminalStatus(task.status) &&
-          task.createdByUserId === state.activeUserId &&
-          task.assigneeUserId !== state.activeUserId,
-      );
-    }
-    return state.tasks.filter(
-      (task) =>
-        !isTerminalStatus(task.status) &&
-        task.createdByUserId === state.activeUserId &&
-        task.assigneeUserId === state.activeUserId,
-    );
+    if (section === "Completed") return state.tasks.filter((t) => t.status === "Completed");
+    if (section === "Archive") return state.tasks.filter((t) => t.status === "Archived");
+    if (section === "AssignedToMe") return state.tasks.filter((t) => !isTerminalStatus(t.status) && t.assigneeUserId === state.activeUserId && t.createdByUserId !== state.activeUserId);
+    if (section === "AssignedByMe") return state.tasks.filter((t) => !isTerminalStatus(t.status) && t.createdByUserId === state.activeUserId && t.assigneeUserId !== state.activeUserId);
+    return state.tasks.filter((t) => !isTerminalStatus(t.status) && t.createdByUserId === state.activeUserId && t.assigneeUserId === state.activeUserId);
   }, [section, state.activeUserId, state.tasks]);
 
+  const sectionCounts = useMemo(() => {
+    const c = { MyPersonalTasks: 0, AssignedToMe: 0, AssignedByMe: 0, Completed: 0, Archive: 0 };
+    state.tasks.forEach((t) => {
+      if (t.status === "Completed") { c.Completed++; return; }
+      if (t.status === "Archived") { c.Archive++; return; }
+      if (isTerminalStatus(t.status)) return;
+      if (t.createdByUserId === state.activeUserId && t.assigneeUserId === state.activeUserId) c.MyPersonalTasks++;
+      if (t.assigneeUserId === state.activeUserId && t.createdByUserId !== state.activeUserId) c.AssignedToMe++;
+      if (t.createdByUserId === state.activeUserId && t.assigneeUserId !== state.activeUserId) c.AssignedByMe++;
+    });
+    return c;
+  }, [state.tasks, state.activeUserId]);
+
   const rows = useMemo(() => {
-    let dataset = sectionTasks;
-    if (statusFilter !== "Any") dataset = dataset.filter((task) => task.status === statusFilter);
-    if (priorityFilter !== "Any") dataset = dataset.filter((task) => task.priority === priorityFilter);
-    if (dueFilter === "DueSoon") dataset = dataset.filter((task) => isDueSoon(task.dueAt));
-    if (dueFilter === "Overdue") dataset = dataset.filter((task) => isOverdue(task));
-    if (dueFilter === "NoDueDate") dataset = dataset.filter((task) => !task.dueAt);
-    if (linkedFilter === "Company") dataset = dataset.filter((task) => Boolean(task.companyId));
-    if (linkedFilter === "Event") dataset = dataset.filter((task) => Boolean(task.eventId));
-    if (linkedFilter === "Interconnection") dataset = dataset.filter((task) => Boolean(task.interconnectionProcessId));
-    if (linkedFilter === "Project") dataset = dataset.filter((task) => Boolean(task.projectId));
-    if (labelFilter !== "Any") dataset = dataset.filter((task) => (task.labelIds ?? []).includes(labelFilter));
-
-    if (search.trim()) {
-      const query = search.trim().toLowerCase();
-      dataset = dataset.filter((task) => {
-        const comments = commentsByTaskId.get(task.id) ?? [];
-        const inComments = comments.some((comment) => comment.content.toLowerCase().includes(query));
-        return (
-          task.title.toLowerCase().includes(query) ||
-          task.description.toLowerCase().includes(query) ||
-          inComments
-        );
-      });
-    }
-
-    return dataset.slice().sort((left, right) => {
-      if (left.isUrgent && !right.isUrgent) return -1;
-      if (!left.isUrgent && right.isUrgent) return 1;
-      if (sortBy === "DueDateAsc") {
-        if (!left.dueAt && !right.dueAt) return 0;
-        if (!left.dueAt) return 1;
-        if (!right.dueAt) return -1;
-        return left.dueAt.localeCompare(right.dueAt);
-      }
-      if (sortBy === "CreatedDateDesc") return right.createdAt.localeCompare(left.createdAt);
-      if (sortBy === "PriorityDesc") return priorityWeight[right.priority] - priorityWeight[left.priority];
-      return right.updatedAt.localeCompare(left.updatedAt);
+    let d = sectionTasks;
+    if (statusFilter !== "Any") d = d.filter((t) => t.status === statusFilter);
+    if (priorityFilter !== "Any") d = d.filter((t) => t.priority === priorityFilter);
+    if (dueFilter === "DueSoon") d = d.filter((t) => isDueSoon(t.dueAt));
+    if (dueFilter === "Overdue") d = d.filter((t) => isOverdue(t));
+    if (dueFilter === "NoDueDate") d = d.filter((t) => !t.dueAt);
+    if (linkedFilter === "Company") d = d.filter((t) => Boolean(t.companyId));
+    if (linkedFilter === "Event") d = d.filter((t) => Boolean(t.eventId));
+    if (linkedFilter === "Interconnection") d = d.filter((t) => Boolean(t.interconnectionProcessId));
+    if (linkedFilter === "Project") d = d.filter((t) => Boolean(t.projectId));
+    if (labelFilter !== "Any") d = d.filter((t) => (t.labelIds ?? []).includes(labelFilter));
+    if (search.trim()) { const q = search.trim().toLowerCase(); d = d.filter((t) => { const cm = commentsByTaskId.get(t.id) ?? []; return t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q) || cm.some((c) => c.content.toLowerCase().includes(q)); }); }
+    return d.slice().sort((a, b) => {
+      if (a.isUrgent && !b.isUrgent) return -1;
+      if (!a.isUrgent && b.isUrgent) return 1;
+      if (sortBy === "DueDateAsc") { if (!a.dueAt && !b.dueAt) return 0; if (!a.dueAt) return 1; if (!b.dueAt) return -1; return a.dueAt.localeCompare(b.dueAt); }
+      if (sortBy === "CreatedDateDesc") return b.createdAt.localeCompare(a.createdAt);
+      if (sortBy === "PriorityDesc") return priorityWeight[b.priority] - priorityWeight[a.priority];
+      return b.updatedAt.localeCompare(a.updatedAt);
     });
   }, [commentsByTaskId, dueFilter, labelFilter, linkedFilter, priorityFilter, search, sectionTasks, sortBy, statusFilter]);
 
@@ -288,647 +221,211 @@ export function TasksPage() {
   function handleCreateTask() {
     const title = form.title.trim();
     if (!title) return;
-    const linkedFields =
-      form.linkedType === "Company"
-        ? { companyId: form.linkedId || undefined }
-        : form.linkedType === "Event"
-          ? { eventId: form.linkedId || undefined }
-          : form.linkedType === "Interconnection"
-            ? { interconnectionProcessId: form.linkedId || undefined }
-            : form.linkedType === "Project"
-              ? { projectId: form.linkedId || undefined }
-              : {};
-    state.createTask({
-      title,
-      description: form.description.trim(),
-      status: "Backlog",
-      priority: form.priority,
-      dueAt: form.dueAt ? new Date(`${form.dueAt}T12:00:00`).toISOString() : undefined,
-      createdByUserId: state.activeUserId,
-      assigneeUserId: form.assigneeUserId || state.activeUserId,
-      visibility: form.visibility,
-      isUrgent: form.isUrgent,
-      kanbanStage: "Backlog",
-      labelIds: form.labelIds.length > 0 ? form.labelIds : undefined,
-      ...linkedFields,
-      initialComment: form.initialComment.trim() || undefined,
-    });
+    const lf = form.linkedType === "Company" ? { companyId: form.linkedId || undefined } : form.linkedType === "Event" ? { eventId: form.linkedId || undefined } : form.linkedType === "Interconnection" ? { interconnectionProcessId: form.linkedId || undefined } : form.linkedType === "Project" ? { projectId: form.linkedId || undefined } : {};
+    state.createTask({ title, description: form.description.trim(), status: "Backlog", priority: form.priority, dueAt: form.dueAt ? new Date(`${form.dueAt}T12:00:00`).toISOString() : undefined, createdByUserId: state.activeUserId, assigneeUserId: form.assigneeUserId || state.activeUserId, visibility: form.visibility, isUrgent: form.isUrgent, kanbanStage: "Backlog", labelIds: form.labelIds.length > 0 ? form.labelIds : undefined, ...lf, initialComment: form.initialComment.trim() || undefined });
     setForm(emptyCreateTaskForm(state.activeUserId));
     setCreateModalOpen(false);
   }
 
   const saveTaskDetail = useCallback(
     (task: Task, draft: { title: string; description: string; status: TaskStatus; priority: TaskPriority; dueAt: string; assigneeUserId: string; visibility: TaskVisibility; watcherUserIds: string[]; isUrgent?: boolean; labelIds?: string[] }) => {
-      state.updateTask({
-        ...task,
-        title: draft.title.trim(),
-        description: draft.description.trim(),
-        status: draft.status,
-        priority: draft.priority,
-        dueAt: draft.dueAt ? new Date(`${draft.dueAt}T12:00:00`).toISOString() : undefined,
-        assigneeUserId: draft.assigneeUserId,
-        visibility: draft.visibility,
-        watcherUserIds: draft.watcherUserIds,
-        isUrgent: draft.isUrgent,
-        labelIds: draft.labelIds,
-      });
-    },
-    [state],
+      state.updateTask({ ...task, title: draft.title.trim(), description: draft.description.trim(), status: draft.status, priority: draft.priority, dueAt: draft.dueAt ? new Date(`${draft.dueAt}T12:00:00`).toISOString() : undefined, assigneeUserId: draft.assigneeUserId, visibility: draft.visibility, watcherUserIds: draft.watcherUserIds, isUrgent: draft.isUrgent, labelIds: draft.labelIds });
+    }, [state],
   );
 
-  function archiveTaskDirectly(task: Task) {
-    state.updateTask({
-      ...task,
-      status: "Archived",
-    });
-  }
-
-  const handleAddLabel = () => {
-    const name = newLabelName.trim();
-    if (!name) return;
-    state.addTaskLabel({ name, color: newLabelColor });
-    setNewLabelName("");
-    setNewLabelColor(LABEL_COLOR_PRESETS[0]);
-  };
+  const handleAddLabel = () => { const n = newLabelName.trim(); if (!n) return; state.addTaskLabel({ name: n, color: newLabelColor }); setNewLabelName(""); setNewLabelColor(LABEL_COLOR_PRESETS[0]); };
 
   return (
-    <div className="space-y-4">
-      <Card
-        title="Operational Tasks"
+    <div className="space-y-6">
+      {/* 1. Page Header */}
+      <UiPageHeader
+        title="Tasks"
+        subtitle="Manage your personal and team tasks"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {!isDoneSection && (
-              <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-1">
-                <Button
-                  size="sm"
-                  variant={viewMode === "LIST" ? "primary" : "secondary"}
-                  onClick={() => setViewModePersisted("LIST")}
-                >
-                  List
-                </Button>
-                <Button
-                  size="sm"
-                  variant={viewMode === "KANBAN" ? "primary" : "secondary"}
-                  onClick={() => setViewModePersisted("KANBAN")}
-                >
-                  Kanban
-                </Button>
-              </div>
-            )}
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => setLabelManagerOpen(true)}
-            >
-              Manage labels
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                setForm(emptyCreateTaskForm(state.activeUserId));
-                setCreateModalOpen(true);
-              }}
-            >
-              Create task
-            </Button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setLabelManagerOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition">
+              <Tag className="h-4 w-4" /> Manage Labels
+            </button>
+            <button onClick={() => { setForm(emptyCreateTaskForm(state.activeUserId)); setCreateModalOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition">
+              <Plus className="h-4 w-4" /> Create Task
+            </button>
           </div>
         }
-      >
-        <div className="mb-3 flex flex-wrap gap-2">
-          <Button variant={section === "MyPersonalTasks" ? "primary" : "secondary"} onClick={() => setSection("MyPersonalTasks")}>
-            My Personal Tasks
-          </Button>
-          <Button variant={section === "AssignedToMe" ? "primary" : "secondary"} onClick={() => setSection("AssignedToMe")}>
-            Assigned To Me
-          </Button>
-          <Button variant={section === "AssignedByMe" ? "primary" : "secondary"} onClick={() => setSection("AssignedByMe")}>
-            Assigned By Me
-          </Button>
-          <Button variant={section === "Completed" ? "primary" : "secondary"} onClick={() => setSection("Completed")}>
-            Completed
-          </Button>
-          <Button variant={section === "Archive" ? "primary" : "secondary"} onClick={() => setSection("Archive")}>
-            Starred
-          </Button>
-        </div>
+      />
 
-        <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 md:grid-cols-7">
-          <div className="md:col-span-2">
-            <FieldLabel>Search</FieldLabel>
-            <input placeholder="Search task or comments..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      {/* 2. Section Tabs + View Toggle */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1 w-fit">
+          {SECTION_TABS.map((t) => (
+            <button key={t.key} onClick={() => setSection(t.key)} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${section === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+              {t.label}
+              <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-semibold text-gray-600">{sectionCounts[t.key]}</span>
+            </button>
+          ))}
+        </div>
+        {!isDoneSection && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => setViewModePersisted("LIST")} className={`rounded-lg p-2 transition ${viewMode === "LIST" ? "bg-indigo-100 text-indigo-700" : "text-gray-400 hover:bg-gray-100"}`}><List className="h-4 w-4" /></button>
+            <button onClick={() => setViewModePersisted("KANBAN")} className={`rounded-lg p-2 transition ${viewMode === "KANBAN" ? "bg-indigo-100 text-indigo-700" : "text-gray-400 hover:bg-gray-100"}`}><LayoutGrid className="h-4 w-4" /></button>
           </div>
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "Any")}>
-              <option value="Any">Any</option>
-              {!isDoneSection && <option value="Backlog">Backlog</option>}
-              {!isDoneSection && <option value="InProgress">In Progress</option>}
-              {isDoneSection && <option value="Done">Done</option>}
-              {isDoneSection && <option value="Completed">Completed</option>}
-              {isDoneSection && <option value="Archived">Starred</option>}
-            </select>
+        )}
+      </div>
+
+      {/* 3. Filter Bar */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
+          <div className="col-span-2 relative">
+            <label className="mb-1 block text-xs font-medium text-gray-500">Search</label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input className={`${inputCls} pl-9`} placeholder="Search tasks or comments..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
           </div>
-          <div>
-            <FieldLabel>Priority</FieldLabel>
-            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | "Any")}>
-              <option value="Any">Any</option>
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-              <option value="Critical">Critical</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Due</FieldLabel>
-            <select value={dueFilter} onChange={(e) => setDueFilter(e.target.value as DueFilter)}>
-              <option value="Any">Any</option>
-              <option value="DueSoon">Due soon (7d)</option>
-              <option value="Overdue">Overdue</option>
-              <option value="NoDueDate">No due date</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Linked</FieldLabel>
-            <select value={linkedFilter} onChange={(e) => setLinkedFilter(e.target.value as LinkedFilter)}>
-              <option value="Any">Any</option>
-              <option value="Company">Company</option>
-              <option value="Event">Event</option>
-              <option value="Interconnection">Interconnection</option>
-              <option value="Project">Project</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Label</FieldLabel>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Status</label><select className={inputCls} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as TaskStatus | "Any")}><option value="Any">Any</option>{!isDoneSection && <><option value="Backlog">Backlog</option><option value="InProgress">In Progress</option></>}{isDoneSection && <><option value="Done">Done</option><option value="Completed">Completed</option><option value="Archived">Starred</option></>}</select></div>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Priority</label><select className={inputCls} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as TaskPriority | "Any")}><option value="Any">Any</option><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Due</label><select className={inputCls} value={dueFilter} onChange={(e) => setDueFilter(e.target.value as DueFilter)}><option value="Any">Any</option><option value="DueSoon">Due soon (7d)</option><option value="Overdue">Overdue</option><option value="NoDueDate">No due date</option></select></div>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Linked</label><select className={inputCls} value={linkedFilter} onChange={(e) => setLinkedFilter(e.target.value as LinkedFilter)}><option value="Any">Any</option><option value="Company">Company</option><option value="Event">Event</option><option value="Interconnection">Interconnection</option><option value="Project">Project</option></select></div>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Label</label>
             {labelFilter !== "Any" ? (
               <div className="flex items-center gap-1">
-                {(() => {
-                  const activeLabel = state.taskLabels.find((l) => l.id === labelFilter);
-                  return activeLabel ? (
-                    <span className={`rounded px-2 py-1 text-xs font-medium text-white ${activeLabel.color}`}>
-                      {activeLabel.name}
-                    </span>
-                  ) : null;
-                })()}
-                <button
-                  className="rounded px-1.5 py-1 text-xs text-slate-500 hover:bg-slate-100"
-                  onClick={() => setLabelFilter("Any")}
-                >
-                  ✕
-                </button>
+                {(() => { const l = state.taskLabels.find((l) => l.id === labelFilter); return l ? <span className={`rounded px-2 py-1 text-xs font-medium text-white ${l.color}`}>{l.name}</span> : null; })()}
+                <button className="rounded p-1 text-gray-400 hover:bg-gray-100" onClick={() => setLabelFilter("Any")}><X className="h-3 w-3" /></button>
               </div>
             ) : (
-              <select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)}>
-                <option value="Any">Any</option>
-                {state.taskLabels.map((label) => (
-                  <option key={label.id} value={label.id}>
-                    {label.name}
-                  </option>
-                ))}
-              </select>
+              <select className={inputCls} value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)}><option value="Any">Any</option>{state.taskLabels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
             )}
           </div>
-          <div>
-            <FieldLabel>Sort</FieldLabel>
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}>
-              <option value="LastActivityDesc">Last activity</option>
-              <option value="DueDateAsc">Due date</option>
-              <option value="PriorityDesc">Priority</option>
-              <option value="CreatedDateDesc">Created date</option>
-            </select>
-          </div>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Sort</label><select className={inputCls} value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)}><option value="LastActivityDesc">Last activity</option><option value="DueDateAsc">Due date</option><option value="PriorityDesc">Priority</option><option value="CreatedDateDesc">Created date</option></select></div>
         </div>
+      </div>
 
-        {viewMode === "KANBAN" && !isDoneSection ? (
-          <TaskKanbanBoard
-            tasks={rows}
-            users={state.users}
-            labels={state.taskLabels}
-            onUpdateTask={(id, patch) => {
-              const task = state.tasks.find((t) => t.id === id);
-              if (task) state.updateTask({ ...task, ...patch });
-            }}
-            onOpenTask={(task) => setSelectedTaskId(task.id)}
-            getUserName={(userId) => getUserName(state, userId)}
-          />
-        ) : (
-        <div className="mt-3 overflow-x-auto">
-          <table>
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th>Status</th>
-                <th>Priority</th>
-                <th>Due</th>
-                <th>Last activity</th>
-                <th>Delegation</th>
-                <th>Linked</th>
-                <th>Last comment</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
+      {/* 4. Content: Kanban or Table */}
+      {viewMode === "KANBAN" && !isDoneSection ? (
+        <TaskKanbanBoard tasks={rows} users={state.users} labels={state.taskLabels} onUpdateTask={(id, patch) => { const t = state.tasks.find((t) => t.id === id); if (t) state.updateTask({ ...t, ...patch }); }} onOpenTask={(t) => setSelectedTaskId(t.id)} getUserName={(uid) => getUserName(state, uid)} />
+      ) : (
+        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-sm text-slate-400">
-                    {section === "Completed"
-                      ? "No completed tasks yet. Mark tasks as Complete when the work is permanently done."
-                      : section === "Archive"
-                        ? "No starred tasks yet. Star tasks that are done but contain useful reference information you may need later."
-                        : "No tasks found."}
-                  </td>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Task</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Due</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Delegation</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Linked</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
-              )}
-              {rows.map((task) => {
-                const lastComment = (commentsByTaskId.get(task.id) ?? []).slice(-1)[0];
-                const linkTarget = getTaskLinkTarget(task);
-                const overdue = isOverdue(task);
-                const isUrgent = task.isUrgent === true;
-                const rowClass = isUrgent ? "bg-rose-50 border-l-4 border-l-rose-400" : overdue ? "bg-rose-50/60" : "";
-                return (
-                  <tr key={task.id} className={rowClass}>
-                    <td>
-                      <p className="font-semibold text-slate-700">{task.title}</p>
-                      <p className="text-xs text-slate-500">{task.description || "-"}</p>
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {isUrgent && <Badge className="bg-rose-100 text-rose-700">URGENT</Badge>}
-                        <Badge className="bg-slate-100 text-slate-700">{task.visibility}</Badge>
-                        <Badge className="bg-slate-100 text-slate-700">{task.watcherUserIds.length} watchers</Badge>
-                        {task.archivedAt && <Badge className="bg-violet-100 text-violet-700">⭐ Starred</Badge>}
-                        {overdue && <Badge className="bg-rose-100 text-rose-700">Overdue</Badge>}
-                        {(task.labelIds ?? []).map((lid) => {
-                          const label = state.taskLabels.find((l) => l.id === lid);
-                          return label ? (
-                            <span key={label.id} className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${label.color}`}>
-                              {label.name}
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-                    </td>
-                    <td>
-                      <Badge className={
-                        task.status === "Completed" ? "bg-emerald-100 text-emerald-700"
-                        : task.status === "Archived" ? "bg-amber-100 text-amber-700"
-                        : task.status === "Done" ? "bg-emerald-100 text-emerald-700"
-                        : "bg-blue-100 text-blue-700"
-                      }>
-                        {task.status}
-                      </Badge>
-                    </td>
-                    <td>{task.priority}</td>
-                    <td>
-                      {(() => {
-                        const badge = dueDateBadgeInfo(task);
-                        if (!badge) return "-";
-                        return <Badge className={badge.className}>{badge.label}</Badge>;
-                      })()}
-                    </td>
-                    <td>{new Date(task.updatedAt).toLocaleString()}</td>
-                    <td className="text-xs">
-                      <p>By: {getUserName(state, task.createdByUserId)}</p>
-                      <p>To: {getUserName(state, task.assigneeUserId)}</p>
-                    </td>
-                    <td>
-                      {linkTarget ? (
-                        <div className="flex flex-wrap items-center gap-1">
-                          <Link className="text-xs font-semibold text-brand-700 hover:underline" to={linkTarget.href}>
-                            {linkTarget.label}
-                          </Link>
-                          {task.projectId && (() => {
-                            const pLabel = state.taskLabels.find(
-                              (l) => l.name === getProjectName(state, task.projectId!),
-                            );
-                            return pLabel ? (
-                              <button
-                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${pLabel.color}`}
-                                onClick={() => setLabelFilter(pLabel.id)}
-                              >
-                                {pLabel.name}
-                              </button>
-                            ) : null;
-                          })()}
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">{section === "Completed" ? "No completed tasks yet." : section === "Archive" ? "No starred tasks yet." : "No tasks found."}</td></tr>
+                )}
+                {rows.map((task) => {
+                  const linkTarget = getTaskLinkTarget(task);
+                  const overdue = isOverdue(task);
+                  const urgent = task.isUrgent === true;
+                  const rowCls = urgent ? "bg-rose-50 border-l-4 border-l-rose-500" : overdue ? "bg-amber-50/50" : "";
+                  return (
+                    <tr key={task.id} className={`border-b border-gray-100 hover:bg-indigo-50/30 transition-colors cursor-pointer ${rowCls}`} onClick={() => setSelectedTaskId(task.id)}>
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-gray-900 text-sm">{task.title}</p>
+                        {task.description && <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{task.description}</p>}
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {urgent && <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-rose-100 text-rose-700">URGENT</span>}
+                          {overdue && <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-rose-50 text-rose-600">Overdue</span>}
+                          {(task.labelIds ?? []).map((lid) => { const l = state.taskLabels.find((l) => l.id === lid); return l ? <span key={l.id} className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${l.color}`}>{l.name}</span> : null; })}
                         </div>
-                      ) : (
-                        <span className="text-xs text-slate-500">-</span>
-                      )}
-                    </td>
-                    <td className="text-xs">{lastComment ? lastComment.content : "-"}</td>
-                    <td>
-                      {(() => {
-                        const isMine = task.createdByUserId === state.activeUserId;
-                        const isAssignedToMe = task.assigneeUserId === state.activeUserId && !isMine;
-                        const canComplete = isMine;
-                        const canStar = isMine || isAssignedToMe;
-                        return (
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="secondary" onClick={() => setSelectedTaskId(task.id)}>
-                              Open
-                            </Button>
-                            {!isTerminalStatus(task.status) && (
-                              <Button size="sm" onClick={() => state.updateTask({ ...task, status: "Done" })}>
-                                Mark done
-                              </Button>
-                            )}
-                            {!isTerminalStatus(task.status) && canStar && (
-                              <Button size="sm" variant="secondary" onClick={() => archiveTaskDirectly(task)}>
-                                Star / Save
-                              </Button>
-                            )}
-                            {task.status === "Done" && canComplete && (
-                              <Button
-                                size="sm"
-                                onClick={() => state.updateTask({ ...task, status: "Completed" })}
-                              >
-                                Complete
-                              </Button>
-                            )}
-                            {(task.status === "Done" || task.status === "Completed") && canStar && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => state.updateTask({ ...task, status: "Archived" })}
-                              >
-                                ⭐ Star
-                              </Button>
-                            )}
-                            {task.status === "Archived" && canStar && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() =>
-                                  state.updateTask({
-                                    ...task,
-                                    status: "Done",
-                                    archivedAt: undefined,
-                                  })
-                                }
-                              >
-                                Unstar
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-4 py-3"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[task.status] ?? "bg-gray-100 text-gray-600"}`}>{task.status === "InProgress" ? "In Progress" : task.status}</span></td>
+                      <td className="px-4 py-3"><span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${PRIORITY_BADGE[task.priority]}`}>{task.priority}</span></td>
+                      <td className="px-4 py-3">{(() => { const b = dueDateBadgeInfo(task); return b ? <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${b.className}`}>{b.label}</span> : <span className="text-xs text-gray-400">—</span>; })()}</td>
+                      <td className="px-4 py-3 text-xs text-gray-600"><p>By: {getUserName(state, task.createdByUserId)}</p><p>To: {getUserName(state, task.assigneeUserId)}</p></td>
+                      <td className="px-4 py-3">{linkTarget ? <Link className="text-xs font-medium text-indigo-600 hover:underline" to={linkTarget.href} onClick={(e) => e.stopPropagation()}>{linkTarget.label}</Link> : <span className="text-xs text-gray-400">—</span>}</td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex gap-1">
+                          <button className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition" onClick={() => setSelectedTaskId(task.id)}>Open</button>
+                          {!isTerminalStatus(task.status) && <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition" onClick={() => state.updateTask({ ...task, status: "Done" })}>Mark done</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {rows.length > 0 && <div className="bg-gray-50 border-t border-gray-200 px-4 py-2 text-xs text-gray-500">{rows.length} tasks</div>}
         </div>
-        )}
-      </Card>
+      )}
 
+      {/* 5. Create Task Modal */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setCreateModalOpen(false)}>
-          <div
-            className="w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-slate-800">Create task</h3>
-              <Button size="sm" variant="secondary" onClick={() => setCreateModalOpen(false)}>
-                Close
-              </Button>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4" onClick={() => setCreateModalOpen(false)}>
+          <div className="w-full max-w-5xl rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900">Create Task</h3>
+              <button onClick={() => setCreateModalOpen(false)} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"><X className="h-5 w-5" /></button>
             </div>
-            <div className="grid gap-2 md:grid-cols-6">
-              <div className="md:col-span-2">
-                <FieldLabel>Title</FieldLabel>
-                <input value={form.title} onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))} />
-              </div>
-              <div>
-                <FieldLabel>Assignee</FieldLabel>
-                <select value={form.assigneeUserId} onChange={(e) => setForm((prev) => ({ ...prev, assigneeUserId: e.target.value }))}>
-                  {state.users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <FieldLabel>Priority</FieldLabel>
-                <select value={form.priority} onChange={(e) => setForm((prev) => ({ ...prev, priority: e.target.value as TaskPriority }))}>
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                  <option value="Critical">Critical</option>
-                </select>
-              </div>
-              <div>
-                <FieldLabel>Due date</FieldLabel>
-                <input type="date" value={form.dueAt} onChange={(e) => setForm((prev) => ({ ...prev, dueAt: e.target.value }))} />
-              </div>
-              <div>
-                <FieldLabel>Visibility</FieldLabel>
-                <select value={form.visibility} onChange={(e) => setForm((prev) => ({ ...prev, visibility: e.target.value as TaskVisibility }))}>
-                  <option value="Private">Private</option>
-                  <option value="Shared">Shared</option>
-                </select>
-              </div>
-              <div className="md:col-span-3">
-                <FieldLabel>Description</FieldLabel>
-                <input value={form.description} onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))} />
-              </div>
-              <div>
-                <FieldLabel>Link type</FieldLabel>
-                <select
-                  value={form.linkedType}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      linkedType: e.target.value as "None" | "Company" | "Event" | "Interconnection" | "Project",
-                    }))
-                  }
-                >
-                  <option value="None">None</option>
-                  <option value="Company">Company</option>
-                  <option value="Event">Event</option>
-                  <option value="Interconnection">Interconnection</option>
-                  <option value="Project">Project</option>
-                </select>
-              </div>
-              <div>
-                <FieldLabel>Linked entity</FieldLabel>
-                <select
-                  value={form.linkedId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, linkedId: e.target.value }))}
-                  disabled={form.linkedType === "None"}
-                >
-                  {form.linkedType === "None" && <option value="">None</option>}
-                  {linkedOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <FieldLabel>Initial comment</FieldLabel>
-                <input value={form.initialComment} onChange={(e) => setForm((prev) => ({ ...prev, initialComment: e.target.value }))} />
-              </div>
-              <div className="md:col-span-4 flex items-center gap-2">
-                <label className="flex items-center gap-2 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={form.isUrgent}
-                    onChange={(e) => setForm((prev) => ({ ...prev, isUrgent: e.target.checked }))}
-                  />
-                  Mark as Urgent
-                </label>
+            <div className="grid gap-3 md:grid-cols-6">
+              <div className="md:col-span-2"><label className="mb-1 block text-xs font-medium text-gray-500">Title</label><input className={inputCls} value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-gray-500">Assignee</label><select className={inputCls} value={form.assigneeUserId} onChange={(e) => setForm((p) => ({ ...p, assigneeUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+              <div><label className="mb-1 block text-xs font-medium text-gray-500">Priority</label><select className={inputCls} value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value as TaskPriority }))}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>
+              <div><label className="mb-1 block text-xs font-medium text-gray-500">Due date</label><input className={inputCls} type="date" value={form.dueAt} onChange={(e) => setForm((p) => ({ ...p, dueAt: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-gray-500">Visibility</label><select className={inputCls} value={form.visibility} onChange={(e) => setForm((p) => ({ ...p, visibility: e.target.value as TaskVisibility }))}><option value="Private">Private</option><option value="Shared">Shared</option></select></div>
+              <div className="md:col-span-3"><label className="mb-1 block text-xs font-medium text-gray-500">Description</label><input className={inputCls} value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div>
+              <div><label className="mb-1 block text-xs font-medium text-gray-500">Link type</label><select className={inputCls} value={form.linkedType} onChange={(e) => setForm((p) => ({ ...p, linkedType: e.target.value as CreateTaskForm["linkedType"] }))}><option value="None">None</option><option value="Company">Company</option><option value="Event">Event</option><option value="Interconnection">Interconnection</option><option value="Project">Project</option></select></div>
+              <div><label className="mb-1 block text-xs font-medium text-gray-500">Linked entity</label><select className={inputCls} value={form.linkedId} onChange={(e) => setForm((p) => ({ ...p, linkedId: e.target.value }))} disabled={form.linkedType === "None"}>{form.linkedType === "None" && <option value="">None</option>}{linkedOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+              <div className="md:col-span-2"><label className="mb-1 block text-xs font-medium text-gray-500">Initial comment</label><input className={inputCls} value={form.initialComment} onChange={(e) => setForm((p) => ({ ...p, initialComment: e.target.value }))} /></div>
+              <div className="md:col-span-4 flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-600"><input type="checkbox" checked={form.isUrgent} onChange={(e) => setForm((p) => ({ ...p, isUrgent: e.target.checked }))} className="rounded border-gray-300" /> Mark as Urgent</label>
               </div>
               {state.taskLabels.length > 0 && (
-                <div className="md:col-span-4 rounded-md border border-slate-200 p-2">
-                  <FieldLabel>Labels</FieldLabel>
-                  <div className="flex flex-wrap gap-2">
-                    {state.taskLabels.map((label) => {
-                      const checked = form.labelIds.includes(label.id);
-                      return (
-                        <label key={label.id} className="flex items-center gap-2 text-xs text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() =>
-                              setForm((prev) => ({
-                                ...prev,
-                                labelIds: checked ? prev.labelIds.filter((id) => id !== label.id) : [...prev.labelIds, label.id],
-                              }))
-                            }
-                          />
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${label.color}`}>
-                            {label.name}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                <div className="md:col-span-6 rounded-lg border border-gray-200 p-3">
+                  <label className="mb-2 block text-xs font-medium text-gray-500">Labels</label>
+                  <div className="flex flex-wrap gap-2">{state.taskLabels.map((l) => { const c = form.labelIds.includes(l.id); return <label key={l.id} className="flex items-center gap-2 text-xs text-gray-600"><input type="checkbox" checked={c} onChange={() => setForm((p) => ({ ...p, labelIds: c ? p.labelIds.filter((i) => i !== l.id) : [...p.labelIds, l.id] }))} className="rounded border-gray-300" /><span className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${l.color}`}>{l.name}</span></label>; })}</div>
                 </div>
               )}
             </div>
-            <div className="mt-3 flex items-center justify-end gap-2">
-              <Button size="sm" variant="secondary" onClick={() => setCreateModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" onClick={handleCreateTask} disabled={!form.title.trim()}>
-                Create task
-              </Button>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button onClick={() => setCreateModalOpen(false)} className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={handleCreateTask} disabled={!form.title.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Create Task</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* 6. Label Manager Modal */}
       {isLabelManagerOpen && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4"
-          onClick={() => setLabelManagerOpen(false)}
-        >
-          <div
-            className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-slate-800">Label Management</h3>
-              <Button size="sm" variant="secondary" onClick={() => { setLabelManagerOpen(false); setEditingLabelId(null); }}>
-                Close
-              </Button>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4" onClick={() => setLabelManagerOpen(false)}>
+          <div className="w-full max-w-3xl rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-gray-900">Label Management</h3>
+              <button onClick={() => { setLabelManagerOpen(false); setEditingLabelId(null); }} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"><X className="h-5 w-5" /></button>
             </div>
-
             <div className="mb-4 overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr>
-                    <th className="text-left text-xs text-slate-500">Color</th>
-                    <th className="text-left text-xs text-slate-500">Name</th>
-                    <th className="text-left text-xs text-slate-500">Tasks</th>
-                    <th className="text-right text-xs text-slate-500">Actions</th>
-                  </tr>
-                </thead>
+              <table className="w-full text-left">
+                <thead className="border-b border-gray-200 bg-gray-50"><tr><th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Color</th><th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Name</th><th className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Tasks</th><th className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase">Actions</th></tr></thead>
                 <tbody>
                   {state.taskLabels.map((label) => {
                     const taskCount = state.tasks.filter((t) => (t.labelIds ?? []).includes(label.id)).length;
-                    const isProjectLbl = isProjectLabel(label, projectNames);
-                    const isEditing = editingLabelId === label.id;
-
+                    const isProjLbl = isProjectLabel(label, projectNames);
+                    const isEd = editingLabelId === label.id;
                     return (
-                      <tr key={label.id} className="border-t border-slate-100">
-                        <td className="py-2">
-                          {isEditing ? (
-                            <div className="flex flex-wrap gap-1">
-                              {LABEL_COLOR_PRESETS.map((c) => (
-                                <button
-                                  key={c}
-                                  type="button"
-                                  className={`h-5 w-5 rounded-full ${c} ${editLabelColor === c ? "ring-2 ring-slate-400 ring-offset-1" : ""}`}
-                                  onClick={() => setEditLabelColor(c)}
-                                />
-                              ))}
-                            </div>
-                          ) : (
-                            <span className={`inline-block h-4 w-4 rounded-full ${label.color}`} />
-                          )}
-                        </td>
-                        <td className="py-2">
-                          {isEditing ? (
-                            <input
-                              className="w-full rounded border border-slate-200 px-2 py-1 text-xs"
-                              value={editLabelName}
-                              onChange={(e) => setEditLabelName(e.target.value)}
-                            />
-                          ) : (
-                            <span className="text-xs font-medium text-slate-700">{label.name}</span>
-                          )}
-                        </td>
-                        <td className="py-2">
-                          <span className="text-xs text-slate-500">{taskCount}</span>
-                        </td>
-                        <td className="py-2 text-right">
-                          {isEditing ? (
+                      <tr key={label.id} className="border-b border-gray-100">
+                        <td className="px-3 py-2">{isEd ? <div className="flex flex-wrap gap-1">{LABEL_COLOR_PRESETS.map((c) => <button key={c} className={`h-5 w-5 rounded-full ${c} ${editLabelColor === c ? "ring-2 ring-gray-400 ring-offset-1" : ""}`} onClick={() => setEditLabelColor(c)} />)}</div> : <span className={`inline-block h-4 w-4 rounded-full ${label.color}`} />}</td>
+                        <td className="px-3 py-2">{isEd ? <input className={inputCls} value={editLabelName} onChange={(e) => setEditLabelName(e.target.value)} /> : <span className="text-sm font-medium text-gray-700">{label.name}</span>}</td>
+                        <td className="px-3 py-2 text-sm text-gray-500">{taskCount}</td>
+                        <td className="px-3 py-2 text-right">
+                          {isEd ? (
                             <div className="flex justify-end gap-1">
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  if (editLabelName.trim()) {
-                                    state.updateTaskLabel(label.id, { name: editLabelName.trim(), color: editLabelColor });
-                                  }
-                                  setEditingLabelId(null);
-                                }}
-                              >
-                                Save
-                              </Button>
-                              <Button size="sm" variant="secondary" onClick={() => setEditingLabelId(null)}>
-                                Cancel
-                              </Button>
+                              <button className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition" onClick={() => { if (editLabelName.trim()) state.updateTaskLabel(label.id, { name: editLabelName.trim(), color: editLabelColor }); setEditingLabelId(null); }}>Save</button>
+                              <button className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition" onClick={() => setEditingLabelId(null)}>Cancel</button>
                             </div>
                           ) : (
                             <div className="flex justify-end gap-1">
-                              {isProjectLbl ? (
-                                <span className="flex items-center gap-1 text-[10px] text-slate-400" title="Project label – cannot delete">
-                                  🔒 Project
-                                </span>
-                              ) : null}
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                onClick={() => {
-                                  setEditingLabelId(label.id);
-                                  setEditLabelName(label.name);
-                                  setEditLabelColor(label.color);
-                                }}
-                              >
-                                Edit
-                              </Button>
-                              {!isProjectLbl && (
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onClick={() => {
-                                    state.deleteTaskLabel(label.id);
-                                    if (labelFilter === label.id) setLabelFilter("Any");
-                                  }}
-                                >
-                                  Delete
-                                </Button>
-                              )}
+                              {isProjLbl && <span className="text-[10px] text-gray-400">🔒 Project</span>}
+                              <button className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition" onClick={() => { setEditingLabelId(label.id); setEditLabelName(label.name); setEditLabelColor(label.color); }}>Edit</button>
+                              {!isProjLbl && <button className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition" onClick={() => { state.deleteTaskLabel(label.id); if (labelFilter === label.id) setLabelFilter("Any"); }}>Delete</button>}
                             </div>
                           )}
                         </td>
@@ -938,41 +435,19 @@ export function TasksPage() {
                 </tbody>
               </table>
             </div>
-
-            <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-              <p className="mb-2 text-xs font-semibold text-slate-700">Add new label</p>
-              <div className="flex flex-wrap items-end gap-2">
-                <div>
-                  <FieldLabel>Name</FieldLabel>
-                  <input
-                    className="rounded border border-slate-200 px-2 py-1 text-xs"
-                    placeholder="Label name"
-                    value={newLabelName}
-                    onChange={(e) => setNewLabelName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <FieldLabel>Color</FieldLabel>
-                  <div className="flex flex-wrap gap-1">
-                    {LABEL_COLOR_PRESETS.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className={`h-5 w-5 rounded-full ${c} ${newLabelColor === c ? "ring-2 ring-slate-400 ring-offset-1" : ""}`}
-                        onClick={() => setNewLabelColor(c)}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <Button size="sm" onClick={handleAddLabel} disabled={!newLabelName.trim()}>
-                  Create label
-                </Button>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <p className="mb-2 text-sm font-semibold text-gray-700">Add new label</p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div><label className="mb-1 block text-xs font-medium text-gray-500">Name</label><input className={inputCls} placeholder="Label name" value={newLabelName} onChange={(e) => setNewLabelName(e.target.value)} /></div>
+                <div><label className="mb-1 block text-xs font-medium text-gray-500">Color</label><div className="flex flex-wrap gap-1">{LABEL_COLOR_PRESETS.map((c) => <button key={c} className={`h-5 w-5 rounded-full ${c} ${newLabelColor === c ? "ring-2 ring-gray-400 ring-offset-1" : ""}`} onClick={() => setNewLabelColor(c)} />)}</div></div>
+                <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition" onClick={handleAddLabel} disabled={!newLabelName.trim()}>Create label</button>
               </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* 7. Task Drawer */}
       {selectedTask && (
         <TaskDrawer
           task={selectedTask}
@@ -980,19 +455,14 @@ export function TasksPage() {
           attachments={state.taskAttachments.filter((a) => a.taskId === selectedTask.id)}
           users={state.users}
           labels={state.taskLabels}
-          getUserName={(userId) => getUserName(state, userId)}
+          getUserName={(uid) => getUserName(state, uid)}
           onSave={saveTaskDetail}
           onClose={() => setSelectedTaskId("")}
-          onArchive={(task) =>
-            state.updateTask({
-              ...task,
-              status: "Archived",
-            })
-          }
-          onUnarchive={(task) => state.updateTask({ ...task, status: "Done", archivedAt: undefined })}
-          onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
-          onAddAttachment={(taskId, file) => state.addTaskAttachment(taskId, file, state.activeUserId)}
-          onRemoveAttachment={(attachmentId) => state.removeTaskAttachment(attachmentId)}
+          onArchive={(t) => state.updateTask({ ...t, status: "Archived" })}
+          onUnarchive={(t) => state.updateTask({ ...t, status: "Done", archivedAt: undefined })}
+          onAddComment={(tid, text, kind) => state.addTaskComment(tid, text, kind)}
+          onAddAttachment={(tid, file) => state.addTaskAttachment(tid, file, state.activeUserId)}
+          onRemoveAttachment={(aid) => state.removeTaskAttachment(aid)}
         />
       )}
     </div>
