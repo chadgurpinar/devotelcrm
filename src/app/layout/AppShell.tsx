@@ -5,7 +5,7 @@ import {
   Building2, FileText, StickyNote, Radio, Phone, Network, UserCheck,
   ClipboardList, PieChart, Users, UserCircle, Monitor, GitBranch, DollarSign,
   Receipt, CalendarOff, CreditCard, Settings2, Home, Landmark, Settings,
-  FolderKanban, LayoutList, Eye,
+  FolderKanban, LayoutList,
 } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { Button } from "../../components/ui";
@@ -109,7 +109,6 @@ export function AppShell() {
       title: "Daily Management",
       items: [
         { to: "/projects", label: "Projects", icon: <FolderKanban size={16} /> },
-        { to: "/projects/executive", label: "Executive View", icon: <Eye size={16} /> },
         { to: "/tasks", label: "My Tasks", icon: <CheckSquare size={16} />, badge: badge(tasksOpenCount, "bg-sky-500") },
         { to: "/tasks/all", label: "All Tasks", icon: <LayoutList size={16} /> },
         { to: "/management-reports", label: "Management Reports", icon: <BarChart2 size={16} /> },

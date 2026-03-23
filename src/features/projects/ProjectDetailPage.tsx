@@ -7,6 +7,7 @@ import { Task, TaskPriority, TaskStatus, TaskVisibility } from "../../store/type
 import { UiPageHeader } from "../../ui/UiPageHeader";
 import { TaskDrawer, TaskDrawerDraft } from "../tasks/TaskDrawer";
 import { ProjectWeeklyReportTab } from "./ProjectWeeklyReportTab";
+import { ProjectFormModal } from "./ProjectFormModal";
 
 type DetailTab = "Overview" | "Tasks" | "Weekly Reports";
 
@@ -47,6 +48,7 @@ export function ProjectDetailPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [showEditProject, setShowEditProject] = useState(false);
 
   const project = state.projects.find((p) => p.id === projectId);
   const userById = useMemo(() => new Map(state.users.map((u) => [u.id, u])), [state.users]);
@@ -106,7 +108,7 @@ export function ProjectDetailPage() {
         actions={
           <div className="flex items-center gap-2">
             <span className={`rounded-full px-3 py-1 text-xs font-medium ${STATUS_BADGE[project.status] ?? "bg-gray-100 text-gray-600"}`}>{project.status === "InProgress" ? "In Progress" : project.status}</span>
-            <button className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition">
+            <button onClick={() => setShowEditProject(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition">
               <Pencil className="h-3.5 w-3.5" /> Edit
             </button>
           </div>
@@ -295,6 +297,8 @@ export function ProjectDetailPage() {
           onRemoveAttachment={(aid) => state.removeTaskAttachment(aid)}
         />
       )}
+
+      {showEditProject && project && <ProjectFormModal editingProject={project} onClose={() => setShowEditProject(false)} />}
     </div>
   );
 }
