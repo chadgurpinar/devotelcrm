@@ -120,7 +120,8 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
   const report = useMemo(() => state.projectWeeklyReports.find((r) => r.projectId === projectId && r.weekStartDate === selectedWeek) ?? null, [state.projectWeeklyReports, projectId, selectedWeek]);
   const comments = useMemo(() => report ? state.weeklyReportManagerComments.filter((c) => c.reportId === report.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt)) : [], [state.weeklyReportManagerComments, report]);
 
-  useEffect(() => { state.createProjectWeeklyReport({ projectId, weekStartDate: selectedWeek, roleReports: {} }); }, [selectedWeek, projectId, state]);
+  const createReport = useAppStore((s) => s.createProjectWeeklyReport);
+  useEffect(() => { createReport({ projectId, weekStartDate: selectedWeek, roleReports: {} }); }, [selectedWeek, projectId, createReport]);
 
   const userRole = useMemo<ProjectRoleKey | "manager" | "none">(() => {
     if (!project) return "none";
@@ -286,28 +287,30 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {/* Part F — Read-only view for non-editors */}
-      {userRole === "none" && (
-        <div className="space-y-4">
-          {!hasAnySubmission && !showLegacy && <p className="text-sm text-gray-400 text-center py-8">No report submitted for this week.</p>}
-          {(["technical", "sales", "product"] as const).map((role) => { const rr = roleReport(role); return rr?.submittedAt ? <ReadOnlyRoleView key={role} roleReport={rr} roleName={role} /> : null; })}
-          {report?.managerSummary?.submittedAt && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800 mb-2">Manager Summary</h3>
-              <p className="text-sm text-gray-700 mb-2">{report.managerSummary.executiveSummaryText}</p>
-              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_CLR[report.managerSummary.riskLevel]}`}>Risk: {report.managerSummary.riskLevel}</span>
-              {report.managerSummary.blockers.length > 0 && <div className="mt-2"><p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Blockers</p><ul className="list-disc pl-4 text-xs text-gray-600">{report.managerSummary.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul></div>}
-            </div>
-          )}
-          {/* Comments for read-only viewers */}
-          {comments.length > 0 && (
-            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Manager Comments</h3>
-              <div className="space-y-2">{comments.map((c) => (<div key={c.id} className="py-1.5 pl-3 border-l-2 border-gray-200"><div className="flex items-center gap-1.5 text-xs"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span><span className="text-[10px] text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-gray-600 mt-0.5">{c.commentText}</p></div>))}</div>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Other submitted sections (visible to all users) */}
+      {userRole === "none" && !hasAnySubmission && !showLegacy && <p className="text-sm text-gray-400 text-center py-8">No report submitted for this week.</p>}
+      <div className="space-y-4">
+        {(["technical", "sales", "product"] as const).map((role) => {
+          if (role === userRole) return null;
+          const rr = roleReport(role);
+          return rr?.submittedAt ? <ReadOnlyRoleView key={role} roleReport={rr} roleName={role} /> : null;
+        })}
+        {userRole !== "manager" && report?.managerSummary?.submittedAt && (
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-800 mb-2">Manager Summary</h3>
+            <p className="text-sm text-gray-700 mb-2">{report.managerSummary.executiveSummaryText}</p>
+            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_CLR[report.managerSummary.riskLevel]}`}>Risk: {report.managerSummary.riskLevel}</span>
+            {report.managerSummary.blockers.length > 0 && <div className="mt-2"><p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Blockers</p><ul className="list-disc pl-4 text-xs text-gray-600">{report.managerSummary.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul></div>}
+          </div>
+        )}
+        {/* Comments visible to all (read-only for non-managers) */}
+        {!isManager && comments.length > 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">Manager Comments</h3>
+            <div className="space-y-2">{comments.map((c) => (<div key={c.id} className="py-1.5 pl-3 border-l-2 border-gray-200"><div className="flex items-center gap-1.5 text-xs"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span><span className="text-[10px] text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-gray-600 mt-0.5">{c.commentText}</p></div>))}</div>
+          </div>
+        )}
+      </div>
 
       {/* Part E — AI Summary (visible to all) */}
       {report && (
