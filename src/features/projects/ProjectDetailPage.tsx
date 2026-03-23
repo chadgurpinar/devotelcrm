@@ -6,6 +6,7 @@ import { getUserName } from "../../store/selectors";
 import { Task, TaskPriority, TaskStatus, TaskVisibility } from "../../store/types";
 import { UiPageHeader } from "../../ui/UiPageHeader";
 import { TaskDrawer, TaskDrawerDraft } from "../tasks/TaskDrawer";
+import { ProjectWeeklyReportTab } from "./ProjectWeeklyReportTab";
 
 type DetailTab = "Overview" | "Tasks" | "Weekly Reports";
 
@@ -274,55 +275,7 @@ export function ProjectDetailPage() {
       )}
 
       {/* TAB: Weekly Reports */}
-      {tab === "Weekly Reports" && (
-        <div>
-          {projectReports.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16">
-              <FolderOpen className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-500">Weekly reports will appear here</p>
-              <p className="text-xs text-gray-400 mt-1">Coming soon</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {projectReports.map((report) => (
-                <div key={report.id} className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-gray-800">Week of {report.weekStartDate}</h3>
-                    <span className="text-xs text-gray-400">{timeAgo(report.updatedAt)}</span>
-                  </div>
-                  {report.managerSummary && (
-                    <div className="mb-3">
-                      <p className="text-xs text-gray-500 mb-1">Executive Summary</p>
-                      <p className="text-sm text-gray-700">{report.managerSummary.executiveSummaryText}</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${report.managerSummary.riskLevel === "High" ? "bg-rose-50 text-rose-700" : report.managerSummary.riskLevel === "Medium" ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>Risk: {report.managerSummary.riskLevel}</span>
-                        {report.managerSummary.blockers.length > 0 && <span className="flex items-center gap-1 text-[10px] text-rose-600"><AlertTriangle className="h-3 w-3" />{report.managerSummary.blockers.length} blockers</span>}
-                      </div>
-                    </div>
-                  )}
-                  <div className="grid gap-3 md:grid-cols-3">
-                    {(["technical", "sales", "product"] as const).map((role) => {
-                      const r = report.roleReports[role];
-                      if (!r) return null;
-                      const author = userById.get(r.authorUserId);
-                      return (
-                        <div key={role} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[8px] font-bold text-indigo-600">{author ? initials(author.name) : "?"}</div>
-                            <p className="text-xs font-semibold text-gray-700 capitalize">{role}</p>
-                          </div>
-                          {r.achievements.length > 0 && <p className="text-[11px] text-gray-600">✓ {r.achievements.slice(0, 2).join(", ")}{r.achievements.length > 2 ? ` +${r.achievements.length - 2}` : ""}</p>}
-                          {r.blockers.length > 0 && <p className="text-[11px] text-rose-600 mt-0.5">⚠ {r.blockers.length} blocker{r.blockers.length > 1 ? "s" : ""}</p>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {tab === "Weekly Reports" && <ProjectWeeklyReportTab projectId={projectId!} />}
 
       {/* Task Drawer */}
       {selectedTask && (
