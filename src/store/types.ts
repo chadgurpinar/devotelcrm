@@ -33,7 +33,7 @@ export type TaskPriority = "Low" | "Medium" | "High" | "Critical";
 export type TaskVisibility = "Private" | "Shared";
 export type TaskCommentKind = "Comment" | "Blocker";
 
-export type ProjectStatus = "InProgress" | "Paused" | "Completed";
+export type ProjectStatus = "Planning" | "InProgress" | "Paused" | "Completed" | "OnHold" | "Cancelled";
 export type StrategicPriority = "Low" | "Medium" | "High";
 export type ProjectRiskLevel = "Low" | "Medium" | "High";
 export type ProjectRoleKey = "technical" | "sales" | "product";
@@ -43,6 +43,7 @@ export interface User {
   id: string;
   name: string;
   role:
+    | "SuperAdmin"
     | "Sales"
     | "Interconnection Manager"
     | "NOC"
@@ -224,6 +225,7 @@ export interface Task {
   labelIds?: string[];
   attachmentIds?: string[];
   dueDateReminderLastTriggeredAt?: string;
+  estimatedHours?: number;
 }
 
 export interface TaskAttachment {
@@ -256,6 +258,12 @@ export interface Project {
     managerLockDay: number;
     managerLockTime: string;
   };
+  startDate?: string;
+  endDate?: string;
+  budget?: number;
+  executiveStatus?: "approved" | "changes_requested" | "escalated";
+  managerComment?: string;
+  managerCommentUpdatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

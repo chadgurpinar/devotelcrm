@@ -14,15 +14,16 @@ type FormState = {
   name: string; description: string; status: Project["status"]; strategicPriority: Project["strategicPriority"];
   ownerUserId: string; technicalResponsibleUserId: string; salesResponsibleUserId: string; productResponsibleUserId: string;
   managerUserIds: string[]; tagsText: string;
+  startDate: string; endDate: string; budget: string;
   memberLockDay: string; memberLockTime: string; managerLockDay: string; managerLockTime: string;
 };
 
 function emptyForm(activeUserId: string): FormState {
-  return { name: "", description: "", status: "InProgress", strategicPriority: "Medium", ownerUserId: activeUserId, technicalResponsibleUserId: activeUserId, salesResponsibleUserId: activeUserId, productResponsibleUserId: activeUserId, managerUserIds: [activeUserId], tagsText: "", memberLockDay: "", memberLockTime: "", managerLockDay: "", managerLockTime: "" };
+  return { name: "", description: "", status: "InProgress", strategicPriority: "Medium", ownerUserId: activeUserId, technicalResponsibleUserId: activeUserId, salesResponsibleUserId: activeUserId, productResponsibleUserId: activeUserId, managerUserIds: [activeUserId], tagsText: "", startDate: "", endDate: "", budget: "", memberLockDay: "", memberLockTime: "", managerLockDay: "", managerLockTime: "" };
 }
 
 function fromProject(p: Project): FormState {
-  return { name: p.name, description: p.description, status: p.status, strategicPriority: p.strategicPriority, ownerUserId: p.ownerUserId, technicalResponsibleUserId: p.technicalResponsibleUserId, salesResponsibleUserId: p.salesResponsibleUserId, productResponsibleUserId: p.productResponsibleUserId, managerUserIds: p.managerUserIds, tagsText: (p.tags ?? []).join(", "), memberLockDay: p.reportDeadlines ? String(p.reportDeadlines.memberLockDay) : "", memberLockTime: p.reportDeadlines?.memberLockTime ?? "", managerLockDay: p.reportDeadlines ? String(p.reportDeadlines.managerLockDay) : "", managerLockTime: p.reportDeadlines?.managerLockTime ?? "" };
+  return { name: p.name, description: p.description, status: p.status, strategicPriority: p.strategicPriority, ownerUserId: p.ownerUserId, technicalResponsibleUserId: p.technicalResponsibleUserId, salesResponsibleUserId: p.salesResponsibleUserId, productResponsibleUserId: p.productResponsibleUserId, managerUserIds: p.managerUserIds, tagsText: (p.tags ?? []).join(", "), startDate: p.startDate ?? "", endDate: p.endDate ?? "", budget: p.budget != null ? String(p.budget) : "", memberLockDay: p.reportDeadlines ? String(p.reportDeadlines.memberLockDay) : "", memberLockTime: p.reportDeadlines?.memberLockTime ?? "", managerLockDay: p.reportDeadlines ? String(p.reportDeadlines.managerLockDay) : "", managerLockTime: p.reportDeadlines?.managerLockTime ?? "" };
 }
 
 export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalProps) {
@@ -47,9 +48,9 @@ export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalPr
     const watcherUserIds = Array.from(new Set([...managerUserIds, form.ownerUserId, form.technicalResponsibleUserId, form.salesResponsibleUserId, form.productResponsibleUserId].filter(Boolean)));
 
     if (isEdit && editingProject) {
-      state.updateProject({ ...editingProject, name: form.name.trim(), description: form.description.trim(), status: form.status, strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds, technicalResponsibleUserId: form.technicalResponsibleUserId, salesResponsibleUserId: form.salesResponsibleUserId, productResponsibleUserId: form.productResponsibleUserId, watcherUserIds, tags, reportDeadlines });
+      state.updateProject({ ...editingProject, name: form.name.trim(), description: form.description.trim(), status: form.status, strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds, technicalResponsibleUserId: form.technicalResponsibleUserId, salesResponsibleUserId: form.salesResponsibleUserId, productResponsibleUserId: form.productResponsibleUserId, watcherUserIds, tags, startDate: form.startDate || undefined, endDate: form.endDate || undefined, budget: form.budget ? Number(form.budget) : undefined, reportDeadlines });
     } else {
-      state.createProject({ name: form.name.trim(), description: form.description.trim(), status: form.status, strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds, technicalResponsibleUserId: form.technicalResponsibleUserId, salesResponsibleUserId: form.salesResponsibleUserId, productResponsibleUserId: form.productResponsibleUserId, watcherUserIds, tags, reportDeadlines });
+      state.createProject({ name: form.name.trim(), description: form.description.trim(), status: form.status, strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds, technicalResponsibleUserId: form.technicalResponsibleUserId, salesResponsibleUserId: form.salesResponsibleUserId, productResponsibleUserId: form.productResponsibleUserId, watcherUserIds, tags, startDate: form.startDate || undefined, endDate: form.endDate || undefined, budget: form.budget ? Number(form.budget) : undefined, reportDeadlines });
     }
     onClose();
   }
@@ -63,16 +64,22 @@ export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalPr
         </div>
 
         <div className="px-6 py-5 space-y-4">
-          <div><label className="mb-1 block text-xs font-medium text-gray-500">Name *</label><input className={inputCls} value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} /></div>
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Project Name *</label><input className={inputCls} value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} /></div>
           <div><label className="mb-1 block text-xs font-medium text-gray-500">Description</label><textarea rows={3} className={`${inputCls} resize-none`} value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Status</label><select className={inputCls} value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as FormState["status"] }))}><option value="InProgress">In Progress</option><option value="Paused">Paused</option><option value="Completed">Completed</option></select></div>
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Strategic Priority</label><select className={inputCls} value={form.strategicPriority} onChange={(e) => setForm((p) => ({ ...p, strategicPriority: e.target.value as FormState["strategicPriority"] }))}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></select></div>
+            <div><label className="mb-1 block text-xs font-medium text-gray-500">Status</label><select className={inputCls} value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as FormState["status"] }))}><option value="Planning">Planning</option><option value="InProgress">In Progress</option><option value="Paused">Paused</option><option value="Completed">Completed</option><option value="OnHold">On Hold</option><option value="Cancelled">Cancelled</option></select></div>
+            <div><label className="mb-1 block text-xs font-medium text-gray-500">Priority</label><select className={inputCls} value={form.strategicPriority} onChange={(e) => setForm((p) => ({ ...p, strategicPriority: e.target.value as FormState["strategicPriority"] }))}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></select></div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div><label className="mb-1 block text-xs font-medium text-gray-500">Start Date</label><input type="date" className={inputCls} value={form.startDate} onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-gray-500">End Date</label><input type="date" className={inputCls} value={form.endDate} onChange={(e) => setForm((p) => ({ ...p, endDate: e.target.value }))} /></div>
+            <div><label className="mb-1 block text-xs font-medium text-gray-500">Budget (USD)</label><input type="number" min={0} className={inputCls} value={form.budget} onChange={(e) => setForm((p) => ({ ...p, budget: e.target.value }))} placeholder="Optional" /></div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Owner</label><select className={inputCls} value={form.ownerUserId} onChange={(e) => setForm((p) => ({ ...p, ownerUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+            <div><label className="mb-1 block text-xs font-medium text-gray-500">Owner *</label><select className={inputCls} value={form.ownerUserId} onChange={(e) => setForm((p) => ({ ...p, ownerUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
             <div><label className="mb-1 block text-xs font-medium text-gray-500">Technical Responsible</label><select className={inputCls} value={form.technicalResponsibleUserId} onChange={(e) => setForm((p) => ({ ...p, technicalResponsibleUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
             <div><label className="mb-1 block text-xs font-medium text-gray-500">Sales Responsible</label><select className={inputCls} value={form.salesResponsibleUserId} onChange={(e) => setForm((p) => ({ ...p, salesResponsibleUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
             <div><label className="mb-1 block text-xs font-medium text-gray-500">Product Responsible</label><select className={inputCls} value={form.productResponsibleUserId} onChange={(e) => setForm((p) => ({ ...p, productResponsibleUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>

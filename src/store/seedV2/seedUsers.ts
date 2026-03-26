@@ -3,7 +3,7 @@ import { SeedPrng } from "./prng";
 import { BASE_EMPLOYEE_ROWS, BaseEmployeeSeedRow } from "./seedEvents";
 
 const ROLE_SEQUENCE: User["role"][] = [
-  "Sales",
+  "SuperAdmin",
   "Sales",
   "Sales",
   "Sales",

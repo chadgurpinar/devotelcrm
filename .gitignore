@@ -6,3 +6,4 @@ dist/
 .tools/
 .env
 Template/
+.vercel

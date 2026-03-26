@@ -123,14 +123,18 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
   const createReport = useAppStore((s) => s.createProjectWeeklyReport);
   useEffect(() => { createReport({ projectId, weekStartDate: selectedWeek, roleReports: {} }); }, [selectedWeek, projectId, createReport]);
 
+  const activeUser = state.users.find((u) => u.id === state.activeUserId);
+  const isSuperAdmin = activeUser?.role === "SuperAdmin";
+
   const userRole = useMemo<ProjectRoleKey | "manager" | "none">(() => {
     if (!project) return "none";
+    if (isSuperAdmin) return "manager";
     if (project.technicalResponsibleUserId === state.activeUserId) return "technical";
     if (project.salesResponsibleUserId === state.activeUserId) return "sales";
     if (project.productResponsibleUserId === state.activeUserId) return "product";
     if (project.managerUserIds.includes(state.activeUserId) || project.ownerUserId === state.activeUserId) return "manager";
     return "none";
-  }, [project, state.activeUserId]);
+  }, [project, state.activeUserId, isSuperAdmin]);
 
   const isManager = userRole === "manager";
 
