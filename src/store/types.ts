@@ -281,6 +281,8 @@ export interface ProjectRoleReport {
   decisionsRequired: string[];
   nextWeekFocus: string[];
   attachments: ProjectAttachmentLink[];
+  overallStatus?: "OnTrack" | "AtRisk" | "Delayed";
+  score?: number;
   submittedAt?: string;
   updatedAt: string;
 }

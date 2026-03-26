@@ -133,6 +133,7 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
     if (project.salesResponsibleUserId === state.activeUserId) return "sales";
     if (project.productResponsibleUserId === state.activeUserId) return "product";
     if (project.managerUserIds.includes(state.activeUserId) || project.ownerUserId === state.activeUserId) return "manager";
+    if (project.watcherUserIds.includes(state.activeUserId)) return "technical";
     return "none";
   }, [project, state.activeUserId, isSuperAdmin]);
 
@@ -154,10 +155,10 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
   const memberLocked = project.reportDeadlines ? isAfterWeeklyDeadline(project.reportDeadlines.memberLockDay, project.reportDeadlines.memberLockTime) : false;
   const managerLocked = project.reportDeadlines ? isAfterWeeklyDeadline(project.reportDeadlines.managerLockDay, project.reportDeadlines.managerLockTime) : false;
 
-  function updateRole(role: ProjectRoleKey, patch: Partial<{ achievements: string[]; inProgress: string[]; blockers: string[]; decisionsRequired: string[]; nextWeekFocus: string[]; attachments: ProjectAttachmentLink[] }>) {
+  function updateRole(role: ProjectRoleKey, patch: Partial<{ achievements: string[]; inProgress: string[]; blockers: string[]; decisionsRequired: string[]; nextWeekFocus: string[]; attachments: ProjectAttachmentLink[]; overallStatus: "OnTrack" | "AtRisk" | "Delayed"; score: number }>) {
     if (!report) return;
     const existing = report.roleReports[role];
-    const updated: ProjectWeeklyReport = { ...report, roleReports: { ...report.roleReports, [role]: { authorUserId: existing?.authorUserId ?? state.activeUserId, achievements: patch.achievements ?? existing?.achievements ?? [], inProgress: patch.inProgress ?? existing?.inProgress ?? [], blockers: patch.blockers ?? existing?.blockers ?? [], decisionsRequired: patch.decisionsRequired ?? existing?.decisionsRequired ?? [], nextWeekFocus: patch.nextWeekFocus ?? existing?.nextWeekFocus ?? [], attachments: patch.attachments ?? existing?.attachments ?? [], submittedAt: existing?.submittedAt, updatedAt: new Date().toISOString() } } };
+    const updated: ProjectWeeklyReport = { ...report, roleReports: { ...report.roleReports, [role]: { authorUserId: existing?.authorUserId ?? state.activeUserId, achievements: patch.achievements ?? existing?.achievements ?? [], inProgress: patch.inProgress ?? existing?.inProgress ?? [], blockers: patch.blockers ?? existing?.blockers ?? [], decisionsRequired: patch.decisionsRequired ?? existing?.decisionsRequired ?? [], nextWeekFocus: patch.nextWeekFocus ?? existing?.nextWeekFocus ?? [], attachments: patch.attachments ?? existing?.attachments ?? [], overallStatus: patch.overallStatus ?? existing?.overallStatus, score: patch.score ?? existing?.score, submittedAt: existing?.submittedAt, updatedAt: new Date().toISOString() } } };
     debouncedSave(updated);
   }
 
@@ -165,7 +166,7 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
     if (!report || memberLocked) return;
     const existing = report.roleReports[role];
     const now = new Date().toISOString();
-    state.updateProjectWeeklyReport({ ...report, roleReports: { ...report.roleReports, [role]: { authorUserId: existing?.authorUserId ?? state.activeUserId, achievements: existing?.achievements ?? [], inProgress: existing?.inProgress ?? [], blockers: existing?.blockers ?? [], decisionsRequired: existing?.decisionsRequired ?? [], nextWeekFocus: existing?.nextWeekFocus ?? [], attachments: existing?.attachments ?? [], submittedAt: now, updatedAt: now } }, updatedAt: now });
+    state.updateProjectWeeklyReport({ ...report, roleReports: { ...report.roleReports, [role]: { authorUserId: existing?.authorUserId ?? state.activeUserId, achievements: existing?.achievements ?? [], inProgress: existing?.inProgress ?? [], blockers: existing?.blockers ?? [], decisionsRequired: existing?.decisionsRequired ?? [], nextWeekFocus: existing?.nextWeekFocus ?? [], attachments: existing?.attachments ?? [], overallStatus: existing?.overallStatus, score: existing?.score, submittedAt: now, updatedAt: now } }, updatedAt: now });
   }
 
   function updateManager(patch: Partial<{ executiveSummaryText: string; riskLevel: ProjectRiskLevel; blockers: string[]; decisionsRequired: string[]; deckLinks: ProjectAttachmentLink[] }>) {
@@ -208,6 +209,28 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
           <DynamicListInput label="Decisions Required" items={rr?.decisionsRequired ?? []} onChange={(v) => updateRole(role, { decisionsRequired: v })} disabled={disabled} />
           <DynamicListInput label="Next Week Focus" items={rr?.nextWeekFocus ?? []} onChange={(v) => updateRole(role, { nextWeekFocus: v })} disabled={disabled} />
           <AttachmentListInput label="Attachments" items={rr?.attachments ?? []} onChange={(v) => updateRole(role, { attachments: v })} disabled={disabled} />
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-gray-500">Overall Status</label>
+            <div className="flex items-center gap-3">
+              {(["OnTrack", "AtRisk", "Delayed"] as const).map((s) => (
+                <label key={s} className={`flex items-center gap-1.5 text-xs cursor-pointer ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}>
+                  <input type="radio" name={`status-${role}`} value={s} checked={rr?.overallStatus === s} disabled={disabled} onChange={() => updateRole(role, { overallStatus: s })} className="h-3.5 w-3.5 border-gray-300 text-indigo-600" />
+                  <span className={s === "OnTrack" ? "text-emerald-700" : s === "AtRisk" ? "text-amber-700" : "text-rose-700"}>{s === "OnTrack" ? "On Track" : s === "AtRisk" ? "At Risk" : "Delayed"}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-gray-500">Score (1–5)</label>
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button key={n} type="button" disabled={disabled} onClick={() => updateRole(role, { score: n })} className={`h-8 w-8 rounded-lg text-sm font-medium transition ${(rr?.score ?? 0) >= n ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-400 hover:bg-gray-200"} ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}>{n}</button>
+              ))}
+              {rr?.score != null && <span className="ml-2 text-xs text-gray-500">{rr.score}/5</span>}
+            </div>
+          </div>
         </div>
         {!submitted && (
           <div className="mt-4 flex items-center gap-2">

@@ -9,6 +9,8 @@ import { ProjectFormModal } from "./ProjectFormModal";
 
 const STATUS_COLOR: Record<string, string> = { Planning: "bg-blue-100 text-blue-700", InProgress: "bg-amber-100 text-amber-700", Paused: "bg-gray-100 text-gray-600", Completed: "bg-emerald-100 text-emerald-700", OnHold: "bg-gray-100 text-gray-600", Cancelled: "bg-rose-100 text-rose-700" };
 const STATUS_LABEL: Record<string, string> = { Planning: "Planning", InProgress: "In Progress", Paused: "Paused", Completed: "Completed", OnHold: "On Hold", Cancelled: "Cancelled" };
+const EXEC_STATUS_CLR: Record<string, string> = { approved: "bg-emerald-50 text-emerald-700", changes_requested: "bg-amber-50 text-amber-700", escalated: "bg-rose-50 text-rose-700" };
+const EXEC_STATUS_LBL: Record<string, string> = { approved: "Approved", changes_requested: "Changes Requested", escalated: "Escalated" };
 
 type ViewMode = "team" | "executive";
 
@@ -127,6 +129,7 @@ export function ProjectsAndTasksPage() {
                             <p className="text-sm font-medium text-gray-900">{project.name}</p>
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium flex-shrink-0 ${STATUS_COLOR[project.status] ?? "bg-gray-100 text-gray-600"}`}>{STATUS_LABEL[project.status] ?? project.status}</span>
                           </div>
+                          {project.executiveStatus && <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${EXEC_STATUS_CLR[project.executiveStatus] ?? ""}`}>{EXEC_STATUS_LBL[project.executiveStatus] ?? project.executiveStatus}</span>}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700">{ownerName}</td>
                         <td className="px-4 py-3">{deadline ? <span className={`text-xs font-medium ${deadline.color}`}>{deadline.label}</span> : <span className="text-xs text-gray-400">—</span>}</td>
