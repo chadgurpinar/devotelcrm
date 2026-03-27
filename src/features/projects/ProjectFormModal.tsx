@@ -108,6 +108,7 @@ export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalPr
       strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds,
       technicalResponsibleUserId, salesResponsibleUserId, productResponsibleUserId,
       watcherUserIds, tags, responsibleRoles: cleanedRoles,
+      responsibles: cleanedRoles.map((r) => ({ roleLabel: r.label, userId: r.userId })),
       startDate: form.startDate || undefined, endDate: form.endDate || undefined,
       budget: form.budget ? Number(form.budget) : undefined, reportDeadlines,
     };

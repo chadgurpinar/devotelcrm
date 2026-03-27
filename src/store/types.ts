@@ -259,10 +259,15 @@ export interface Project {
     managerLockTime: string;
   };
   responsibleRoles?: { key: string; label: string; userId: string }[];
+  responsibles?: Array<{ roleLabel: string; userId: string }>;
+  customLabels?: string[];
   startDate?: string;
   endDate?: string;
   budget?: number;
   executiveStatus?: "approved" | "changes_requested" | "escalated";
+  executiveStatusNote?: string;
+  executiveStatusUpdatedAt?: string;
+  executiveFeedback?: Array<{ id: string; authorUserId: string; text: string; submittedAt: string; weekRef?: string }>;
   managerComment?: string;
   managerCommentUpdatedAt?: string;
   createdAt: string;
@@ -341,6 +346,11 @@ export interface ProjectWeeklyReport {
   managerSummary?: ProjectManagerSummary;
   aiSummary?: ProjectAiSummary;
   legacyCombinedReport?: ProjectLegacyCombinedReport;
+  roleComments?: {
+    technical?: Array<{ id: string; managerUserId: string; text: string; createdAt: string }>;
+    sales?: Array<{ id: string; managerUserId: string; text: string; createdAt: string }>;
+    product?: Array<{ id: string; managerUserId: string; text: string; createdAt: string }>;
+  };
   createdAt: string;
   updatedAt: string;
   amendsReportId?: string;

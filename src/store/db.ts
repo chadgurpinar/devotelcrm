@@ -123,6 +123,9 @@ interface DbActions {
   addWeeklyReportManagerComment: (
     payload: Omit<WeeklyReportManagerComment, "id" | "createdAt">,
   ) => string;
+  addWeeklyReportRoleComment: (reportId: string, role: "technical" | "sales" | "product", text: string) => void;
+  addExecutiveFeedback: (projectId: string, text: string, weekRef?: string) => void;
+  updateProjectExecutiveStatus: (projectId: string, status: Project["executiveStatus"], note?: string) => void;
   generateWeeklyReportAiSummary: (
     scope: WeeklyReportAiSummary["scope"],
     scopeId: string,
@@ -1658,6 +1661,38 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         ],
       }));
       return id;
+    },
+    addWeeklyReportRoleComment: (reportId, role, text) => {
+      const now = new Date().toISOString();
+      const id = uid("wrrc");
+      set((s) => ({
+        ...s,
+        projectWeeklyReports: s.projectWeeklyReports.map((r) => {
+          if (r.id !== reportId) return r;
+          const existing = r.roleComments ?? {};
+          const list = existing[role] ?? [];
+          return { ...r, roleComments: { ...existing, [role]: [...list, { id, managerUserId: s.activeUserId, text, createdAt: now }] } };
+        }),
+      }));
+    },
+    addExecutiveFeedback: (projectId, text, weekRef) => {
+      const now = new Date().toISOString();
+      const id = uid("ef");
+      set((s) => ({
+        ...s,
+        projects: s.projects.map((p) => {
+          if (p.id !== projectId) return p;
+          const list = p.executiveFeedback ?? [];
+          return { ...p, executiveFeedback: [...list, { id, authorUserId: s.activeUserId, text, submittedAt: now, weekRef }], updatedAt: now };
+        }),
+      }));
+    },
+    updateProjectExecutiveStatus: (projectId, status, note) => {
+      const now = new Date().toISOString();
+      set((s) => ({
+        ...s,
+        projects: s.projects.map((p) => p.id === projectId ? { ...p, executiveStatus: status, executiveStatusNote: note ?? p.executiveStatusNote, executiveStatusUpdatedAt: now, updatedAt: now } : p),
+      }));
     },
     generateWeeklyReportAiSummary: (scope, scopeId, weekStartDate, monthKey) => {
       const state = get();

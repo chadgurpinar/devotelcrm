@@ -105,13 +105,28 @@ function LegacyReportView({ legacy }: { legacy: NonNullable<ProjectWeeklyReport[
   );
 }
 
+/* ─── Role Comment Section ─── */
+
+function RoleCommentSection({ reportId, role, comments: roleComments, isManager, getUserName: getName }: { reportId: string; role: "technical" | "sales" | "product"; comments: Array<{ id: string; managerUserId: string; text: string; createdAt: string }>; isManager: boolean; getUserName: (uid: string) => string }) {
+  const state = useAppStore();
+  const [text, setText] = useState("");
+  function handleAdd() { if (!text.trim() || !reportId) return; state.addWeeklyReportRoleComment(reportId, role, text.trim()); setText(""); }
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50/50 px-3 py-2">
+      <p className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Manager notes on {role}</p>
+      {roleComments.length > 0 && <div className="space-y-1 mb-2">{roleComments.map((c) => (<div key={c.id} className="py-0.5 pl-2 border-l-2 border-gray-200"><div className="flex items-center gap-1 text-[10px]"><span className="font-semibold text-gray-600">{getName(c.managerUserId)}</span><span className="text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-gray-600">{c.text}</p></div>))}</div>}
+      {isManager && reportId && <div className="flex gap-2"><input className="flex-1 rounded border border-gray-300 px-2 py-1 text-xs focus:border-indigo-500 focus:outline-none" placeholder={`Add note for ${role}...`} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleAdd()} /><button onClick={handleAdd} disabled={!text.trim()} className="rounded bg-indigo-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Add</button></div>}
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════ */
 /* Main Component                                         */
 /* ═══════════════════════════════════════════════════════ */
 
-export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
+export function ProjectWeeklyReportTab({ projectId, initialWeek }: { projectId: string; initialWeek?: string }) {
   const state = useAppStore();
-  const [selectedWeek, setSelectedWeek] = useState(getCurrentMonday);
+  const [selectedWeek, setSelectedWeek] = useState(initialWeek ?? getCurrentMonday);
   const [commentText, setCommentText] = useState("");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const currentMonday = getCurrentMonday();
@@ -288,56 +303,92 @@ export function ProjectWeeklyReportTab({ projectId }: { projectId: string }) {
         <button onClick={handleNext} disabled={shiftWeek(selectedWeek, 1) > currentMonday} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 disabled:opacity-30 transition"><ChevronRight className="h-4 w-4" /></button>
       </div>
 
-      {/* Part B — Role Form (if user is a role reporter) */}
-      {(userRole === "technical" || userRole === "sales" || userRole === "product") && renderRoleForm(userRole)}
-
-      {/* Part C — Manager Form */}
-      {isManager && renderManagerForm()}
-
-      {/* Part D — Manager Comments */}
-      {isManager && report && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-800 mb-3">Manager Comments</h3>
-          {comments.length === 0 && <p className="text-xs text-gray-400 mb-3">No comments yet.</p>}
-          <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
-            {comments.map((c) => (
-              <div key={c.id} className={`py-1.5 pl-3 border-l-2 ${c.aiGenerated ? "border-violet-400" : "border-gray-200"}`}>
-                <div className="flex items-center gap-1.5 text-xs"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span>{c.aiGenerated && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-medium text-violet-700">AI</span>}<span className="text-[10px] text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div>
-                <p className="text-xs text-gray-600 mt-0.5">{c.commentText}</p>
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input className={`flex-1 ${inputCls}`} placeholder="Add a comment..." value={commentText} onChange={(e) => setCommentText(e.target.value)} />
-            <button onClick={addComment} disabled={!commentText.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Post</button>
-          </div>
-        </div>
+      {/* Role Form (if user is a role reporter) */}
+      {(userRole === "technical" || userRole === "sales" || userRole === "product") && (
+        <>
+          {renderRoleForm(userRole)}
+          {/* Show manager's role-specific comments to the role reporter (read-only) */}
+          {(() => { const rc = report?.roleComments?.[userRole] ?? []; return rc.length > 0 ? (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm">
+              <p className="text-[10px] font-semibold text-indigo-600 uppercase mb-1">Manager Feedback on your {userRole} report</p>
+              <div className="space-y-1.5">{rc.map((c) => (<div key={c.id} className="py-1 pl-3 border-l-2 border-indigo-200"><div className="flex items-center gap-1.5 text-[10px]"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span><span className="text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-gray-600 mt-0.5">{c.text}</p></div>))}</div>
+            </div>
+          ) : null; })()}
+        </>
       )}
 
-      {/* Other submitted sections (visible to all users) */}
+      {/* Manager: Summary form + all role sections */}
+      {isManager && (
+        <>
+          {renderManagerForm()}
+
+          {/* Manager sees all role reports */}
+          {(["technical", "sales", "product"] as const).map((role) => {
+            const rr = roleReport(role);
+            const assignee = role === "technical" ? project.technicalResponsibleUserId : role === "sales" ? project.salesResponsibleUserId : project.productResponsibleUserId;
+            const assigneeName = getUserName(state, assignee);
+            const rc = report?.roleComments?.[role] ?? [];
+            return (
+              <div key={role} className="space-y-2">
+                {rr?.submittedAt ? (
+                  <ReadOnlyRoleView roleReport={rr} roleName={role} />
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 bg-white p-4 shadow-sm">
+                    <p className="text-sm font-medium text-gray-600 capitalize">{role} Report</p>
+                    <p className="text-xs text-gray-400 mt-0.5">Not submitted yet — assigned to {assigneeName}</p>
+                  </div>
+                )}
+                {/* Manager role comment area */}
+                <RoleCommentSection reportId={report?.id ?? ""} role={role} comments={rc} isManager={true} getUserName={(uid) => getUserName(state, uid)} />
+              </div>
+            );
+          })}
+
+          {/* Manager Comments (general) */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">General Comments</h3>
+            {comments.length === 0 && <p className="text-xs text-gray-400 mb-3">No comments yet.</p>}
+            <div className="space-y-2 mb-3 max-h-48 overflow-y-auto">
+              {comments.map((c) => (
+                <div key={c.id} className={`py-1.5 pl-3 border-l-2 ${c.aiGenerated ? "border-violet-400" : "border-gray-200"}`}>
+                  <div className="flex items-center gap-1.5 text-xs"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span>{c.aiGenerated && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-medium text-violet-700">AI</span>}<span className="text-[10px] text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div>
+                  <p className="text-xs text-gray-600 mt-0.5">{c.commentText}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input className={`flex-1 ${inputCls}`} placeholder="Add a comment..." value={commentText} onChange={(e) => setCommentText(e.target.value)} />
+              <button onClick={addComment} disabled={!commentText.trim()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Post</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Non-reporter, non-manager: show all submitted sections */}
       {userRole === "none" && !hasAnySubmission && !showLegacy && <p className="text-sm text-gray-400 text-center py-8">No report submitted for this week.</p>}
-      <div className="space-y-4">
-        {(["technical", "sales", "product"] as const).map((role) => {
-          if (role === userRole) return null;
-          const rr = roleReport(role);
-          return rr?.submittedAt ? <ReadOnlyRoleView key={role} roleReport={rr} roleName={role} /> : null;
-        })}
-        {userRole !== "manager" && report?.managerSummary?.submittedAt && (
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-800 mb-2">Manager Summary</h3>
-            <p className="text-sm text-gray-700 mb-2">{report.managerSummary.executiveSummaryText}</p>
-            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_CLR[report.managerSummary.riskLevel]}`}>Risk: {report.managerSummary.riskLevel}</span>
-            {report.managerSummary.blockers.length > 0 && <div className="mt-2"><p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Blockers</p><ul className="list-disc pl-4 text-xs text-gray-600">{report.managerSummary.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul></div>}
-          </div>
-        )}
-        {/* Comments visible to all (read-only for non-managers) */}
-        {!isManager && comments.length > 0 && (
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-semibold text-gray-800 mb-3">Manager Comments</h3>
-            <div className="space-y-2">{comments.map((c) => (<div key={c.id} className="py-1.5 pl-3 border-l-2 border-gray-200"><div className="flex items-center gap-1.5 text-xs"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span><span className="text-[10px] text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-gray-600 mt-0.5">{c.commentText}</p></div>))}</div>
-          </div>
-        )}
-      </div>
+      {userRole !== "manager" && (
+        <div className="space-y-4">
+          {(["technical", "sales", "product"] as const).map((role) => {
+            if (role === userRole) return null;
+            const rr = roleReport(role);
+            return rr?.submittedAt ? <ReadOnlyRoleView key={role} roleReport={rr} roleName={role} /> : null;
+          })}
+          {report?.managerSummary?.submittedAt && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-800 mb-2">Manager Summary</h3>
+              <p className="text-sm text-gray-700 mb-2">{report.managerSummary.executiveSummaryText}</p>
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_CLR[report.managerSummary.riskLevel]}`}>Risk: {report.managerSummary.riskLevel}</span>
+              {report.managerSummary.blockers.length > 0 && <div className="mt-2"><p className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">Blockers</p><ul className="list-disc pl-4 text-xs text-gray-600">{report.managerSummary.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul></div>}
+            </div>
+          )}
+          {!isManager && comments.length > 0 && (
+            <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">Manager Comments</h3>
+              <div className="space-y-2">{comments.map((c) => (<div key={c.id} className="py-1.5 pl-3 border-l-2 border-gray-200"><div className="flex items-center gap-1.5 text-xs"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span><span className="text-[10px] text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-gray-600 mt-0.5">{c.commentText}</p></div>))}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Part E — AI Summary (visible to all) */}
       {report && (
