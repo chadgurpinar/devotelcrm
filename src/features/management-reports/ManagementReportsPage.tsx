@@ -296,9 +296,9 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
   const avgWl = submittedReports.length > 0 ? (submittedReports.reduce((s, r) => s + r.workloadRating, 0) / submittedReports.length).toFixed(1) : "–";
   const avgPr = submittedReports.length > 0 ? (submittedReports.reduce((s, r) => s + r.productivityRating, 0) / submittedReports.length).toFixed(1) : "–";
   const empUser = state.users.find((u) => u.id === emp.systemUserId);
-  const empTasks = empUser ? state.tasks.filter((t) => t.assigneeUserId === empUser.id && t.status !== "Archived") : [];
-  const openTasks = empTasks.filter((t) => t.status !== "Completed" && t.status !== "Done");
-  const completedTasks = empTasks.filter((t) => t.status === "Completed" || t.status === "Done");
+  const empTasks = empUser ? state.tasks.filter((t) => t.assigneeUserId === empUser.id && t.status !== "Cancelled") : [];
+  const openTasks = empTasks.filter((t) => t.status !== "Done" && !t.completedAt);
+  const completedTasks = empTasks.filter((t) => t.status === "Done");
   const overdueTasks = openTasks.filter((t) => t.dueAt && new Date(t.dueAt) < new Date());
   const deptMap = new Map(state.hrDepartments.map((d) => [d.id, d.name]));
   const initials = (emp.displayName || `${emp.firstName} ${emp.lastName}`).split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -339,7 +339,7 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
               {!empUser ? <p className="text-xs text-gray-400 py-6 text-center">No system user linked to this employee.</p> : openTasks.length === 0 ? <p className="text-xs text-gray-400 py-6 text-center">No open tasks.</p> : (
                 <div className="space-y-1.5">
                   {openTasks.slice(0, 15).map((task) => {
-                    const isOd = task.dueAt && new Date(task.dueAt) < new Date() && task.status !== "Done" && task.status !== "Completed";
+                    const isOd = task.dueAt && new Date(task.dueAt) < new Date() && task.status !== "Done" && task.status !== "Cancelled";
                     return (
                       <div key={task.id} onClick={() => { onClose(); navigate(`/tasks?taskId=${task.id}`); }} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition group">
                         <div className="flex items-center gap-2 min-w-0">

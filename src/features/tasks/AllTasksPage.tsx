@@ -8,10 +8,10 @@ import { UiKpiCard } from "../../ui/UiKpiCard";
 import { TaskDrawer, TaskDrawerDraft } from "./TaskDrawer";
 import { TaskKanbanBoard } from "./TaskKanbanBoard";
 
-const ALL_STATUSES: TaskStatus[] = ["Backlog", "Open", "InProgress", "Done", "Completed", "Archived"];
+const ALL_STATUSES: TaskStatus[] = ["Backlog", "ToDo", "InProgress", "Done", "Cancelled"];
 const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
 
-const STATUS_BADGE: Record<string, string> = { Backlog: "bg-gray-100 text-gray-600", Open: "bg-blue-50 text-blue-700", InProgress: "bg-indigo-50 text-indigo-700", Done: "bg-emerald-50 text-emerald-700", Completed: "bg-emerald-100 text-emerald-800", Archived: "bg-gray-50 text-gray-500" };
+const STATUS_BADGE: Record<string, string> = { Backlog: "bg-gray-100 text-gray-600", ToDo: "bg-blue-50 text-blue-700", InProgress: "bg-indigo-50 text-indigo-700", Done: "bg-emerald-50 text-emerald-700", Cancelled: "bg-rose-50 text-rose-600" };
 const PRIORITY_BADGE: Record<string, string> = { Critical: "bg-rose-50 text-rose-700", High: "bg-orange-50 text-orange-700", Medium: "bg-amber-50 text-amber-700", Low: "bg-gray-100 text-gray-500" };
 
 type ViewMode = "my" | "team" | "board";
@@ -24,7 +24,7 @@ function dueBadge(dueAt: string | undefined, status: string): { label: string; c
   const due = new Date(dueAt); const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
   const diff = Math.round((dueDay.getTime() - today.getTime()) / 86400000);
   const short = due.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  if (status === "Done" || status === "Completed") return { label: short, cls: "bg-gray-100 text-gray-500" };
+  if (status === "Done" || status === "Cancelled") return { label: short, cls: "bg-gray-100 text-gray-500" };
   if (diff < 0) return { label: `Overdue · ${short}`, cls: "bg-rose-50 text-rose-700" };
   if (diff === 0) return { label: "Due today", cls: "bg-amber-50 text-amber-700" };
   if (diff <= 3) return { label: `Due ${short}`, cls: "bg-yellow-50 text-yellow-700" };
@@ -46,7 +46,7 @@ export function AllTasksPage() {
 
   const userById = useMemo(() => new Map(state.users.map((u) => [u.id, u])), [state.users]);
   const projectById = useMemo(() => new Map(state.projects.map((p) => [p.id, p])), [state.projects]);
-  const isTerminal = (s: string) => s === "Done" || s === "Completed" || s === "Archived";
+  const isTerminal = (s: string) => s === "Done" || s === "Cancelled";
 
   const viewTasks = useMemo(() => {
     if (view === "my") return state.tasks.filter((t) => !isTerminal(t.status) && (t.assigneeUserId === state.activeUserId || t.createdByUserId === state.activeUserId));
@@ -138,7 +138,7 @@ export function AllTasksPage() {
             <p className="text-sm text-gray-500">No tasks to display</p>
           </div>
         ) : (
-          <TaskKanbanBoard tasks={filtered} users={state.users} labels={state.taskLabels} onUpdateTask={(id, patch) => { const t = state.tasks.find((t) => t.id === id); if (t) state.updateTask({ ...t, ...patch }); }} onOpenTask={(t) => setSelectedTaskId(t.id)} getUserName={(uid) => getUserName(state, uid)} />
+          <TaskKanbanBoard tasks={filtered} users={state.users} labels={state.taskLabels} onUpdateTask={(id, patch) => { const t = state.tasks.find((t) => t.id === id); if (t) state.updateTask({ ...t, ...patch }); }} onOpenTask={(t) => setSelectedTaskId(t.id)} getUserName={(uid) => getUserName(state, uid)} getProjectName={(pid) => { const p = projectById.get(pid); return p?.name ?? ""; }} />
         )
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16">
@@ -176,7 +176,7 @@ export function AllTasksPage() {
                       </td>
                       <td className="px-4 py-3">{project ? <span className="rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{project.name}</span> : <span className="text-xs text-gray-400">—</span>}</td>
                       <td className="px-4 py-3">{user ? <div className="flex items-center gap-2"><div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-600">{initials(user.name)}</div><span className="text-sm text-gray-700">{user.name}</span></div> : <span className="text-xs text-gray-400">—</span>}</td>
-                      <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[t.status] ?? "bg-gray-100 text-gray-600"}`}>{t.status === "InProgress" ? "In Progress" : t.status}</span></td>
+                      <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[t.status] ?? "bg-gray-100 text-gray-600"}`}>{t.status === "InProgress" ? "In Progress" : t.status === "ToDo" ? "To Do" : t.status}</span></td>
                       <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${PRIORITY_BADGE[t.priority] ?? "bg-gray-100 text-gray-500"}`}>{t.priority}</span></td>
                       <td className="px-4 py-3">{db ? <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${db.cls}`}>{db.label}</span> : <span className="text-xs text-gray-400">—</span>}</td>
                     </tr>
@@ -217,8 +217,8 @@ export function AllTasksPage() {
           getUserName={(uid) => getUserName(state, uid)}
           onSave={saveTaskDetail}
           onClose={() => setSelectedTaskId(null)}
-          onArchive={(t) => state.updateTask({ ...t, status: "Archived" })}
-          onUnarchive={(t) => state.updateTask({ ...t, status: "Done", archivedAt: undefined })}
+          onArchive={(t) => state.updateTask({ ...t, archivedAt: t.archivedAt ? undefined : new Date().toISOString() })}
+          onUnarchive={(t) => state.updateTask({ ...t, archivedAt: undefined })}
           onAddComment={(tid, text, kind) => state.addTaskComment(tid, text, kind)}
           onAddAttachment={(tid, file) => state.addTaskAttachment(tid, file, state.activeUserId)}
           onRemoveAttachment={(aid) => state.removeTaskAttachment(aid)}

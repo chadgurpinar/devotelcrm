@@ -898,12 +898,12 @@ export function seedCrmTasks(params: {
 
     const statusRoll = idx % 7;
     const status: Task["status"] =
-      statusRoll <= 2 ? "Open" : statusRoll <= 4 ? "InProgress" : "Done";
+      statusRoll <= 1 ? "Backlog" : statusRoll <= 3 ? "ToDo" : statusRoll <= 5 ? "InProgress" : "Done";
 
-    const kanbanStage: "Backlog" | "InProgress" | "Done" =
+    const kanbanStage: Task["kanbanStage"] =
       status === "Done" ? "Done" :
       status === "InProgress" ? "InProgress" :
-      (idx % 5 === 0 ? "InProgress" : "Backlog");
+      status === "ToDo" ? "ToDo" : "Backlog";
 
     const createdAt = addDaysToIso("2026-03-20T09:00:00.000Z", -(idx + 1));
     const updatedAt = addDaysToIso(createdAt, 1 + (idx % 3));

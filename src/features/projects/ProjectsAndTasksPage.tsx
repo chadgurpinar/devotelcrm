@@ -56,9 +56,9 @@ export function ProjectsAndTasksPage() {
 
   const allProjectsWithCounts = useMemo(() => state.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((project) => {
     const tasks = state.tasks.filter((t) => t.projectId === project.id);
-    const todo = tasks.filter((t) => t.status === "Backlog" || t.status === "Open").length;
+    const todo = tasks.filter((t) => t.status === "Backlog" || t.status === "ToDo").length;
     const inProgress = tasks.filter((t) => t.status === "InProgress").length;
-    const done = tasks.filter((t) => t.status === "Done" || t.status === "Completed").length;
+    const done = tasks.filter((t) => t.status === "Done").length;
     const owner = userById.get(project.ownerUserId);
     const isVisible = isSuperAdmin
       || project.ownerUserId === activeUserId
@@ -74,7 +74,7 @@ export function ProjectsAndTasksPage() {
   const teamProjects = useMemo(() => allProjectsWithCounts.filter((p) => p.isVisible), [allProjectsWithCounts]);
 
   const totalTasks = state.tasks.length;
-  const overdueTasks = useMemo(() => { const now = new Date().toISOString(); return state.tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed" && !t.archivedAt).length; }, [state.tasks]);
+  const overdueTasks = useMemo(() => { const now = new Date().toISOString(); return state.tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Cancelled").length; }, [state.tasks]);
 
   /* ── Executive View data ── */
 
@@ -90,22 +90,22 @@ export function ProjectsAndTasksPage() {
   }, [state.projects, state.projectWeeklyReports]);
 
   const thisWeekCompleted = useMemo(() => state.tasks.filter((t) => {
-    if (t.status !== "Done" && t.status !== "Completed") return false;
+    if (t.status !== "Done") return false;
     const date = (t.completedAt ?? t.updatedAt).slice(0, 10);
     return date >= currentMonday && date <= currentWeekEnd;
   }).length, [state.tasks, currentMonday, currentWeekEnd]);
 
   const lastWeekCompleted = useMemo(() => state.tasks.filter((t) => {
-    if (t.status !== "Done" && t.status !== "Completed") return false;
+    if (t.status !== "Done") return false;
     const date = (t.completedAt ?? t.updatedAt).slice(0, 10);
     return date >= lastWeekStart && date <= lastWeekEnd;
   }).length, [state.tasks, lastWeekStart, lastWeekEnd]);
 
   const executiveRows = useMemo(() => state.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((project) => {
     const tasks = state.tasks.filter((t) => t.projectId === project.id);
-    const completedCount = tasks.filter((t) => t.status === "Done" || t.status === "Completed").length;
+    const completedCount = tasks.filter((t) => t.status === "Done").length;
     const now = new Date().toISOString();
-    const overdueCount = tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed").length;
+    const overdueCount = tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Cancelled").length;
     const reports = state.projectWeeklyReports.filter((r) => r.projectId === project.id).sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate));
     const thisWeekReport = reports.find((r) => r.weekStartDate === currentMonday);
     const hasReportThisWeek = Boolean(thisWeekReport && (thisWeekReport.roleReports.technical?.submittedAt || thisWeekReport.roleReports.sales?.submittedAt || thisWeekReport.roleReports.product?.submittedAt || thisWeekReport.managerSummary?.submittedAt));

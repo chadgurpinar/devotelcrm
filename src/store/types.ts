@@ -28,7 +28,7 @@ export type InterconnectionType = "One-way" | "Two-way";
 export type Workscope = "SMS" | "Voice" | "Data" | "Software" | "RCS";
 export type ContactRoleTag = "Commercial" | "Technical" | "Finance";
 
-export type TaskStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Completed" | "Archived";
+export type TaskStatus = "Backlog" | "ToDo" | "InProgress" | "Done" | "Cancelled";
 export type TaskPriority = "Low" | "Medium" | "High" | "Critical";
 export type TaskVisibility = "Private" | "Shared";
 export type TaskCommentKind = "Comment" | "Blocker";
@@ -221,7 +221,7 @@ export interface Task {
   completedAt?: string;
   archivedAt?: string;
   isUrgent?: boolean;
-  kanbanStage?: "Backlog" | "InProgress" | "Done";
+  kanbanStage?: "Backlog" | "ToDo" | "InProgress" | "Done" | "Cancelled";
   labelIds?: string[];
   attachmentIds?: string[];
   dueDateReminderLastTriggeredAt?: string;

@@ -9,9 +9,10 @@ import { UiKpiCard } from "../../ui/UiKpiCard";
 
 const STATUS_STYLE: Record<string, string> = {
   Backlog: "bg-gray-100 text-gray-600",
-  Open: "bg-blue-50 text-blue-700",
+  ToDo: "bg-blue-50 text-blue-700",
   InProgress: "bg-indigo-50 text-indigo-700",
   Done: "bg-emerald-50 text-emerald-700",
+  Cancelled: "bg-rose-50 text-rose-600",
 };
 
 export function DashboardPage() {
@@ -25,7 +26,7 @@ export function DashboardPage() {
     () => state.companies.filter((c) => c.companyStatus === "LEAD" && c.leadDisposition === "Open").length,
     [state.companies],
   );
-  const openTasks = useMemo(() => state.tasks.filter((t) => t.status !== "Done" && t.status !== "Completed" && !t.archivedAt), [state.tasks]);
+  const openTasks = useMemo(() => state.tasks.filter((t) => t.status !== "Done" && t.status !== "Cancelled" && !t.completedAt), [state.tasks]);
   const overdueTasks = useMemo(() => {
     const now = new Date().toISOString();
     return openTasks.filter((t) => t.dueAt && t.dueAt < now).length;
@@ -110,7 +111,7 @@ export function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-gray-800 truncate">{t.title}</p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[t.status] ?? "bg-gray-100 text-gray-600"}`}>{t.status}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_STYLE[t.status] ?? "bg-gray-100 text-gray-600"}`}>{t.status === "InProgress" ? "In Progress" : t.status === "ToDo" ? "To Do" : t.status}</span>
                         {t.dueAt && <span className={`text-[10px] ${isOverdue ? "text-rose-600 font-medium" : "text-gray-400"}`}>{new Date(t.dueAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>}
                       </div>
                     </div>

@@ -561,9 +561,12 @@ function mapLegacyContractStatus(value: unknown): ContractStatus {
 }
 
 function mapLegacyTaskStatus(value: unknown): Task["status"] {
-  if (value === "Done") return "Done";
+  if (value === "Done" || value === "Completed") return "Done";
   if (value === "InProgress" || value === "Doing") return "InProgress";
-  return "Open";
+  if (value === "Backlog") return "Backlog";
+  if (value === "Cancelled" || value === "Archived") return "Done";
+  if (value === "ToDo") return "ToDo";
+  return "ToDo";
 }
 
 function mapLegacyTaskPriority(value: unknown): Task["priority"] {
@@ -1413,7 +1416,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       set((state) => {
         const existing = state.tasks.find((row) => row.id === task.id);
         const now = new Date().toISOString();
-        const isTerminal = task.status === "Done" || task.status === "Completed" || task.status === "Archived";
+        const isDone = task.status === "Done" || task.status === "Cancelled";
         return {
           ...state,
           tasks: state.tasks.map((row) =>
@@ -1422,13 +1425,10 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
                   ...task,
                   updatedAt: now,
                   completedAt:
-                    isTerminal
+                    isDone
                       ? task.completedAt ?? existing?.completedAt ?? now
-                      : undefined,
-                  archivedAt:
-                    task.status === "Archived"
-                      ? task.archivedAt ?? existing?.archivedAt ?? now
-                      : undefined,
+                      : task.completedAt,
+                  archivedAt: task.archivedAt ?? existing?.archivedAt,
                   watcherUserIds: Array.from(
                     new Set([...(task.watcherUserIds ?? []), task.createdByUserId, task.assigneeUserId].filter(Boolean)),
                   ),
@@ -4330,7 +4330,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         );
 
         const dueTasks = state.tasks.filter((t) => {
-          if (t.status === "Done" || t.status === "Completed" || t.status === "Archived") return false;
+          if (t.status === "Done" || t.status === "Cancelled") return false;
           if (!t.dueAt) return false;
           if (t.assigneeUserId !== state.activeUserId && t.createdByUserId !== state.activeUserId) return false;
           const dueDate = t.dueAt.slice(0, 10);
@@ -4698,7 +4698,7 @@ export const useAppStore = create<AppStore>()(
                   : undefined,
               isUrgent: typeof raw.isUrgent === "boolean" ? raw.isUrgent : undefined,
               kanbanStage:
-                raw.kanbanStage === "Backlog" || raw.kanbanStage === "InProgress" || raw.kanbanStage === "Done"
+                raw.kanbanStage === "Backlog" || raw.kanbanStage === "ToDo" || raw.kanbanStage === "InProgress" || raw.kanbanStage === "Done" || raw.kanbanStage === "Cancelled"
                   ? raw.kanbanStage
                   : undefined,
               labelIds: Array.isArray(raw.labelIds)

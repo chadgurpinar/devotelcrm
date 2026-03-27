@@ -1513,10 +1513,10 @@ export function ProjectGovernanceV2() {
                     onArchive={(task) =>
                       state.updateTask({
                         ...task,
-                        status: "Archived",
+                        archivedAt: task.archivedAt ? undefined : new Date().toISOString(),
                       })
                     }
-                    onUnarchive={(task) => state.updateTask({ ...task, status: "Done", archivedAt: undefined })}
+                    onUnarchive={(task) => state.updateTask({ ...task, archivedAt: undefined })}
                     onAddComment={(taskId, text, kind) => state.addTaskComment(taskId, text, kind)}
                     onAddAttachment={(taskId, file) => state.addTaskAttachment(taskId, file, state.activeUserId)}
                     onRemoveAttachment={(attachmentId) => state.removeTaskAttachment(attachmentId)}

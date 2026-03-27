@@ -14,7 +14,7 @@ type TaskView = "list" | "board";
 
 const STATUS_BADGE: Record<string, string> = { Planning: "bg-blue-50 text-blue-700", InProgress: "bg-blue-50 text-blue-700", Paused: "bg-amber-50 text-amber-700", Completed: "bg-emerald-50 text-emerald-700", OnHold: "bg-gray-100 text-gray-600", Cancelled: "bg-rose-50 text-rose-700" };
 const STATUS_LABEL: Record<string, string> = { Planning: "Planning", InProgress: "In Progress", Paused: "Paused", Completed: "Completed", OnHold: "On Hold", Cancelled: "Cancelled" };
-const TASK_STATUS_BADGE: Record<string, string> = { Backlog: "bg-gray-100 text-gray-600", Open: "bg-blue-50 text-blue-700", InProgress: "bg-indigo-50 text-indigo-700", Done: "bg-emerald-50 text-emerald-700", Completed: "bg-emerald-100 text-emerald-800", Archived: "bg-amber-50 text-amber-700" };
+const TASK_STATUS_BADGE: Record<string, string> = { Backlog: "bg-gray-100 text-gray-600", ToDo: "bg-blue-50 text-blue-700", InProgress: "bg-indigo-50 text-indigo-700", Done: "bg-emerald-50 text-emerald-700", Cancelled: "bg-rose-50 text-rose-600" };
 const PRIORITY_BADGE: Record<string, string> = { Critical: "bg-rose-50 text-rose-700", High: "bg-orange-50 text-orange-700", Medium: "bg-amber-50 text-amber-700", Low: "bg-gray-100 text-gray-500" };
 const RISK_CLR: Record<string, string> = { High: "bg-rose-50 text-rose-700", Medium: "bg-amber-50 text-amber-700", Low: "bg-emerald-50 text-emerald-700" };
 const EXEC_STATUS_CLR: Record<string, string> = { approved: "bg-emerald-600 text-white", changes_requested: "bg-amber-500 text-white", escalated: "bg-rose-600 text-white" };
@@ -24,10 +24,10 @@ const EXEC_STATUS_LBL: Record<string, string> = { approved: "Approved", changes_
 const inputCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
 const KANBAN_COLS: { key: TaskStatus; label: string; color: string }[] = [
   { key: "Backlog", label: "Backlog", color: "border-t-gray-400" },
-  { key: "Open", label: "To Do", color: "border-t-blue-400" },
+  { key: "ToDo", label: "To Do", color: "border-t-blue-400" },
   { key: "InProgress", label: "In Progress", color: "border-t-indigo-400" },
   { key: "Done", label: "Done", color: "border-t-emerald-400" },
-  { key: "Archived", label: "Cancelled", color: "border-t-amber-400" },
+  { key: "Cancelled", label: "Cancelled", color: "border-t-rose-400" },
 ];
 
 function timeAgo(iso: string): string { const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000); if (mins < 60) return `${mins}m ago`; const hrs = Math.floor(mins / 60); if (hrs < 24) return `${hrs}h ago`; return `${Math.floor(hrs / 24)}d ago`; }
@@ -76,7 +76,7 @@ function CreateTaskModal({ projectName, projectId, users, projectLabels, onClose
             <div><label className="mb-1 block text-xs font-medium text-gray-500">Priority</label><select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option><option value="Critical">Critical</option></select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Status</label><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}><option value="Backlog">Backlog</option><option value="Open">To Do</option><option value="InProgress">In Progress</option><option value="Done">Done</option></select></div>
+            <div><label className="mb-1 block text-xs font-medium text-gray-500">Status</label><select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}><option value="Backlog">Backlog</option><option value="ToDo">To Do</option><option value="InProgress">In Progress</option><option value="Done">Done</option><option value="Cancelled">Cancelled</option></select></div>
             <div><label className="mb-1 block text-xs font-medium text-gray-500">Due Date</label><input type="date" className={inputCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
           </div>
           <div><label className="mb-1 block text-xs font-medium text-gray-500">Estimated Hours</label><input type="number" min={0} className={inputCls} value={estimatedHours} onChange={(e) => setEstimatedHours(e.target.value)} /></div>
@@ -127,8 +127,8 @@ export function ProjectDetailPage() {
   const userById = useMemo(() => new Map(state.users.map((u) => [u.id, u])), [state.users]);
   const isManager = project ? (isSuperAdmin || project.managerUserIds.includes(state.activeUserId) || project.ownerUserId === state.activeUserId) : false;
   const projectTasks = useMemo(() => state.tasks.filter((t) => t.projectId === projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), [state.tasks, projectId]);
-  const doneTasks = projectTasks.filter((t) => t.status === "Done" || t.status === "Completed").length;
-  const overdueTasks = projectTasks.filter((t) => t.dueAt && t.dueAt < new Date().toISOString() && t.status !== "Done" && t.status !== "Completed").length;
+  const doneTasks = projectTasks.filter((t) => t.status === "Done").length;
+  const overdueTasks = projectTasks.filter((t) => t.dueAt && t.dueAt < new Date().toISOString() && t.status !== "Done" && t.status !== "Cancelled").length;
   const selectedTask = selectedTaskId ? state.tasks.find((t) => t.id === selectedTaskId) ?? null : null;
   const commentsByTaskId = useMemo(() => { const map = new Map<string, typeof state.taskComments>(); state.taskComments.forEach((c) => { const l = map.get(c.taskId) ?? []; l.push(c); map.set(c.taskId, l); }); return map; }, [state.taskComments]);
 
@@ -187,7 +187,7 @@ export function ProjectDetailPage() {
   function handleDrop(targetStatus: TaskStatus) {
     if (!dragTaskId) return;
     const task = state.tasks.find((t) => t.id === dragTaskId);
-    if (task && task.status !== targetStatus) state.updateTask({ ...task, status: targetStatus, kanbanStage: targetStatus === "Done" || targetStatus === "Completed" ? "Done" : targetStatus === "InProgress" ? "InProgress" : "Backlog" });
+    if (task && task.status !== targetStatus) state.updateTask({ ...task, status: targetStatus, kanbanStage: targetStatus });
     setDragTaskId(null);
   }
 
@@ -274,7 +274,7 @@ export function ProjectDetailPage() {
             projectTasks.length === 0 ? <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-12"><CheckSquare className="h-8 w-8 text-gray-300 mb-2" /><p className="text-sm text-gray-500">No tasks yet</p></div> : (
               <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                 <table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Task</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Assignee</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Status</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Priority</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Due</th></tr></thead>
-                  <tbody>{projectTasks.map((t) => { const assignee = userById.get(t.assigneeUserId); const isOd = t.dueAt && t.dueAt < new Date().toISOString() && t.status !== "Done" && t.status !== "Completed"; return (<tr key={t.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors cursor-pointer" onClick={() => setSelectedTaskId(t.id)}><td className="px-3 py-2"><p className="text-sm font-medium text-gray-900">{t.title}</p>{(t.labelIds ?? []).length > 0 && <div className="flex gap-1 mt-0.5">{(t.labelIds ?? []).slice(0, 3).map((l) => <span key={l} className="rounded-full bg-gray-100 px-1.5 py-px text-[9px] text-gray-500">{l}</span>)}</div>}</td><td className="px-3 py-2">{assignee ? <span className="text-xs text-gray-700">{assignee.name}</span> : <span className="text-[10px] text-gray-400">—</span>}</td><td className="px-3 py-2"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${TASK_STATUS_BADGE[t.status] ?? "bg-gray-100 text-gray-600"}`}>{t.status === "InProgress" ? "In Progress" : t.status}</span></td><td className="px-3 py-2"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_BADGE[t.priority] ?? "bg-gray-100 text-gray-500"}`}>{t.priority}</span></td><td className="px-3 py-2">{t.dueAt ? <span className={`text-[11px] ${isOd ? "font-medium text-rose-600" : "text-gray-600"}`}>{new Date(t.dueAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span> : <span className="text-[10px] text-gray-400">—</span>}</td></tr>); })}</tbody>
+                  <tbody>{projectTasks.map((t) => { const assignee = userById.get(t.assigneeUserId); const isOd = t.dueAt && t.dueAt < new Date().toISOString() && t.status !== "Done" && t.status !== "Cancelled"; return (<tr key={t.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors cursor-pointer" onClick={() => setSelectedTaskId(t.id)}><td className="px-3 py-2"><p className="text-sm font-medium text-gray-900">{t.title}</p>{(t.labelIds ?? []).length > 0 && <div className="flex gap-1 mt-0.5">{(t.labelIds ?? []).slice(0, 3).map((l) => <span key={l} className="rounded-full bg-gray-100 px-1.5 py-px text-[9px] text-gray-500">{l}</span>)}</div>}</td><td className="px-3 py-2">{assignee ? <span className="text-xs text-gray-700">{assignee.name}</span> : <span className="text-[10px] text-gray-400">—</span>}</td><td className="px-3 py-2"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${TASK_STATUS_BADGE[t.status] ?? "bg-gray-100 text-gray-600"}`}>{t.status === "InProgress" ? "In Progress" : t.status}</span></td><td className="px-3 py-2"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_BADGE[t.priority] ?? "bg-gray-100 text-gray-500"}`}>{t.priority}</span></td><td className="px-3 py-2">{t.dueAt ? <span className={`text-[11px] ${isOd ? "font-medium text-rose-600" : "text-gray-600"}`}>{new Date(t.dueAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span> : <span className="text-[10px] text-gray-400">—</span>}</td></tr>); })}</tbody>
                 </table>
               </div>
             )
@@ -424,7 +424,7 @@ export function ProjectDetailPage() {
       )}
 
       {/* Task Drawer */}
-      {selectedTask && (<TaskDrawer task={selectedTask} comments={commentsByTaskId.get(selectedTask.id) ?? []} attachments={state.taskAttachments.filter((a) => a.taskId === selectedTask.id)} users={state.users} labels={state.taskLabels} getUserName={(uid) => getUserName(state, uid)} onSave={saveTaskDetail} onClose={() => setSelectedTaskId(null)} onArchive={(t) => state.updateTask({ ...t, status: "Archived" })} onUnarchive={(t) => state.updateTask({ ...t, status: "Done", archivedAt: undefined })} onAddComment={(tid, text, kind) => state.addTaskComment(tid, text, kind)} onAddAttachment={(tid, file) => state.addTaskAttachment(tid, file, state.activeUserId)} onRemoveAttachment={(aid) => state.removeTaskAttachment(aid)} />)}
+      {selectedTask && (<TaskDrawer task={selectedTask} comments={commentsByTaskId.get(selectedTask.id) ?? []} attachments={state.taskAttachments.filter((a) => a.taskId === selectedTask.id)} users={state.users} labels={state.taskLabels} getUserName={(uid) => getUserName(state, uid)} onSave={saveTaskDetail} onClose={() => setSelectedTaskId(null)} onArchive={(t) => state.updateTask({ ...t, archivedAt: t.archivedAt ? undefined : new Date().toISOString() })} onUnarchive={(t) => state.updateTask({ ...t, archivedAt: undefined })} onAddComment={(tid, text, kind) => state.addTaskComment(tid, text, kind)} onAddAttachment={(tid, file) => state.addTaskAttachment(tid, file, state.activeUserId)} onRemoveAttachment={(aid) => state.removeTaskAttachment(aid)} />)}
       {showEditProject && project && <ProjectFormModal editingProject={project} onClose={() => setShowEditProject(false)} />}
     </div>
   );

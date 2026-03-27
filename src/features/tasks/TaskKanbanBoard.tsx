@@ -1,14 +1,13 @@
-import { Task, TaskLabel, User } from "../../store/types";
+import { Task, TaskLabel, TaskStatus, User } from "../../store/types";
 import { TaskCard } from "./TaskCard";
 
-type KanbanStage = "Backlog" | "InProgress" | "Done";
-
-function getTaskStage(task: Task): KanbanStage {
-  if (task.kanbanStage) return task.kanbanStage;
-  if (task.status === "Done") return "Done";
-  if (task.status === "InProgress") return "InProgress";
-  return "Backlog";
-}
+const COLUMNS: { key: TaskStatus; title: string; borderColor: string }[] = [
+  { key: "Backlog", title: "Backlog", borderColor: "border-t-gray-400" },
+  { key: "ToDo", title: "To Do", borderColor: "border-t-blue-400" },
+  { key: "InProgress", title: "In Progress", borderColor: "border-t-indigo-400" },
+  { key: "Done", title: "Done", borderColor: "border-t-emerald-400" },
+  { key: "Cancelled", title: "Cancelled", borderColor: "border-t-rose-400" },
+];
 
 export interface TaskKanbanBoardProps {
   tasks: Task[];
@@ -17,73 +16,58 @@ export interface TaskKanbanBoardProps {
   onUpdateTask: (id: string, patch: Partial<Task>) => void;
   onOpenTask: (task: Task) => void;
   getUserName: (userId: string) => string;
+  getProjectName?: (projectId: string) => string;
 }
 
-export function TaskKanbanBoard({
-  tasks,
-  users,
-  labels,
-  onUpdateTask,
-  onOpenTask,
-  getUserName,
-}: TaskKanbanBoardProps) {
-  const activeTasks = tasks.filter((t) => t.status !== "Completed" && t.status !== "Archived");
-  const byStage = {
-    Backlog: activeTasks.filter((t) => getTaskStage(t) === "Backlog"),
-    InProgress: activeTasks.filter((t) => getTaskStage(t) === "InProgress"),
-    Done: activeTasks.filter((t) => getTaskStage(t) === "Done"),
-  };
+export function TaskKanbanBoard({ tasks, users, labels, onUpdateTask, onOpenTask, getUserName, getProjectName }: TaskKanbanBoardProps) {
+  const activeTasks = tasks.filter((t) => !t.completedAt);
 
-  const moveToStage = (task: Task, stage: KanbanStage) => {
-    const statusMap: Record<KanbanStage, Task["status"]> = {
-      Backlog: "Backlog",
-      InProgress: "InProgress",
-      Done: "Done",
-    };
-    onUpdateTask(task.id, {
-      kanbanStage: stage,
-      status: statusMap[stage],
-      ...(stage === "Done" ? { completedAt: new Date().toISOString() } : {}),
-    });
-  };
+  const byStatus: Record<TaskStatus, Task[]> = { Backlog: [], ToDo: [], InProgress: [], Done: [], Cancelled: [] };
+  for (const t of activeTasks) {
+    const col = byStatus[t.status] ? t.status : "Backlog";
+    byStatus[col].push(t);
+  }
 
-  const sortTasks = (list: Task[]) => {
-    return [...list].sort((a, b) => {
-      if (a.isUrgent && !b.isUrgent) return -1;
-      if (!a.isUrgent && b.isUrgent) return 1;
-      return 0;
-    });
-  };
+  const sortTasks = (list: Task[]) => [...list].sort((a, b) => {
+    if (a.isUrgent && !b.isUrgent) return -1;
+    if (!a.isUrgent && b.isUrgent) return 1;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  });
 
-  const columns: { key: KanbanStage; title: string }[] = [
-    { key: "Backlog", title: "Backlog" },
-    { key: "InProgress", title: "In Progress" },
-    { key: "Done", title: "Done" },
-  ];
+  const moveToStatus = (task: Task, status: TaskStatus) => {
+    onUpdateTask(task.id, { status, kanbanStage: status, ...(status === "Done" ? { completedAt: new Date().toISOString() } : {}) });
+  };
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      {columns.map(({ key, title }) => (
-        <div key={key} className="flex flex-col rounded-lg border border-slate-200 bg-slate-50/50 p-3">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-600">{title}</h4>
-          <div className="flex flex-1 flex-col gap-2 overflow-y-auto min-h-[120px]">
-            {sortTasks(byStage[key]).map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                labels={labels}
-                users={users}
-                variant="kanban"
-                assigneeName={getUserName(task.assigneeUserId)}
-                onOpen={onOpenTask}
-                onUpdateTask={onUpdateTask}
-                onMoveToStage={moveToStage}
-                showActions={true}
-              />
-            ))}
+    <div className="flex gap-3 overflow-x-auto pb-2">
+      {COLUMNS.map(({ key, title, borderColor }) => {
+        const colTasks = sortTasks(byStatus[key]);
+        return (
+          <div key={key} className={`flex-shrink-0 w-56 rounded-xl border border-gray-200 bg-gray-50/50 border-t-2 ${borderColor}`}>
+            <div className="px-3 py-2 flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-gray-600">{title}</p>
+              <span className="inline-flex items-center justify-center rounded-full bg-gray-200 px-1.5 py-px text-[10px] font-bold text-gray-600">{colTasks.length}</span>
+            </div>
+            <div className="px-2 pb-2 space-y-1.5 min-h-[80px]">
+              {colTasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  labels={labels}
+                  users={users}
+                  variant="kanban"
+                  assigneeName={getUserName(task.assigneeUserId)}
+                  projectName={task.projectId && getProjectName ? getProjectName(task.projectId) : undefined}
+                  onOpen={onOpenTask}
+                  onUpdateTask={onUpdateTask}
+                  onMoveToStatus={moveToStatus}
+                  showActions={true}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
