@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Briefcase, CheckSquare, Clock, Eye, LayoutGrid, Plus, Shield } from "lucide-react";
+import { AlertTriangle, Briefcase, CheckSquare, Clock, Eye, LayoutGrid, Plus } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { UiPageHeader } from "../../ui/UiPageHeader";
 import { UiKpiCard } from "../../ui/UiKpiCard";
@@ -30,6 +30,10 @@ function daysRemaining(endDate?: string): { days: number; color: string; label: 
   return { days: diff, color: "text-emerald-600", label: `${diff}d left` };
 }
 
+function fmtShortDate(iso: string): string {
+  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
+
 export function ProjectsAndTasksPage() {
   const state = useAppStore();
   const navigate = useNavigate();
@@ -42,6 +46,8 @@ export function ProjectsAndTasksPage() {
 
   const userById = useMemo(() => new Map(state.users.map((u) => [u.id, u])), [state.users]);
   const currentMonday = getCurrentMonday();
+
+  /* ── Team View data ── */
 
   const allProjectsWithCounts = useMemo(() => state.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((project) => {
     const tasks = state.tasks.filter((t) => t.projectId === project.id);
@@ -65,11 +71,24 @@ export function ProjectsAndTasksPage() {
   const totalTasks = state.tasks.length;
   const overdueTasks = useMemo(() => { const now = new Date().toISOString(); return state.tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed" && !t.archivedAt).length; }, [state.tasks]);
 
+  /* ── Executive View data ── */
+
+  const activeProjectsCount = useMemo(() => state.projects.filter((p) => p.status === "InProgress").length, [state.projects]);
+
+  const highRiskCount = useMemo(() => {
+    let count = 0;
+    for (const project of state.projects) {
+      const latest = state.projectWeeklyReports.filter((r) => r.projectId === project.id).sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate))[0];
+      if (latest?.managerSummary?.riskLevel === "High") count++;
+    }
+    return count;
+  }, [state.projects, state.projectWeeklyReports]);
+
   const executiveRows = useMemo(() => state.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((project) => {
     const tasks = state.tasks.filter((t) => t.projectId === project.id);
     const completedCount = tasks.filter((t) => t.status === "Done" || t.status === "Completed").length;
     const now = new Date().toISOString();
-    const hasOverdue = tasks.some((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed");
+    const overdueCount = tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed").length;
     const reports = state.projectWeeklyReports.filter((r) => r.projectId === project.id).sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate));
     const thisWeekReport = reports.find((r) => r.weekStartDate === currentMonday);
     const hasReportThisWeek = Boolean(thisWeekReport && (thisWeekReport.roleReports.technical?.submittedAt || thisWeekReport.roleReports.sales?.submittedAt || thisWeekReport.roleReports.product?.submittedAt || thisWeekReport.managerSummary?.submittedAt));
@@ -78,7 +97,19 @@ export function ProjectsAndTasksPage() {
     const owner = userById.get(project.ownerUserId);
     const deadline = daysRemaining(project.endDate);
     const latestRiskLevel = reports[0]?.managerSummary?.riskLevel ?? null;
-    return { project, ownerName: owner?.name ?? "Unknown", totalTasks: tasks.length, completedCount, hasOverdue, hasReportThisWeek, lastComment, deadline, latestRiskLevel };
+    const lastReportDate = reports[0]?.weekStartDate ?? null;
+    const budget = project.budget ?? null;
+    const tags = project.tags ?? [];
+
+    const responsibles: { label: string; name: string }[] = (project.responsibleRoles && project.responsibleRoles.length > 0)
+      ? project.responsibleRoles.map((r) => ({ label: r.label, name: userById.get(r.userId)?.name ?? "—" }))
+      : ([
+          project.technicalResponsibleUserId ? { label: "Technical", name: userById.get(project.technicalResponsibleUserId)?.name ?? "—" } : null,
+          project.salesResponsibleUserId ? { label: "Sales", name: userById.get(project.salesResponsibleUserId)?.name ?? "—" } : null,
+          project.productResponsibleUserId ? { label: "Product", name: userById.get(project.productResponsibleUserId)?.name ?? "—" } : null,
+        ] as ({ label: string; name: string } | null)[]).filter((x): x is { label: string; name: string } => x !== null);
+
+    return { project, ownerName: owner?.name ?? "Unknown", totalTasks: tasks.length, completedCount, overdueCount, hasReportThisWeek, lastComment, deadline, latestRiskLevel, lastReportDate, budget, tags, responsibles };
   }), [state.projects, state.tasks, state.projectWeeklyReports, state.weeklyReportManagerComments, userById, currentMonday]);
 
   return (
@@ -94,7 +125,6 @@ export function ProjectsAndTasksPage() {
         <button onClick={() => setView("executive")} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${view === "executive" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}><Eye className="h-4 w-4" /> Executive View</button>
       </div>
 
-      {/* Helper text */}
       <p className="text-xs text-gray-500">{view === "team" ? "Showing projects you are involved in." : "Showing all company projects with summary KPIs."}</p>
 
       {/* ═══ TEAM VIEW ═══ */}
@@ -124,6 +154,14 @@ export function ProjectsAndTasksPage() {
       {/* ═══ EXECUTIVE VIEW ═══ */}
       {view === "executive" && (
         <>
+          {/* KPI cards */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <UiKpiCard label="Total Projects" value={state.projects.length} icon={<Briefcase className="h-5 w-5" />} />
+            <UiKpiCard label="Active Projects" value={activeProjectsCount} icon={<LayoutGrid className="h-5 w-5" />} />
+            <UiKpiCard label="Overdue Tasks" value={overdueTasks} icon={<Clock className="h-5 w-5" />} className={overdueTasks > 0 ? "border-rose-200 bg-rose-50/50" : ""} />
+            <UiKpiCard label="High Risk Projects" value={highRiskCount} icon={<AlertTriangle className="h-5 w-5" />} className={highRiskCount > 0 ? "border-rose-200 bg-rose-50/50" : ""} />
+          </div>
+
           {executiveRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16"><Briefcase className="h-10 w-10 text-gray-300 mb-3" /><p className="text-sm text-gray-500">No projects</p></div>
           ) : (
@@ -141,10 +179,11 @@ export function ProjectsAndTasksPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {executiveRows.map(({ project, ownerName, totalTasks: tt, completedCount, hasOverdue, hasReportThisWeek, lastComment, deadline, latestRiskLevel }) => {
+                  {executiveRows.map(({ project, ownerName, totalTasks: tt, completedCount, overdueCount, hasReportThisWeek, lastComment, deadline, latestRiskLevel, lastReportDate, budget, tags, responsibles }) => {
                     const pct = tt > 0 ? Math.round((completedCount / tt) * 100) : 0;
                     return (
                       <tr key={project.id} className="border-b border-gray-100 hover:bg-indigo-50/30 transition-colors cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
+                        {/* Project */}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-sm font-medium text-gray-900">{project.name}</p>
@@ -153,26 +192,47 @@ export function ProjectsAndTasksPage() {
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_CLR[project.strategicPriority] ?? "bg-gray-100 text-gray-500"}`}>{project.strategicPriority}</span>
                             {project.executiveStatus && <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${EXEC_STATUS_CLR[project.executiveStatus] ?? ""}`}>{EXEC_STATUS_LBL[project.executiveStatus] ?? project.executiveStatus}</span>}
+                            {tags.slice(0, 3).map((tag) => <span key={tag} className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-500">{tag}</span>)}
+                            {tags.length > 3 && <span className="text-[9px] text-gray-400">+{tags.length - 3}</span>}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{ownerName}</td>
-                        <td className="px-4 py-3">{deadline ? <span className={`text-xs font-medium ${deadline.color}`}>{deadline.label}</span> : <span className="text-xs text-gray-400">—</span>}</td>
+                        {/* Owner + responsibles */}
+                        <td className="px-4 py-3">
+                          <p className="text-sm text-gray-700">{ownerName}</p>
+                          {responsibles.slice(0, 3).map((r, i) => <p key={i} className="text-[10px] text-gray-400">{r.label}: {r.name}</p>)}
+                          {responsibles.length > 3 && <p className="text-[10px] text-gray-400">+{responsibles.length - 3} more</p>}
+                        </td>
+                        {/* Deadline + budget */}
+                        <td className="px-4 py-3">
+                          {deadline ? <span className={`text-xs font-medium ${deadline.color}`}>{deadline.label}</span> : <span className="text-xs text-gray-400">—</span>}
+                          {budget !== null && <p className="text-[10px] text-gray-400">Budget: ${budget.toLocaleString()}</p>}
+                        </td>
+                        {/* Tasks */}
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-gray-700">{completedCount} / {tt}</span>
                             <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden"><div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} /></div>
                           </div>
                         </td>
+                        {/* Report */}
                         <td className="px-4 py-3 text-center"><span className="text-sm">{hasReportThisWeek ? "✅" : "❌"}</span></td>
+                        {/* Last Comment */}
                         <td className="px-4 py-3">{lastComment ? <p className="text-xs text-gray-500 italic truncate max-w-[200px]">{lastComment.length > 60 ? lastComment.slice(0, 60) + "…" : lastComment}</p> : <span className="text-xs text-gray-400">—</span>}</td>
+                        {/* Risk */}
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-col items-center gap-0.5">
-                            {hasOverdue && <AlertTriangle className="h-4 w-4 text-amber-500" />}
+                            {overdueCount > 0 && (
+                              <>
+                                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                                <span className="text-[10px] text-amber-600">{overdueCount} overdue</span>
+                              </>
+                            )}
                             {latestRiskLevel ? (
                               <span className={`text-[10px] font-medium ${RISK_CLR[latestRiskLevel] ?? "text-gray-500"}`}>{latestRiskLevel}</span>
                             ) : (
-                              !hasOverdue && <span className="text-xs text-emerald-500">OK</span>
+                              overdueCount === 0 && <span className="text-xs text-emerald-500">OK</span>
                             )}
+                            {lastReportDate && <span className="text-[10px] text-gray-400">Last: {fmtShortDate(lastReportDate)}</span>}
                           </div>
                         </td>
                       </tr>
