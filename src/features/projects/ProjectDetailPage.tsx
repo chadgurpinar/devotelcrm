@@ -6,7 +6,7 @@ import { getUserName } from "../../store/selectors";
 import type { Task, TaskPriority, TaskStatus, TaskVisibility, Project, ProjectRoleKey } from "../../store/types";
 import { UiPageHeader } from "../../ui/UiPageHeader";
 import { TaskDrawer, TaskDrawerDraft } from "../tasks/TaskDrawer";
-import { ProjectWeeklyReportTab } from "./ProjectWeeklyReportTab";
+import { WeeklyReportsTab } from "./weekly-reports/WeeklyReportsTab";
 import { ProjectFormModal } from "./ProjectFormModal";
 
 type DetailView = "team" | "reports" | "executive";
@@ -117,7 +117,7 @@ export function ProjectDetailPage() {
   const [showAddResp, setShowAddResp] = useState(false);
   const [newRespLabel, setNewRespLabel] = useState("");
   const [newRespUser, setNewRespUser] = useState("");
-  const [reportInitialWeek, setReportInitialWeek] = useState<string | undefined>();
+  const [reportInitialWeek, setReportInitialWeek] = useState<string | undefined>(); // kept for executive → reports navigation
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const currentMonday = getCurrentMonday();
 
@@ -313,7 +313,7 @@ export function ProjectDetailPage() {
       )}
 
       {/* ═══ WEEKLY REPORTS ═══ */}
-      {view === "reports" && <ProjectWeeklyReportTab projectId={projectId!} initialWeek={reportInitialWeek} />}
+      {view === "reports" && <WeeklyReportsTab projectId={projectId!} />}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}
       {view === "executive" && (
