@@ -15,6 +15,7 @@ function formatWeekLabel(w: string): string { return new Date(w + "T00:00:00Z").
 function getWeeksInMonth(year: number, month: number): string[] { const weeks: string[] = []; const lastDay = new Date(Date.UTC(year, month, 0)); let cursor = weekStartMonday(new Date(Date.UTC(year, month - 1, 1))); while (new Date(cursor + "T00:00:00Z") <= lastDay) { weeks.push(cursor); cursor = shiftWeek(cursor, 1); } return weeks; }
 function shiftMonth(m: string, delta: number): string { const [y, mo] = m.split("-").map(Number); const d = new Date(Date.UTC(y, mo - 1 + delta, 1)); return d.toISOString().slice(0, 7); }
 function formatMonthLabel(m: string): string { const [y, mo] = m.split("-").map(Number); return new Date(Date.UTC(y, mo - 1, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric" }); }
+function timeAgo(iso: string): string { const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000); if (mins < 60) return `${mins}m ago`; const hrs = Math.floor(mins / 60); if (hrs < 24) return `${hrs}h ago`; return `${Math.floor(hrs / 24)}d ago`; }
 
 function initDraft(report: WeeklyStaffReport | null) {
   return { reportText: report?.reportText ?? "", highlights: (report?.highlights ?? []).join("\n"), workloadRating: report?.workloadRating ?? 0, productivityRating: report?.productivityRating ?? 0, calendarScreenshotUrl: report?.calendarScreenshotUrl ?? "" };
@@ -52,7 +53,7 @@ export function ManagementReportsPage() {
     <div className="space-y-6">
       <UiPageHeader title="Management Reports" subtitle="Weekly staff reports & team analytics" />
       <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1 w-fit">
-        {tabs.map((t) => (<button key={t.key} onClick={() => setActiveTab(t.key)} className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === t.key ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>{t.label}</button>))}
+        {tabs.map((t) => (<button key={t.key} onClick={() => setActiveTab(t.key)} className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>{t.label}</button>))}
       </div>
       {activeTab === "my" && <MyReportTab myEmployee={myEmployee} />}
       {activeTab === "team" && <TeamViewTab myEmployee={myEmployee} />}
@@ -69,7 +70,7 @@ function MyReportTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
   const isSubmitted = currentReport?.status === "Submitted";
   const [draft, setDraft] = useState(() => initDraft(currentReport));
   const [validationError, setValidationError] = useState("");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const [expandedPastWeek, setExpandedPastWeek] = useState<string | null>(null);
   useEffect(() => { setDraft(initDraft(currentReport)); setValidationError(""); }, [selectedWeek]);
 
   if (!myEmployee) return <p className="text-sm text-gray-500 py-8 text-center">No HR employee records found.</p>;
@@ -82,8 +83,8 @@ function MyReportTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
   return (
     <div className="space-y-6">
       <WeekNav week={selectedWeek} onPrev={() => setSelectedWeek((w) => shiftWeek(w, -1))} onNext={() => setSelectedWeek((w) => shiftWeek(w, 1))} />
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-6">
-        <div className="flex items-center justify-between mb-5"><h3 className="text-sm font-semibold text-indigo-600">Week of {formatWeekLabel(selectedWeek)}</h3>{isSubmitted ? <StatusPill status="Submitted" /> : currentReport ? <StatusPill status="Draft" /> : <StatusPill status="missing" />}</div>
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4"><h3 className="text-sm font-semibold text-gray-800">Week of {formatWeekLabel(selectedWeek)}</h3><StatusPill status={isSubmitted ? "Submitted" : currentReport ? "Draft" : "missing"} /></div>
         <div className="space-y-4">
           <div><label className="mb-1 block text-xs font-medium text-gray-500">How was your week?</label><textarea rows={5} className={inputCls} placeholder="Describe your week..." value={draft.reportText} onChange={(e) => setDraft((d) => ({ ...d, reportText: e.target.value }))} disabled={isSubmitted} /></div>
           <div><label className="mb-1 block text-xs font-medium text-gray-500">Key highlights (one per line)</label><textarea rows={3} className={inputCls} placeholder={"e.g. Closed deal with Acme Corp\nFinished API integration"} value={draft.highlights} onChange={(e) => setDraft((d) => ({ ...d, highlights: e.target.value }))} disabled={isSubmitted} /></div>
@@ -92,21 +93,21 @@ function MyReportTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
             <div><label className="mb-1 block text-xs font-medium text-gray-500">Productivity</label><select className={`${inputCls} ${!isSubmitted && draft.productivityRating === 0 ? "border-amber-400" : ""}`} value={draft.productivityRating} onChange={(e) => setDraft((d) => ({ ...d, productivityRating: Number(e.target.value) as ProductivityRating }))} disabled={isSubmitted}><option value={0}>— Select —</option>{PRODUCTIVITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.value} – {o.label}</option>)}</select></div>
           </div>
           {!isSubmitted && <div><label className="mb-1 block text-xs font-medium text-gray-500">Calendar link (optional)</label><input className={inputCls} placeholder="Paste a URL..." value={draft.calendarScreenshotUrl} onChange={(e) => setDraft((d) => ({ ...d, calendarScreenshotUrl: e.target.value }))} /></div>}
-          {validationError && <p className="text-xs text-rose-600">{validationError}</p>}
+          {validationError && <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">{validationError}</div>}
           {!isSubmitted && <div className="flex justify-end gap-2 pt-2"><button onClick={handleSaveDraft} className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Save Draft</button><button onClick={handleSubmit} disabled={!canSubmit} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Submit Report</button></div>}
         </div>
       </div>
-      <div><h3 className="mb-3 text-sm font-semibold text-gray-800">Past Reports</h3><div className="rounded-xl border border-gray-200 bg-white overflow-hidden"><table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Week</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Workload</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Productivity</th><th className="w-20" /></tr></thead><tbody>{pastWeeks.map((week) => { const report = state.weeklyStaffReports.find((r) => r.employeeId === myEmployee.id && r.weekStartDate === week); return (<tr key={week} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors"><td className="px-4 py-2.5 text-sm text-gray-700">{formatWeekLabel(week)}</td><td className="px-4 py-2.5"><StatusPill status={report?.status === "Submitted" ? "Submitted" : report ? "Draft" : "missing"} /></td><td className="px-4 py-2.5 text-xs text-gray-600">{report ? WORKLOAD_LABELS[report.workloadRating] ?? "–" : "–"}</td><td className="px-4 py-2.5 text-xs text-gray-600">{report ? PRODUCTIVITY_LABELS[report.productivityRating] ?? "–" : "–"}</td><td className="px-4 py-2.5"><button onClick={() => setSelectedWeek(week)} className="text-xs font-medium text-indigo-600 hover:underline">→ View</button></td></tr>); })}</tbody></table></div></div>
+      <div><h3 className="mb-3 text-sm font-semibold text-gray-800">Past Reports</h3><div className="rounded-xl border border-gray-200 bg-white overflow-hidden"><table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Week</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Workload</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Productivity</th><th className="w-20" /></tr></thead><tbody>{pastWeeks.flatMap((week) => { const report = state.weeklyStaffReports.find((r) => r.employeeId === myEmployee.id && r.weekStartDate === week); const expanded = expandedPastWeek === week; const rows = [<tr key={week} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors"><td className="px-4 py-2.5 text-sm text-gray-700">{formatWeekLabel(week)}</td><td className="px-4 py-2.5"><StatusPill status={report?.status === "Submitted" ? "Submitted" : report ? "Draft" : "missing"} /></td><td className="px-4 py-2.5 text-xs text-gray-600">{report ? WORKLOAD_LABELS[report.workloadRating] ?? "–" : "–"}</td><td className="px-4 py-2.5 text-xs text-gray-600">{report ? PRODUCTIVITY_LABELS[report.productivityRating] ?? "–" : "–"}</td><td className="px-4 py-2.5"><div className="flex gap-2"><button onClick={() => setSelectedWeek(week)} className="text-xs font-medium text-indigo-600 hover:underline">View</button>{report && <button onClick={() => setExpandedPastWeek(expanded ? null : week)} className="text-xs font-medium text-gray-500 hover:underline">{expanded ? "Hide" : "Expand"}</button>}</div></td></tr>]; if (expanded && report) { rows.push(<tr key={`${week}-detail`} className="bg-gray-50/50"><td colSpan={5} className="px-4 pb-3"><div className="rounded-lg border border-gray-200 bg-white p-4 text-xs space-y-2"><p className="text-gray-700 whitespace-pre-line">{report.reportText}</p>{report.highlights.length > 0 && <div className="flex flex-wrap gap-1">{report.highlights.map((h, i) => <span key={i} className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{h}</span>)}</div>}</div></td></tr>); } return rows; })}</tbody></table></div></div>
     </div>
   );
 }
 
-/* ═══ TAB 2 — Team View ═══ */
+/* ═══ TAB 2 — Team View (compact table) ═══ */
 function TeamViewTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
   const state = useAppStore();
   const [teamWeek, setTeamWeek] = useState(() => weekStartMonday(new Date()));
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
-  const [expandedReports, setExpandedReports] = useState<Record<string, boolean>>({});
+  const [noteOpenFor, setNoteOpenFor] = useState<string | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
   const directReports = useMemo(() => { if (!myEmployee) return []; const real = state.hrEmployees.filter((e) => e.managerId === myEmployee.id && e.active); if (real.length > 0) return real; return state.hrEmployees.filter((e) => e.active && e.id !== myEmployee.id).slice(0, 5); }, [myEmployee, state.hrEmployees]);
@@ -121,66 +122,87 @@ function TeamViewTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
   return (
     <div className="space-y-6">
       <WeekNav week={teamWeek} onPrev={() => setTeamWeek((w) => shiftWeek(w, -1))} onNext={() => setTeamWeek((w) => shiftWeek(w, 1))} />
-      <div className="flex items-center gap-3">
-        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">{directReports.length} reports</span>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">{submittedCount} submitted</span>
-        {missingCount > 0 && <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-medium text-rose-600">{missingCount} missing</span>}
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <UiKpiCard label="Total in Team" value={directReports.length} />
+        <UiKpiCard label="Submitted" value={submittedCount} className="border-emerald-200 bg-emerald-50/40" />
+        <UiKpiCard label="Missing" value={missingCount} className={missingCount > 0 ? "border-rose-200 bg-rose-50/40" : ""} />
       </div>
 
-      {directReports.map((emp) => {
-        const empReport = state.weeklyStaffReports.find((r) => r.employeeId === emp.id && r.weekStartDate === teamWeek) ?? null;
-        const comments = empReport ? state.weeklyReportManagerComments.filter((c) => c.reportId === empReport.id) : [];
-        const expanded = expandedReports[emp.id] ?? false;
-        const commentText = commentDrafts[emp.id] ?? "";
-        const initials = (emp.displayName || `${emp.firstName} ${emp.lastName}`).split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-gray-50 border-b border-gray-200"><tr>
+            <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
+            <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th>
+            <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Workload</th>
+            <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Productivity</th>
+            <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+            <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Submitted</th>
+            <th className="w-28" />
+          </tr></thead>
+          <tbody>
+            {directReports.flatMap((emp) => {
+              const empReport = state.weeklyStaffReports.find((r) => r.employeeId === emp.id && r.weekStartDate === teamWeek) ?? null;
+              const comments = empReport ? state.weeklyReportManagerComments.filter((c) => c.reportId === empReport.id) : [];
+              const lastSubmitted = state.weeklyStaffReports.filter((r) => r.employeeId === emp.id && r.status === "Submitted").sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate))[0];
+              const initials = (emp.displayName || `${emp.firstName} ${emp.lastName}`).split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+              const commentText = commentDrafts[emp.id] ?? "";
+              const isNoteOpen = noteOpenFor === emp.id;
 
-        return (
-          <div key={emp.id} className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-600">{initials}</div>
-                <div>
-                  <button onClick={() => setSelectedEmployeeId(emp.id)} className="text-sm font-semibold text-indigo-600 hover:underline cursor-pointer">{emp.displayName || `${emp.firstName} ${emp.lastName}`}</button>
-                  <p className="text-xs text-gray-500">{deptMap.get(emp.departmentId) ?? ""}{emp.position ? ` · ${emp.position}` : ""}</p>
-                </div>
-              </div>
-              <StatusPill status={empReport?.status === "Submitted" ? "Submitted" : empReport ? "Draft" : "missing"} />
-            </div>
+              const rows = [
+                <tr key={emp.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors">
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-[9px] font-bold text-indigo-600">{initials}</div>
+                      <button onClick={() => setSelectedEmployeeId(emp.id)} className="text-sm font-medium text-indigo-600 hover:underline">{emp.displayName || `${emp.firstName} ${emp.lastName}`}</button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-600">{deptMap.get(emp.departmentId) ?? "–"}</td>
+                  <td className="px-4 py-2.5 text-xs">{empReport ? <span className={wlColor(empReport.workloadRating)}>{WORKLOAD_LABELS[empReport.workloadRating]}</span> : <span className="text-gray-400">–</span>}</td>
+                  <td className="px-4 py-2.5 text-xs">{empReport ? <span className={prColor(empReport.productivityRating)}>{PRODUCTIVITY_LABELS[empReport.productivityRating]}</span> : <span className="text-gray-400">–</span>}</td>
+                  <td className="px-4 py-2.5"><StatusPill status={empReport?.status === "Submitted" ? "Submitted" : empReport ? "Draft" : "missing"} /></td>
+                  <td className="px-4 py-2.5 text-xs text-gray-500">{lastSubmitted ? formatWeekLabel(lastSubmitted.weekStartDate) : "–"}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setNoteOpenFor(isNoteOpen ? null : emp.id)} className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 transition">{isNoteOpen ? "Close" : "Add Note"}</button>
+                      {empReport && <button onClick={() => { state.generateWeeklyReportAiSummary("individual", emp.id, teamWeek); const summaries = useAppStore.getState().weeklyReportAiSummaries; const summary = summaries.filter((s) => s.scope === "individual" && s.scopeId === emp.id && s.weekStartDate === teamWeek).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0]; if (summary && empReport) { state.addWeeklyReportManagerComment({ reportId: empReport.id, managerUserId: state.activeUserId, commentText: [summary.overallVerdict, summary.workloadAssessment, summary.productivityAssessment, ...(summary.flags.length > 0 ? ["Flags: " + summary.flags.join("; ")] : [])].join("\n"), aiGenerated: true }); } }} className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50 transition flex items-center gap-1"><Sparkles className="h-3 w-3" /> AI</button>}
+                    </div>
+                  </td>
+                </tr>
+              ];
 
-            {!empReport ? <p className="text-xs text-gray-400">No report submitted for this week.</p> : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-4"><span className="text-xs">Workload: <span className={`font-medium ${wlColor(empReport.workloadRating)}`}>{WORKLOAD_LABELS[empReport.workloadRating]}</span></span><span className="text-xs">Productivity: <span className={`font-medium ${prColor(empReport.productivityRating)}`}>{PRODUCTIVITY_LABELS[empReport.productivityRating]}</span></span></div>
-                <p className="text-xs text-gray-600">{expanded || empReport.reportText.length <= 150 ? empReport.reportText : empReport.reportText.slice(0, 150) + "\u2026"}</p>
-                {empReport.reportText.length > 150 && <button className="text-xs font-medium text-indigo-600 hover:underline" onClick={() => setExpandedReports((p) => ({ ...p, [emp.id]: !p[emp.id] }))}>{expanded ? "Show less" : "Show full report"}</button>}
-                {empReport.highlights.length > 0 && <div className="flex flex-wrap gap-1">{empReport.highlights.map((h, i) => <span key={i} className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] text-gray-600">{h}</span>)}</div>}
-              </div>
-            )}
+              if (isNoteOpen) {
+                rows.push(
+                  <tr key={`${emp.id}-note`} className="bg-gray-50/50">
+                    <td colSpan={7} className="px-4 py-3">
+                      <div className="space-y-2">
+                        {comments.length > 0 && <div className="space-y-1.5 max-h-32 overflow-y-auto">{comments.map((c) => (
+                          <div key={c.id} className={`py-1 pl-3 border-l-2 text-xs ${c.aiGenerated ? "border-violet-300" : "border-gray-200"}`}>
+                            <div className="flex items-center gap-1.5 text-[10px]"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span>{c.aiGenerated && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-medium text-violet-700">✨ AI</span>}<span className="text-gray-400">{new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div>
+                            <p className="text-gray-600 mt-0.5">{c.commentText}</p>
+                          </div>
+                        ))}</div>}
+                        {!empReport && <p className="text-[10px] text-gray-400">No report yet</p>}
+                        <div className="flex gap-2">
+                          <input className={`flex-1 ${inputCls} !py-1.5 !text-xs`} placeholder="Add a note..." value={commentText} onChange={(e) => setCommentDrafts((p) => ({ ...p, [emp.id]: e.target.value }))} />
+                          <button disabled={!commentText.trim() || !empReport} onClick={() => { if (!empReport) return; state.addWeeklyReportManagerComment({ reportId: empReport.id, managerUserId: state.activeUserId, commentText: commentText.trim(), aiGenerated: false }); setCommentDrafts((p) => ({ ...p, [emp.id]: "" })); }} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Post</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
 
-            {/* Comments — always visible */}
-            <div className="mt-4 border-t border-gray-100 pt-3">
-              <p className="mb-2 text-xs font-medium text-gray-500">Manager Notes {comments.length > 0 && `(${comments.length})`}</p>
-              {comments.length === 0 && <p className="mb-2 text-xs text-gray-400">No notes yet.</p>}
-              {comments.map((c) => (
-                <div key={c.id} className={`mb-2 rounded-lg p-3 text-xs ${c.aiGenerated ? "bg-violet-50 border border-violet-100" : "bg-gray-50 border border-gray-100"}`}>
-                  <div className="flex items-center gap-2 mb-1"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span>{c.aiGenerated && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">✨ AI</span>}<span className="text-[10px] text-gray-400">{new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div>
-                  <p className="whitespace-pre-line text-gray-600">{c.commentText}</p>
-                </div>
-              ))}
-              <div className="flex gap-2 mt-2">
-                <input className={`flex-1 ${inputCls}`} placeholder={empReport ? "Add a comment..." : "Add a note for this employee..."} value={commentText} onChange={(e) => setCommentDrafts((p) => ({ ...p, [emp.id]: e.target.value }))} />
-                <button disabled={!commentText.trim() || !empReport} onClick={() => { if (!empReport) return; state.addWeeklyReportManagerComment({ reportId: empReport.id, managerUserId: state.activeUserId, commentText: commentText.trim(), aiGenerated: false }); setCommentDrafts((p) => ({ ...p, [emp.id]: "" })); }} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Post</button>
-                {empReport && <button onClick={() => { state.generateWeeklyReportAiSummary("individual", emp.id, teamWeek); const summaries = useAppStore.getState().weeklyReportAiSummaries; const summary = summaries.filter((s) => s.scope === "individual" && s.scopeId === emp.id && s.weekStartDate === teamWeek).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0]; if (summary) { state.addWeeklyReportManagerComment({ reportId: empReport.id, managerUserId: state.activeUserId, commentText: [summary.overallVerdict, summary.workloadAssessment, summary.productivityAssessment, ...(summary.flags.length > 0 ? ["Flags: " + summary.flags.join("; ")] : [])].join("\n"), aiGenerated: true }); } }} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition flex items-center gap-1"><Sparkles className="h-3.5 w-3.5" /> AI</button>}
-              </div>
-              {!empReport && <p className="mt-1 text-[10px] text-gray-400">⚠ This employee hasn't submitted a report yet. Notes will be available once a report is submitted.</p>}
-            </div>
-          </div>
-        );
-      })}
+              return rows;
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* Team summary */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
         <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-gray-800">Team Summary</h3><button onClick={() => state.generateWeeklyReportAiSummary("team", myEmployee.id, teamWeek)} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition"><Sparkles className="h-3.5 w-3.5" /> Generate</button></div>
-        {teamSummary ? (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1"><p className="font-semibold text-gray-800">{teamSummary.overallVerdict}</p><p className="text-xs text-gray-600">{teamSummary.workloadAssessment}</p><p className="text-xs text-gray-600">{teamSummary.productivityAssessment}</p>{teamSummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{teamSummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-2">Generated {new Date(teamSummary.generatedAt).toLocaleString()}</p></div>) : <p className="text-xs text-gray-400">No team summary generated yet.</p>}
+        {teamSummary ? (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1"><p className="font-semibold text-gray-800">{teamSummary.overallVerdict}</p><p className="text-xs text-gray-600">{teamSummary.workloadAssessment}</p><p className="text-xs text-gray-600">{teamSummary.productivityAssessment}</p>{teamSummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{teamSummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-2">Generated {timeAgo(teamSummary.generatedAt)}</p></div>) : <p className="text-xs text-gray-400">No team summary generated yet.</p>}
       </div>
 
       {selectedEmployeeId && <EmployeeProfileDrawer employeeId={selectedEmployeeId} onClose={() => setSelectedEmployeeId(null)} />}
@@ -209,7 +231,7 @@ function ManagementTab() {
   const avgProductivity = submittedThisWeek.length > 0 ? (submittedThisWeek.reduce((s, r) => s + r.productivityRating, 0) / submittedThisWeek.length).toFixed(1) : "–";
   const burnoutCount = submittedThisWeek.filter((r) => r.workloadRating === 5).length;
   const missingCount = activeEmployees.filter((emp) => !reportsThisWeek.find((r) => r.employeeId === emp.id && r.status === "Submitted")).length;
-  const deptBreakdown = useMemo(() => state.hrDepartments.map((dept) => { const deptEmps = activeEmployees.filter((e) => e.departmentId === dept.id); const deptReports = submittedThisWeek.filter((r) => deptEmps.find((e) => e.id === r.employeeId)); const avgWl = deptReports.length > 0 ? (deptReports.reduce((s, r) => s + r.workloadRating, 0) / deptReports.length).toFixed(1) : "–"; const avgPr = deptReports.length > 0 ? (deptReports.reduce((s, r) => s + r.productivityRating, 0) / deptReports.length).toFixed(1) : "–"; return { id: dept.id, name: dept.name, headcount: deptEmps.length, submitted: deptReports.length, avgWl, avgPr, flags: deptReports.filter((r) => r.workloadRating === 5).length }; }).filter((d) => d.headcount > 0), [state.hrDepartments, activeEmployees, submittedThisWeek]);
+  const deptBreakdown = useMemo(() => state.hrDepartments.map((dept) => { const deptEmps = activeEmployees.filter((e) => e.departmentId === dept.id); const deptReports = submittedThisWeek.filter((r) => deptEmps.find((e) => e.id === r.employeeId)); const avgWl = deptReports.length > 0 ? (deptReports.reduce((s, r) => s + r.workloadRating, 0) / deptReports.length).toFixed(1) : "–"; const avgPr = deptReports.length > 0 ? (deptReports.reduce((s, r) => s + r.productivityRating, 0) / deptReports.length).toFixed(1) : "–"; const subPct = deptEmps.length > 0 ? Math.round((deptReports.length / deptEmps.length) * 100) : 0; return { id: dept.id, name: dept.name, headcount: deptEmps.length, submitted: deptReports.length, subPct, avgWl, avgPr, flags: deptReports.filter((r) => r.workloadRating === 5).length }; }).filter((d) => d.headcount > 0), [state.hrDepartments, activeEmployees, submittedThisWeek]);
   const filteredEmployees = useMemo(() => { let list = activeEmployees; if (deptFilter) list = list.filter((e) => e.departmentId === deptFilter); if (statusFilter !== "all") { list = list.filter((emp) => { const r = reportsThisWeek.find((rr) => rr.employeeId === emp.id); if (statusFilter === "submitted") return r?.status === "Submitted"; if (statusFilter === "draft") return r && r.status !== "Submitted"; return !r || r.status !== "Submitted"; }); } return list; }, [activeEmployees, deptFilter, statusFilter, reportsThisWeek]);
   const companySummary = useMemo(() => state.weeklyReportAiSummaries.filter((s) => s.scope === "company" && s.weekStartDate === mgmtWeek).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0] ?? null, [state.weeklyReportAiSummaries, mgmtWeek]);
   const [mgmtYear, mgmtMonthNum] = mgmtMonth.split("-").map(Number);
@@ -225,7 +247,7 @@ function ManagementTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1 w-fit">
-        {(["weekly", "monthly"] as const).map((v) => <button key={v} onClick={() => setMgmtView(v)} className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${mgmtView === v ? "bg-indigo-600 text-white" : "text-gray-600 hover:bg-gray-200"}`}>{v === "weekly" ? "Weekly" : "Monthly"}</button>)}
+        {(["weekly", "monthly"] as const).map((v) => <button key={v} onClick={() => setMgmtView(v)} className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${mgmtView === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>{v === "weekly" ? "Weekly" : "Monthly"}</button>)}
       </div>
       {mgmtView === "weekly" ? <WeekNav week={mgmtWeek} onPrev={() => setMgmtWeek((w) => shiftWeek(w, -1))} onNext={() => setMgmtWeek((w) => shiftWeek(w, 1))} /> : <div className="flex items-center gap-2"><button onClick={() => setMgmtMonth((m) => shiftMonth(m, -1))} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 transition"><ChevronLeft className="h-4 w-4" /></button><span className="text-sm font-medium text-gray-700">{formatMonthLabel(mgmtMonth)}</span><button onClick={() => setMgmtMonth((m) => shiftMonth(m, 1))} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 transition"><ChevronRight className="h-4 w-4" /></button></div>}
 
@@ -235,10 +257,10 @@ function ManagementTab() {
             <UiKpiCard label="Total Employees" value={activeEmployees.length} /><UiKpiCard label="Submitted" value={submittedThisWeek.length} className="border-emerald-200 bg-emerald-50/40" /><UiKpiCard label="Missing" value={missingCount} className={missingCount > 0 ? "border-rose-200 bg-rose-50/40" : ""} /><UiKpiCard label="Avg Workload" value={avgWorkload} /><UiKpiCard label="Avg Productivity" value={avgProductivity} /><UiKpiCard label="Burnout Flags" value={burnoutCount} className={burnoutCount > 0 ? "border-rose-200 bg-rose-50/40" : ""} />
           </div>
 
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="border-b border-gray-100 px-5 py-3"><h3 className="text-sm font-semibold text-gray-800">Department Breakdown</h3></div>
-            <table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Headcount</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitted</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg Workload</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg Productivity</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Flags</th></tr></thead>
-              <tbody>{deptBreakdown.map((d) => (<tr key={d.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors"><td className="px-4 py-2.5"><button onClick={() => { setDeptFilter(d.id); setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth" }), 100); }} className="text-sm font-medium text-indigo-600 hover:underline">{d.name}</button></td><td className="px-4 py-2.5 text-sm text-gray-600">{d.headcount}</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.submitted}</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.avgWl}</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.avgPr}</td><td className="px-4 py-2.5">{d.flags > 0 ? <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">{d.flags}</span> : <span className="text-gray-400">–</span>}</td></tr>))}{deptBreakdown.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-xs text-gray-400">No departments.</td></tr>}</tbody>
+            <table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Headcount</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Submission</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg Workload</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Avg Productivity</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Flags</th><th className="w-8" /></tr></thead>
+              <tbody>{deptBreakdown.map((d) => (<tr key={d.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors cursor-pointer" onClick={() => { setDeptFilter(d.id); setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth" }), 100); }}><td className="px-4 py-2.5 text-sm font-medium text-indigo-600">{d.name}</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.headcount}</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.submitted} / {d.headcount} ({d.subPct}%)</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.avgWl}</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.avgPr}</td><td className="px-4 py-2.5">{d.flags > 0 ? <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">{d.flags}</span> : <span className="text-gray-400">–</span>}</td><td className="px-4 py-2.5 text-gray-400">→</td></tr>))}{deptBreakdown.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-xs text-gray-400">No departments.</td></tr>}</tbody>
             </table>
           </div>
 
@@ -248,19 +270,19 @@ function ManagementTab() {
             {deptFilter && <button onClick={() => setDeptFilter("")} className="text-xs text-indigo-600 hover:underline">Clear dept filter</button>}
           </div>
 
-          <div ref={tableRef} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div ref={tableRef} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="border-b border-gray-100 px-5 py-3"><h3 className="text-sm font-semibold text-gray-800">Individual Reports</h3></div>
-            <table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Workload</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Productivity</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th><th className="w-24" /></tr></thead>
+            <table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Workload</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Productivity</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th><th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Submit</th><th className="w-24" /></tr></thead>
               <tbody>
-                {filteredEmployees.flatMap((emp) => { const empReport = reportsThisWeek.find((r) => r.employeeId === emp.id) ?? null; const expanded = expandedRows[emp.id] ?? false; const rows = [<tr key={emp.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors"><td className="px-4 py-2.5"><button onClick={() => setSelectedEmployeeId(emp.id)} className="text-sm font-medium text-indigo-600 hover:underline">{emp.displayName || `${emp.firstName} ${emp.lastName}`}</button></td><td className="px-4 py-2.5 text-sm text-gray-600">{deptMap.get(emp.departmentId) ?? "–"}</td><td className="px-4 py-2.5 text-xs">{empReport ? <span className={wlColor(empReport.workloadRating)}>{WORKLOAD_LABELS[empReport.workloadRating]}</span> : <span className="text-gray-400">–</span>}</td><td className="px-4 py-2.5 text-xs">{empReport ? <span className={prColor(empReport.productivityRating)}>{PRODUCTIVITY_LABELS[empReport.productivityRating]}</span> : <span className="text-gray-400">–</span>}</td><td className="px-4 py-2.5"><StatusPill status={empReport?.status === "Submitted" ? "Submitted" : empReport ? "Draft" : "missing"} /></td><td className="px-4 py-2.5">{empReport && <button onClick={() => setExpandedRows((p) => ({ ...p, [emp.id]: !p[emp.id] }))} className="text-xs font-medium text-indigo-600 hover:underline">{expanded ? "Hide" : "View"}</button>}</td></tr>]; if (expanded && empReport) { rows.push(<tr key={`${emp.id}-detail`} className="bg-gray-50/50"><td colSpan={6} className="px-4 pb-3"><div className="rounded-lg border border-gray-200 bg-white p-4 text-xs space-y-2"><p className="text-gray-700 whitespace-pre-line">{empReport.reportText}</p>{empReport.highlights.length > 0 && <div className="flex flex-wrap gap-1">{empReport.highlights.map((h, i) => <span key={i} className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{h}</span>)}</div>}</div></td></tr>); } return rows; })}
-                {filteredEmployees.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-xs text-gray-400">No employees match the current filters.</td></tr>}
+                {filteredEmployees.flatMap((emp) => { const empReport = reportsThisWeek.find((r) => r.employeeId === emp.id) ?? null; const expanded = expandedRows[emp.id] ?? false; const lastSubmitted = state.weeklyStaffReports.filter((r) => r.employeeId === emp.id && r.status === "Submitted").sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate))[0]; const rows = [<tr key={emp.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors"><td className="px-4 py-2.5"><button onClick={() => setSelectedEmployeeId(emp.id)} className="text-sm font-medium text-indigo-600 hover:underline">{emp.displayName || `${emp.firstName} ${emp.lastName}`}</button></td><td className="px-4 py-2.5 text-sm text-gray-600">{deptMap.get(emp.departmentId) ?? "–"}</td><td className="px-4 py-2.5 text-xs">{empReport ? <span className={wlColor(empReport.workloadRating)}>{WORKLOAD_LABELS[empReport.workloadRating]}</span> : <span className="text-gray-400">–</span>}</td><td className="px-4 py-2.5 text-xs">{empReport ? <span className={prColor(empReport.productivityRating)}>{PRODUCTIVITY_LABELS[empReport.productivityRating]}</span> : <span className="text-gray-400">–</span>}</td><td className="px-4 py-2.5"><StatusPill status={empReport?.status === "Submitted" ? "Submitted" : empReport ? "Draft" : "missing"} /></td><td className="px-4 py-2.5 text-xs text-gray-500">{lastSubmitted?.submittedAt ? new Date(lastSubmitted.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "–"}</td><td className="px-4 py-2.5">{empReport && <button onClick={() => setExpandedRows((p) => ({ ...p, [emp.id]: !p[emp.id] }))} className="text-xs font-medium text-indigo-600 hover:underline">{expanded ? "Hide" : "View"}</button>}</td></tr>]; if (expanded && empReport) { rows.push(<tr key={`${emp.id}-detail`} className="bg-gray-50/50"><td colSpan={7} className="px-4 pb-3"><div className="rounded-lg border border-gray-200 bg-white p-4 text-xs space-y-2"><p className="text-gray-700 whitespace-pre-line">{empReport.reportText}</p>{empReport.highlights.length > 0 && <div className="flex flex-wrap gap-1">{empReport.highlights.map((h, i) => <span key={i} className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">{h}</span>)}</div>}</div></td></tr>); } return rows; })}
+                {filteredEmployees.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-xs text-gray-400">No employees match the current filters.</td></tr>}
               </tbody>
             </table>
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
             <h3 className="text-sm font-semibold text-gray-800 mb-3">Company AI Summary</h3>
-            {companySummary && (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1 mb-4"><div className="flex items-center gap-1.5 mb-1"><Sparkles className="h-3.5 w-3.5 text-violet-600" /><span className="text-xs font-medium text-violet-700">AI Summary</span></div><p className="font-semibold text-gray-800">{companySummary.overallVerdict}</p><p className="text-xs text-gray-600">{companySummary.workloadAssessment}</p><p className="text-xs text-gray-600">{companySummary.productivityAssessment}</p>{companySummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{companySummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-2">{new Date(companySummary.generatedAt).toLocaleString()}</p></div>)}
+            {companySummary && (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1 mb-4"><div className="flex items-center gap-1.5 mb-1"><Sparkles className="h-3.5 w-3.5 text-violet-600" /><span className="text-xs font-medium text-violet-700">AI Summary</span></div><p className="font-semibold text-gray-800">{companySummary.overallVerdict}</p><p className="text-xs text-gray-600">{companySummary.workloadAssessment}</p><p className="text-xs text-gray-600">{companySummary.productivityAssessment}</p>{companySummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{companySummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-2">Generated {timeAgo(companySummary.generatedAt)}</p></div>)}
             <div className="flex flex-wrap gap-1.5 mb-3">{AI_PROMPTS.map((p) => <button key={p} onClick={() => setAiInput(p)} className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition">{p}</button>)}</div>
             <div className="flex gap-2"><input className={`flex-1 ${inputCls}`} placeholder="Ask AI about this week's reports..." value={aiInput} onChange={(e) => setAiInput(e.target.value)} /><button onClick={() => { state.generateWeeklyReportAiSummary("company", "all", mgmtWeek); setAiInput(""); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"><Send className="h-4 w-4" /></button></div>
           </div>
@@ -268,8 +290,10 @@ function ManagementTab() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><UiKpiCard label="Submitted (month)" value={monthSubmitted.length} className="border-emerald-200 bg-emerald-50/40" /><UiKpiCard label="Submission Rate" value={`${monthSubmissionRate}%`} /><UiKpiCard label="Avg Workload" value={monthAvgWl} /><UiKpiCard label="Avg Productivity" value={monthAvgPr} /></div>
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden"><div className="border-b border-gray-100 px-5 py-3"><h3 className="text-sm font-semibold text-gray-800">Monthly Overview</h3></div><div className="overflow-x-auto"><table className="min-w-full text-xs"><thead><tr className="border-b border-gray-200"><th className="sticky left-0 z-10 w-40 bg-white px-3 py-2 text-left text-xs font-semibold text-gray-500">Employee</th>{monthWeeks.map((ws) => <th key={ws} className="px-2 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">{formatWeekLabel(ws)}</th>)}</tr></thead><tbody className="divide-y divide-gray-50">{activeEmployees.map((emp) => (<tr key={emp.id} className="hover:bg-gray-50/30"><td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium text-gray-700 whitespace-nowrap">{emp.displayName || `${emp.firstName} ${emp.lastName}`}</td>{monthWeeks.map((ws) => { const r = monthReports.find((rr) => rr.employeeId === emp.id && rr.weekStartDate === ws); let dotCls = "bg-rose-400"; if (r?.status === "Submitted") { dotCls = r.productivityRating >= 4 ? "bg-emerald-500" : r.productivityRating <= 2 ? "bg-amber-400" : "bg-blue-400"; } else if (r) dotCls = "bg-gray-300"; return <td key={ws} className="px-2 py-1.5 text-center"><span className={`inline-block h-2.5 w-2.5 rounded-full ${dotCls}`} /></td>; })}</tr>))}</tbody></table></div></div>
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5"><div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-gray-800">Monthly Summary</h3><button onClick={() => state.generateWeeklyReportAiSummary("company", "all", undefined, mgmtMonth)} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition"><Sparkles className="h-3.5 w-3.5" /> Generate</button></div>{monthlySummary ? (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1"><p className="font-semibold text-gray-800">{monthlySummary.overallVerdict}</p><p className="text-xs text-gray-600">{monthlySummary.workloadAssessment}</p><p className="text-xs text-gray-600">{monthlySummary.productivityAssessment}</p>{monthlySummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{monthlySummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-2">{new Date(monthlySummary.generatedAt).toLocaleString()}</p></div>) : <p className="text-xs text-gray-400">No monthly summary generated yet.</p>}</div>
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden"><div className="border-b border-gray-100 px-5 py-3"><h3 className="text-sm font-semibold text-gray-800">Monthly Overview</h3></div><div className="overflow-x-auto"><table className="min-w-full text-xs"><thead><tr className="border-b border-gray-200"><th className="sticky left-0 z-10 w-40 bg-white px-3 py-2 text-left text-xs font-semibold text-gray-500">Employee</th>{monthWeeks.map((ws) => <th key={ws} className="px-2 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">{formatWeekLabel(ws)}</th>)}</tr></thead><tbody className="divide-y divide-gray-50">{activeEmployees.map((emp) => (<tr key={emp.id} className="hover:bg-gray-50/30"><td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium text-gray-700 whitespace-nowrap">{emp.displayName || `${emp.firstName} ${emp.lastName}`}</td>{monthWeeks.map((ws) => { const r = monthReports.find((rr) => rr.employeeId === emp.id && rr.weekStartDate === ws); let dotCls = "bg-rose-400"; if (r?.status === "Submitted") { dotCls = r.productivityRating >= 4 ? "bg-emerald-500" : r.productivityRating <= 2 ? "bg-amber-400" : "bg-blue-400"; } else if (r) dotCls = "bg-gray-300"; return <td key={ws} className="px-2 py-1.5 text-center"><span className={`inline-block h-2.5 w-2.5 rounded-full ${dotCls}`} /></td>; })}</tr>))}</tbody></table></div>
+          <div className="border-t border-gray-100 px-5 py-2 flex items-center gap-4 text-[10px] text-gray-500"><span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-emerald-500" /> High productivity</span><span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-blue-400" /> Average</span><span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-amber-400" /> Below average</span><span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Missing</span></div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5"><div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-gray-800">Monthly Summary</h3><button onClick={() => state.generateWeeklyReportAiSummary("company", "all", undefined, mgmtMonth)} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition"><Sparkles className="h-3.5 w-3.5" /> Generate</button></div>{monthlySummary ? (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1"><p className="font-semibold text-gray-800">{monthlySummary.overallVerdict}</p><p className="text-xs text-gray-600">{monthlySummary.workloadAssessment}</p><p className="text-xs text-gray-600">{monthlySummary.productivityAssessment}</p>{monthlySummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{monthlySummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-2">Generated {timeAgo(monthlySummary.generatedAt)}</p></div>) : <p className="text-xs text-gray-400">No monthly summary generated yet.</p>}</div>
         </>
       )}
 
@@ -306,7 +330,6 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div className="sticky top-0 z-10 bg-white rounded-t-2xl">
           <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
             <div className="flex items-center gap-3">
@@ -315,24 +338,19 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
             </div>
             <button onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 transition"><X className="h-5 w-5" /></button>
           </div>
-          {/* Tabs */}
           <div className="flex items-center gap-0 border-b border-gray-100 px-6 pt-3 pb-0">
             <button onClick={() => setProfileTab("tasks")} className={`pb-2.5 px-1 text-sm font-medium border-b-2 transition-colors ${profileTab === "tasks" ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Active Tasks</button>
             <button onClick={() => setProfileTab("reports")} className={`ml-4 pb-2.5 px-1 text-sm font-medium border-b-2 transition-colors ${profileTab === "reports" ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>Report History</button>
           </div>
         </div>
-
-        {/* KPI strip — always visible */}
         <div className="px-6 py-4">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-4 gap-3 mb-4">
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center"><p className="text-xs text-gray-500 mb-1">Submit Rate</p><p className="text-lg font-bold text-gray-900">{submissionRate}%</p><p className="text-[10px] text-gray-400">12 weeks</p></div>
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center"><p className="text-xs text-gray-500 mb-1">Avg Workload</p><p className={`text-lg font-bold ${avgWl !== "–" ? wlColor(parseFloat(avgWl)) : "text-gray-400"}`}>{avgWl}</p></div>
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center"><p className="text-xs text-gray-500 mb-1">Avg Productivity</p><p className={`text-lg font-bold ${avgPr !== "–" ? prColor(parseFloat(avgPr)) : "text-gray-400"}`}>{avgPr}</p></div>
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center"><p className="text-xs text-gray-500 mb-1">Open Tasks</p><p className="text-lg font-bold text-gray-900">{openTasks.length}</p>{overdueTasks.length > 0 && <p className="text-[10px] text-rose-600">{overdueTasks.length} overdue</p>}</div>
           </div>
         </div>
-
-        {/* Tab content */}
         <div className="px-6 pb-5">
           {profileTab === "tasks" && (
             <div>
@@ -342,15 +360,8 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
                     const isOd = task.dueAt && new Date(task.dueAt) < new Date() && task.status !== "Done" && task.status !== "Cancelled";
                     return (
                       <div key={task.id} onClick={() => { onClose(); navigate(`/tasks?taskId=${task.id}`); }} className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-200 transition group">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {isOd && <span className="text-rose-500 flex-shrink-0">⚠</span>}
-                          <span className={`text-sm font-medium truncate ${isOd ? "text-rose-700" : "text-gray-800"}`}>{task.title}</span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_CLR[task.priority] ?? "bg-gray-100 text-gray-500"}`}>{task.priority}</span>
-                          <span className="text-xs text-gray-500">{task.status === "InProgress" ? "In Progress" : task.status}</span>
-                          <ChevronRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-400 transition" />
-                        </div>
+                        <div className="flex items-center gap-2 min-w-0">{isOd && <span className="text-rose-500 flex-shrink-0">⚠</span>}<span className={`text-sm font-medium truncate ${isOd ? "text-rose-700" : "text-gray-800"}`}>{task.title}</span></div>
+                        <div className="flex items-center gap-2 flex-shrink-0 ml-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_CLR[task.priority] ?? "bg-gray-100 text-gray-500"}`}>{task.priority}</span><span className="text-xs text-gray-500">{task.status === "InProgress" ? "In Progress" : task.status === "ToDo" ? "To Do" : task.status}</span><ChevronRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-indigo-400 transition" /></div>
                       </div>
                     );
                   })}
@@ -360,7 +371,6 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
               <p className="mt-3 text-[11px] text-gray-400">✓ {completedTasks.length} completed{overdueTasks.length > 0 && <span className="text-rose-500 ml-2">⚠ {overdueTasks.length} overdue</span>}</p>
             </div>
           )}
-
           {profileTab === "reports" && (
             <div className="space-y-2">
               {[...empReports].reverse().map(({ week, report }) => (
@@ -377,10 +387,7 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
                     <div className="px-4 py-3 border-t border-gray-100 space-y-3 bg-white">
                       <div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Weekly Report</p><p className="text-sm text-gray-700 whitespace-pre-line">{report.reportText}</p></div>
                       {report.highlights.length > 0 && <div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Highlights</p><div className="flex flex-wrap gap-1">{report.highlights.map((h, i) => <span key={i} className="rounded-full bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 text-[11px] text-indigo-700">{h}</span>)}</div></div>}
-                      <div className="flex items-center gap-6">
-                        <div><p className="text-[10px] text-gray-400 mb-0.5">Workload</p><p className={`text-sm font-semibold ${wlColor(report.workloadRating)}`}>{report.workloadRating} – {WORKLOAD_LABELS[report.workloadRating]}</p></div>
-                        <div><p className="text-[10px] text-gray-400 mb-0.5">Productivity</p><p className={`text-sm font-semibold ${prColor(report.productivityRating)}`}>{report.productivityRating} – {PRODUCTIVITY_LABELS[report.productivityRating]}</p></div>
-                      </div>
+                      <div className="flex items-center gap-6"><div><p className="text-[10px] text-gray-400 mb-0.5">Workload</p><p className={`text-sm font-semibold ${wlColor(report.workloadRating)}`}>{report.workloadRating} – {WORKLOAD_LABELS[report.workloadRating]}</p></div><div><p className="text-[10px] text-gray-400 mb-0.5">Productivity</p><p className={`text-sm font-semibold ${prColor(report.productivityRating)}`}>{report.productivityRating} – {PRODUCTIVITY_LABELS[report.productivityRating]}</p></div></div>
                       {(() => { const comments = state.weeklyReportManagerComments.filter((c) => c.reportId === report.id); if (comments.length === 0) return <p className="text-[11px] text-gray-400 italic">No manager comments for this week.</p>; return (<div><p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Manager Notes</p><div className="space-y-2">{comments.map((c) => (<div key={c.id} className={`rounded-lg px-3 py-2 text-xs border-l-2 ${c.aiGenerated ? "bg-violet-50 border-l-violet-400" : "bg-gray-50 border-l-gray-300"}`}><div className="flex items-center gap-2 mb-1"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span>{c.aiGenerated && <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-medium text-violet-700">✨ AI</span>}<span className="text-[10px] text-gray-400">{new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-gray-600 whitespace-pre-line">{c.commentText}</p></div>))}</div></div>); })()}
                       {report.submittedAt && <p className="text-[10px] text-gray-400">Submitted {new Date(report.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</p>}
                     </div>
@@ -391,8 +398,6 @@ function EmployeeProfileDrawer({ employeeId, onClose }: { employeeId: string; on
             </div>
           )}
         </div>
-
-        {/* Footer */}
         <div className="sticky bottom-0 border-t border-gray-100 bg-white px-6 py-4 rounded-b-2xl flex justify-end"><button onClick={onClose} className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition">Close</button></div>
       </div>
     </div>
