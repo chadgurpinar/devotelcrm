@@ -297,9 +297,52 @@ export function ProjectWeeklyReportTab({ projectId, initialWeek }: { projectId: 
   return (
     <div className="space-y-5">
       {/* Part A — Week Selector */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <button onClick={handlePrev} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 transition"><ChevronLeft className="h-4 w-4" /></button>
-        <span className="text-sm font-medium text-gray-700">Week of {fmtWeek(selectedWeek)}</span>
+        <select
+          value={selectedWeek.slice(0, 4)}
+          onChange={(e) => {
+            const yr = Number(e.target.value);
+            const now = new Date();
+            if (yr === now.getFullYear()) { setSelectedWeek(currentMonday); } else {
+              const dec31 = new Date(Date.UTC(yr, 11, 31));
+              const day = dec31.getUTCDay(); const diff = day === 0 ? -6 : 1 - day;
+              dec31.setUTCDate(dec31.getUTCDate() + diff);
+              setSelectedWeek(dec31.toISOString().slice(0, 10));
+            }
+          }}
+          className="w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-700 bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+        >
+          {(() => {
+            const startYear = project ? new Date(project.createdAt).getFullYear() : new Date().getFullYear();
+            const endYear = new Date().getFullYear();
+            const years: number[] = [];
+            for (let y = endYear; y >= startYear; y--) years.push(y);
+            return years.map((y) => <option key={y} value={String(y)}>{y}</option>);
+          })()}
+        </select>
+        <select
+          value={selectedWeek}
+          onChange={(e) => setSelectedWeek(e.target.value)}
+          className="w-44 rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-700 bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+        >
+          {(() => {
+            const yr = Number(selectedWeek.slice(0, 4));
+            const jan1 = new Date(Date.UTC(yr, 0, 1));
+            const day1 = jan1.getUTCDay(); const diff1 = day1 <= 1 ? 1 - day1 : 8 - day1;
+            const firstMon = new Date(jan1); firstMon.setUTCDate(jan1.getUTCDate() + diff1);
+            const createdAt = project?.createdAt?.slice(0, 10) ?? "2020-01-01";
+            const weeks: string[] = [];
+            const cursor = new Date(firstMon);
+            while (cursor.getUTCFullYear() === yr || (cursor.getUTCFullYear() === yr + 1 && cursor.getUTCMonth() === 0 && cursor.getUTCDate() <= 3)) {
+              const iso = cursor.toISOString().slice(0, 10);
+              if (iso <= currentMonday && iso >= createdAt.slice(0, 10)) weeks.push(iso);
+              cursor.setUTCDate(cursor.getUTCDate() + 7);
+              if (iso > currentMonday) break;
+            }
+            return weeks.reverse().map((w) => <option key={w} value={w}>{fmtWeek(w)}</option>);
+          })()}
+        </select>
         <button onClick={handleNext} disabled={shiftWeek(selectedWeek, 1) > currentMonday} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 disabled:opacity-30 transition"><ChevronRight className="h-4 w-4" /></button>
       </div>
 
