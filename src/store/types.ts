@@ -267,7 +267,7 @@ export interface Project {
   executiveStatus?: "approved" | "changes_requested" | "escalated";
   executiveStatusNote?: string;
   executiveStatusUpdatedAt?: string;
-  executiveFeedback?: Array<{ id: string; authorUserId: string; text: string; submittedAt: string; weekRef?: string }>;
+  executiveFeedback?: Array<{ id: string; authorUserId: string; text: string; action: "comment" | "approved" | "changes_requested" | "escalated"; submittedAt: string; weekRef?: string }>;
   managerComment?: string;
   managerCommentUpdatedAt?: string;
   createdAt: string;

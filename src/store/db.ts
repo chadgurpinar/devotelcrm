@@ -124,7 +124,7 @@ interface DbActions {
     payload: Omit<WeeklyReportManagerComment, "id" | "createdAt">,
   ) => string;
   addWeeklyReportRoleComment: (reportId: string, role: "technical" | "sales" | "product", text: string) => void;
-  addExecutiveFeedback: (projectId: string, text: string, weekRef?: string) => void;
+  addExecutiveFeedback: (projectId: string, text: string, action: "comment" | "approved" | "changes_requested" | "escalated", weekRef?: string) => void;
   updateProjectExecutiveStatus: (projectId: string, status: Project["executiveStatus"], note?: string) => void;
   generateWeeklyReportAiSummary: (
     scope: WeeklyReportAiSummary["scope"],
@@ -1671,7 +1671,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         }),
       }));
     },
-    addExecutiveFeedback: (projectId, text, weekRef) => {
+    addExecutiveFeedback: (projectId, text, action, weekRef) => {
       const now = new Date().toISOString();
       const id = uid("ef");
       set((s) => ({
@@ -1679,7 +1679,8 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         projects: s.projects.map((p) => {
           if (p.id !== projectId) return p;
           const list = p.executiveFeedback ?? [];
-          return { ...p, executiveFeedback: [...list, { id, authorUserId: s.activeUserId, text, submittedAt: now, weekRef }], updatedAt: now };
+          const execStatus = action !== "comment" ? action : p.executiveStatus;
+          return { ...p, executiveFeedback: [...list, { id, authorUserId: s.activeUserId, text, action, submittedAt: now, weekRef }], executiveStatus: execStatus, executiveStatusUpdatedAt: action !== "comment" ? now : p.executiveStatusUpdatedAt, updatedAt: now };
         }),
       }));
     },

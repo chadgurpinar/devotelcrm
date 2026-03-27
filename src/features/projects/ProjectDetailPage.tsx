@@ -112,8 +112,6 @@ export function ProjectDetailPage() {
   const [showEditProject, setShowEditProject] = useState(false);
   const [execWeek, setExecWeek] = useState(getCurrentMonday);
   const [feedbackText, setFeedbackText] = useState("");
-  const [statusNote, setStatusNote] = useState("");
-  const [statusNoteFor, setStatusNoteFor] = useState<Project["executiveStatus"] | null>(null);
   const [showAddResp, setShowAddResp] = useState(false);
   const [newRespLabel, setNewRespLabel] = useState("");
   const [newRespUser, setNewRespUser] = useState("");
@@ -169,20 +167,6 @@ export function ProjectDetailPage() {
     state.updateProject({ ...project!, responsibles: updated });
   }
 
-  function handleExecStatus(s: Project["executiveStatus"]) {
-    if (statusNoteFor === s) {
-      state.updateProjectExecutiveStatus(projectId!, s, statusNote);
-      setStatusNoteFor(null); setStatusNote("");
-    } else {
-      setStatusNoteFor(s); setStatusNote("");
-    }
-  }
-
-  function submitFeedback() {
-    if (!feedbackText.trim()) return;
-    state.addExecutiveFeedback(projectId!, feedbackText.trim(), execWeek);
-    setFeedbackText("");
-  }
 
   function handleDrop(targetStatus: TaskStatus) {
     if (!dragTaskId) return;
@@ -316,46 +300,97 @@ export function ProjectDetailPage() {
       {view === "reports" && <WeeklyReportsTab projectId={projectId!} />}
 
       {/* ═══ EXECUTIVE SUMMARY ═══ */}
-      {view === "executive" && (
+      {view === "executive" && (() => {
+        const submissionRate = (() => { const recent = allReports.slice(0, 4); const withSub = recent.filter((r) => r.roleReports.technical?.submittedAt || r.roleReports.sales?.submittedAt || r.roleReports.product?.submittedAt).length; return { count: withSub, total: Math.min(recent.length, 4) }; })();
+        const avgScore = (() => { const scores: number[] = []; for (const r of allReports) { for (const role of ["technical", "sales", "product"] as const) { const s = r.roleReports[role]?.score; if (s != null) scores.push(s); } } return scores.length > 0 ? (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1) : null; })();
+        const activeBlockers = (() => { const latest = allReports[0]; if (!latest) return 0; let c = 0; for (const role of ["technical", "sales", "product"] as const) { c += latest.roleReports[role]?.blockers?.length ?? 0; } return c; })();
+        const FEEDBACK_ACTION_CLR: Record<string, string> = { approved: "bg-emerald-100 text-emerald-700", changes_requested: "bg-amber-100 text-amber-700", escalated: "bg-rose-100 text-rose-700", comment: "bg-gray-100 text-gray-600" };
+        const FEEDBACK_ACTION_LBL: Record<string, string> = { approved: "Approved", changes_requested: "Changes Requested", escalated: "Escalated", comment: "Comment" };
+
+        return (
         <div className="space-y-5">
+          {/* 1. Executive status badge */}
           {project.executiveStatus && <div className="flex items-center gap-2"><span className="text-xs text-gray-500">Executive Status:</span><span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${EXEC_STATUS_CLR[project.executiveStatus]}`}>{EXEC_STATUS_LBL[project.executiveStatus]}</span>{project.executiveStatusNote && <span className="text-xs text-gray-400 italic">— {project.executiveStatusNote}</span>}</div>}
 
-          {/* KPI cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-3"><div className="flex items-center gap-1.5 mb-0.5"><CheckSquare className="h-4 w-4 text-indigo-500" /><p className="text-[10px] text-gray-500">Total Tasks</p></div><p className="text-xl font-bold text-gray-900">{projectTasks.length}</p></div>
-            <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-3"><div className="flex items-center gap-1.5 mb-0.5"><Star className="h-4 w-4 text-emerald-500" /><p className="text-[10px] text-gray-500">Completed</p></div><p className="text-xl font-bold text-emerald-600">{completedPct}%</p><div className="mt-1 w-full h-1.5 rounded-full bg-gray-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${completedPct}%` }} /></div></div>
-            <div className={`rounded-xl border shadow-sm p-3 ${overdueTasks > 0 ? "border-rose-200 bg-rose-50/30" : "border-gray-200 bg-white"}`}><div className="flex items-center gap-1.5 mb-0.5"><AlertTriangle className="h-4 w-4 text-rose-500" /><p className="text-[10px] text-gray-500">Overdue</p></div><p className={`text-xl font-bold ${overdueTasks > 0 ? "text-rose-600" : "text-gray-900"}`}>{overdueTasks}</p></div>
-            <div className={`rounded-xl border shadow-sm p-3 ${openRisks > 0 ? "border-amber-200 bg-amber-50/30" : "border-gray-200 bg-white"}`}><div className="flex items-center gap-1.5 mb-0.5"><Shield className="h-4 w-4 text-amber-500" /><p className="text-[10px] text-gray-500">High Risk Weeks</p></div><p className={`text-xl font-bold ${openRisks > 0 ? "text-amber-600" : "text-gray-900"}`}>{openRisks}</p></div>
+          {/* 2. 6-card KPI strip */}
+          <div className="grid grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-3"><p className="text-[10px] text-gray-500 mb-0.5">Total Tasks</p><p className="text-xl font-bold text-gray-900">{projectTasks.length}</p></div>
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-3"><p className="text-[10px] text-gray-500 mb-0.5">Completed</p><p className="text-xl font-bold text-emerald-600">{completedPct}%</p><div className="mt-1 w-full h-1.5 rounded-full bg-gray-200"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${completedPct}%` }} /></div></div>
+            <div className={`rounded-xl border shadow-sm p-3 ${overdueTasks > 0 ? "border-rose-200 bg-rose-50/30" : "border-gray-200 bg-white"}`}><p className="text-[10px] text-gray-500 mb-0.5">Overdue</p><p className={`text-xl font-bold ${overdueTasks > 0 ? "text-rose-600" : "text-gray-900"}`}>{overdueTasks}</p></div>
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-3"><p className="text-[10px] text-gray-500 mb-0.5">Submission Rate</p><p className="text-xl font-bold text-gray-900">{submissionRate.count} / {submissionRate.total}</p><p className="text-[9px] text-gray-400">weeks</p></div>
+            <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-3"><p className="text-[10px] text-gray-500 mb-0.5">Avg. Score</p><p className="text-xl font-bold text-gray-900">{avgScore ?? "—"}{avgScore && <span className="text-xs font-normal text-gray-400"> / 5</span>}</p></div>
+            <div className={`rounded-xl border shadow-sm p-3 ${activeBlockers > 0 ? "border-rose-200 bg-rose-50/30" : "border-gray-200 bg-white"}`}><p className="text-[10px] text-gray-500 mb-0.5">Active Blockers</p><p className={`text-xl font-bold ${activeBlockers > 0 ? "text-rose-600" : "text-gray-900"}`}>{activeBlockers}</p></div>
           </div>
 
-          {/* Weekly Reports Summary — clickable rows */}
+          {/* 3. Role Status Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {(["technical", "sales", "product"] as const).map((role) => {
+              const rr = execReport?.roleReports[role];
+              const uid = role === "technical" ? project.technicalResponsibleUserId : role === "sales" ? project.salesResponsibleUserId : project.productResponsibleUserId;
+              const user = userById.get(uid);
+              const submitted = Boolean(rr?.submittedAt);
+              const blockers = rr?.blockers ?? [];
+              return (
+                <div key={role} className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-[9px] font-bold text-indigo-600">{user ? initials(user.name) : "?"}</div>
+                      <div><p className="text-xs font-semibold text-gray-800 capitalize">{role}</p><p className="text-[10px] text-gray-500">{user?.name ?? "—"}</p></div>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${submitted ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>{submitted ? `Submitted ${new Date(rr!.submittedAt!).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}` : "Not submitted"}</span>
+                  </div>
+                  {submitted && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        {rr?.overallStatus && <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${rr.overallStatus === "OnTrack" ? "bg-emerald-100 text-emerald-700" : rr.overallStatus === "AtRisk" ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"}`}>{rr.overallStatus === "OnTrack" ? "On Track" : rr.overallStatus === "AtRisk" ? "At Risk" : "Delayed"}</span>}
+                        {rr?.score != null && <div className="flex gap-0.5">{[1, 2, 3, 4, 5].map((n) => <span key={n} className={`h-2 w-2 rounded-full ${n <= (rr.score ?? 0) ? "bg-indigo-500" : "bg-gray-200"}`} />)}</div>}
+                      </div>
+                      {blockers.length > 0 && <div className="text-xs text-rose-600">{blockers.slice(0, 2).map((b, i) => <p key={i}>⚠ {b}</p>)}{blockers.length > 2 && <p className="text-[10px] text-rose-400">+ {blockers.length - 2} more</p>}</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 4. Weekly Reports table (enriched, 8 weeks) */}
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
             <h3 className="text-sm font-semibold text-gray-800 mb-2">Weekly Reports</h3>
             {allReports.length === 0 ? <p className="text-xs text-gray-400 py-3 text-center">No weekly reports submitted yet</p> : (
-              <div className="rounded-lg border border-gray-200 overflow-hidden">
-                <table className="w-full text-left"><thead className="bg-gray-50 border-b"><tr><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Week</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Status</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Risk</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Submitted By</th></tr></thead>
-                  <tbody>{allReports.slice(0, 4).map((r) => {
+              <div className="rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
+                <table className="w-full text-left"><thead className="bg-gray-50 border-b"><tr><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Week</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Roles</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Status</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Risk</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Blockers</th><th className="px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase">Submitted By</th></tr></thead>
+                  <tbody>{allReports.slice(0, 8).map((r) => {
                     const risk = r.managerSummary?.riskLevel ?? "—";
                     const statusLabel = risk === "High" ? "At Risk" : risk === "Medium" ? "Delayed" : "On Track";
                     const statusClr = risk === "High" ? "text-rose-600" : risk === "Medium" ? "text-amber-600" : "text-emerald-600";
                     const submitters: string[] = [];
                     for (const role of ["technical", "sales", "product"] as const) { if (r.roleReports[role]?.submittedAt) submitters.push(getUserName(state, r.roleReports[role]!.authorUserId)); }
                     if (r.managerSummary?.submittedAt) submitters.push(getUserName(state, r.managerSummary.authorUserId));
-                    return (<tr key={r.id} className="border-b border-gray-50 hover:bg-indigo-50/30 cursor-pointer transition" onClick={() => { setReportInitialWeek(r.weekStartDate); setView("reports"); }}><td className="px-3 py-2 text-xs text-gray-700">{fmtWeek(r.weekStartDate)}</td><td className={`px-3 py-2 text-xs font-medium ${statusClr}`}>{statusLabel}</td><td className="px-3 py-2">{risk !== "—" ? <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_CLR[risk] ?? "bg-gray-100 text-gray-500"}`}>{risk}</span> : <span className="text-[10px] text-gray-400">—</span>}</td><td className="px-3 py-2 text-xs text-gray-600">{submitters.length > 0 ? submitters.join(", ") : "—"}</td></tr>);
+                    const rolePills = [{ k: "T", sub: r.roleReports.technical?.submittedAt }, { k: "S", sub: r.roleReports.sales?.submittedAt }, { k: "P", sub: r.roleReports.product?.submittedAt }, { k: "M", sub: r.managerSummary?.submittedAt }];
+                    let blockerCount = 0; for (const role of ["technical", "sales", "product"] as const) { blockerCount += r.roleReports[role]?.blockers?.length ?? 0; }
+                    return (<tr key={r.id} className="border-b border-gray-50 hover:bg-indigo-50/30 cursor-pointer transition" onClick={() => { setReportInitialWeek(r.weekStartDate); setView("reports"); }}>
+                      <td className="px-3 py-2 text-xs text-gray-700">{fmtWeek(r.weekStartDate)}</td>
+                      <td className="px-3 py-2"><div className="flex gap-0.5">{rolePills.map((p) => <span key={p.k} className={`rounded px-1 py-px text-[8px] font-semibold ${p.sub ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"}`}>{p.k}</span>)}</div></td>
+                      <td className={`px-3 py-2 text-xs font-medium ${statusClr}`}>{statusLabel}</td>
+                      <td className="px-3 py-2">{risk !== "—" ? <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${RISK_CLR[risk] ?? "bg-gray-100 text-gray-500"}`}>{risk}</span> : <span className="text-[10px] text-gray-400">—</span>}</td>
+                      <td className="px-3 py-2">{blockerCount > 0 ? <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-medium text-rose-700">{blockerCount}</span> : <span className="text-[10px] text-gray-400">0</span>}</td>
+                      <td className="px-3 py-2 text-xs text-gray-600">{submitters.length > 0 ? submitters.join(", ") : "—"}</td>
+                    </tr>);
                   })}</tbody>
                 </table>
               </div>
             )}
           </div>
 
-          {/* AI Summary */}
+          {/* 5. AI Summary (dropdown navigation) */}
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-gray-800">AI Summary</h3>
               <div className="flex items-center gap-2">
-                <button onClick={() => setExecWeek((w) => shiftWeek(w, -1))} className="rounded p-1 text-gray-400 hover:bg-gray-100"><ChevronLeft className="h-4 w-4" /></button>
-                <span className="text-xs text-gray-600">{fmtWeek(execWeek)}</span>
-                <button onClick={() => { const n = shiftWeek(execWeek, 1); if (n <= currentMonday) setExecWeek(n); }} disabled={shiftWeek(execWeek, 1) > currentMonday} className="rounded p-1 text-gray-400 hover:bg-gray-100 disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button>
+                <select value={execWeek} onChange={(e) => setExecWeek(e.target.value)} className="rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-700 bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/20 w-40">
+                  {allReports.map((r) => <option key={r.id} value={r.weekStartDate}>{fmtWeek(r.weekStartDate)}</option>)}
+                  {allReports.length === 0 && <option value={currentMonday}>{fmtWeek(currentMonday)}</option>}
+                </select>
                 {isManager && <button onClick={() => { state.createProjectWeeklyReport({ projectId: projectId!, weekStartDate: execWeek, roleReports: {} }); state.generateProjectAiSummary(projectId!, execWeek); }} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 transition"><Sparkles className="h-3 w-3" /> {execReport?.aiSummary ? "Refresh" : "Generate"}</button>}
               </div>
             </div>
@@ -369,59 +404,38 @@ export function ProjectDetailPage() {
             ) : <p className="text-xs text-gray-400">No AI summary generated yet.</p>}
           </div>
 
-          {/* Executive Feedback */}
+          {/* 6. Executive Feedback thread */}
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-            <div className="flex items-center gap-2 mb-2"><MessageSquare className="h-4 w-4 text-gray-400" /><h3 className="text-sm font-semibold text-gray-800">Executive Feedback</h3></div>
-            {(project.executiveFeedback ?? []).length > 0 && (
-              <div className="space-y-2 mb-3">{(project.executiveFeedback ?? []).slice().sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)).map((f) => (
-                <div key={f.id} className="border-l-2 border-indigo-200 pl-3 py-1">
-                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400"><span className="font-semibold text-gray-600">{getUserName(state, f.authorUserId)}</span><span>· {new Date(f.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div>
-                  <p className="text-xs text-gray-700 mt-0.5">{f.text}</p>
+            <div className="flex items-center gap-2 mb-3"><MessageSquare className="h-4 w-4 text-gray-400" /><h3 className="text-sm font-semibold text-gray-800">Executive Feedback</h3></div>
+            <div className="max-h-64 overflow-y-auto space-y-2 mb-3">
+              {(project.executiveFeedback ?? []).length === 0 && <p className="text-xs text-gray-400 text-center py-4">No feedback yet.</p>}
+              {(project.executiveFeedback ?? []).slice().sort((a, b) => a.submittedAt.localeCompare(b.submittedAt)).map((f) => (
+                <div key={f.id} className={`border-l-2 pl-3 py-1.5 ${f.action === "approved" ? "border-emerald-300" : f.action === "changes_requested" ? "border-amber-300" : f.action === "escalated" ? "border-rose-300" : "border-gray-200"}`}>
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[7px] font-bold text-indigo-600">{initials(getUserName(state, f.authorUserId))}</span>
+                    <span className="font-semibold text-gray-600">{getUserName(state, f.authorUserId)}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-semibold ${FEEDBACK_ACTION_CLR[f.action] ?? "bg-gray-100 text-gray-600"}`}>{FEEDBACK_ACTION_LBL[f.action] ?? f.action}</span>
+                    <span className="text-gray-400">· {new Date(f.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span>
+                  </div>
+                  {f.text && <p className="text-xs text-gray-700 mt-0.5">{f.text}</p>}
                 </div>
-              ))}</div>
-            )}
-            {isManager && (
-              <div className="flex gap-2"><textarea rows={2} className={`${inputCls} resize-none flex-1 !text-xs`} value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} placeholder="Add feedback..." /><button onClick={submitFeedback} disabled={!feedbackText.trim()} className="self-end rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 transition">Submit</button></div>
-            )}
-          </div>
-
-          {/* Role sections (read-only, collapsible) */}
-          {(["technical", "sales", "product"] as const).map((role) => {
-            const rr = execReport?.roleReports[role];
-            if (!rr?.submittedAt) return (<div key={role} className="rounded-xl border border-gray-200 bg-white shadow-sm p-3"><p className="text-sm font-medium text-gray-600 capitalize">{role}</p><p className="text-xs text-gray-400 mt-0.5">Not submitted</p></div>);
-            return (
-              <details key={role} className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden group">
-                <summary className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition"><div className="flex items-center gap-2"><p className="text-sm font-semibold text-gray-800 capitalize">{role}</p><span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">Submitted</span></div><ChevronRight className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-90" /></summary>
-                <div className="px-4 pb-3 border-t border-gray-100 pt-2 space-y-1.5">{(["achievements", "inProgress", "blockers", "decisionsRequired", "nextWeekFocus"] as const).map((field) => { const items = rr[field]; if (!items.length) return null; return <div key={field}><p className="text-[10px] font-semibold text-gray-400 uppercase">{field.replace(/([A-Z])/g, " $1").trim()}</p><ul className="list-disc pl-4 text-xs text-gray-700">{items.map((v, i) => <li key={i}>{v}</li>)}</ul></div>; })}</div>
-              </details>
-            );
-          })}
-
-          {/* Manager Comments (read-only) */}
-          {execComments.length > 0 && (
-            <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-2">Manager Comments</h3>
-              <div className="space-y-1.5">{execComments.map((c) => (<div key={c.id} className="py-1 pl-3 border-l-2 border-gray-200"><div className="flex items-center gap-1.5 text-[10px]"><span className="font-semibold text-gray-700">{getUserName(state, c.managerUserId)}</span><span className="text-gray-400">· {new Date(c.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</span></div><p className="text-xs text-gray-600 mt-0.5">{c.commentText}</p></div>))}</div>
-            </div>
-          )}
-
-          {/* Status action buttons */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              {(["approved", "changes_requested", "escalated"] as const).map((s) => (
-                <button key={s} onClick={() => handleExecStatus(s)} className={`rounded-lg px-4 py-2 text-sm font-medium border transition ${project.executiveStatus === s ? EXEC_STATUS_CLR[s] : EXEC_STATUS_OUTLINE[s]}`}>{s === "approved" ? "✓ Approve" : s === "changes_requested" ? "⟳ Request Changes" : "⚠ Escalate"}</button>
               ))}
             </div>
-            {statusNoteFor && (
-              <div className="flex items-center gap-2">
-                <input className={`${inputCls} flex-1 !text-xs`} placeholder="Optional note..." value={statusNote} onChange={(e) => setStatusNote(e.target.value)} />
-                <button onClick={() => { state.updateProjectExecutiveStatus(projectId!, statusNoteFor, statusNote); setStatusNoteFor(null); setStatusNote(""); }} className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition">Confirm</button>
-                <button onClick={() => setStatusNoteFor(null)} className="text-xs text-gray-400">Cancel</button>
+            {isManager && (
+              <div className="space-y-2">
+                <textarea rows={2} className={`${inputCls} resize-none !text-xs`} value={feedbackText} onChange={(e) => setFeedbackText(e.target.value)} placeholder="Add feedback or executive note..." />
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { state.addExecutiveFeedback(projectId!, feedbackText.trim(), "comment", execWeek); setFeedbackText(""); }} disabled={!feedbackText.trim()} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition">Comment</button>
+                  <button onClick={() => { state.addExecutiveFeedback(projectId!, feedbackText.trim(), "approved", execWeek); setFeedbackText(""); }} className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 transition">✓ Approve</button>
+                  <button onClick={() => { state.addExecutiveFeedback(projectId!, feedbackText.trim(), "changes_requested", execWeek); setFeedbackText(""); }} className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50 transition">⟳ Changes</button>
+                  <button onClick={() => { state.addExecutiveFeedback(projectId!, feedbackText.trim(), "escalated", execWeek); setFeedbackText(""); }} className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 transition">⚠ Escalate</button>
+                </div>
               </div>
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Task Drawer */}
       {selectedTask && (<TaskDrawer task={selectedTask} comments={commentsByTaskId.get(selectedTask.id) ?? []} attachments={state.taskAttachments.filter((a) => a.taskId === selectedTask.id)} users={state.users} labels={state.taskLabels} getUserName={(uid) => getUserName(state, uid)} onSave={saveTaskDetail} onClose={() => setSelectedTaskId(null)} onArchive={(t) => state.updateTask({ ...t, archivedAt: t.archivedAt ? undefined : new Date().toISOString() })} onUnarchive={(t) => state.updateTask({ ...t, archivedAt: undefined })} onAddComment={(tid, text, kind) => state.addTaskComment(tid, text, kind)} onAddAttachment={(tid, file) => state.addTaskAttachment(tid, file, state.activeUserId)} onRemoveAttachment={(aid) => state.removeTaskAttachment(aid)} />)}
