@@ -1416,7 +1416,6 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       set((state) => {
         const existing = state.tasks.find((row) => row.id === task.id);
         const now = new Date().toISOString();
-        const isDone = task.status === "Done" || task.status === "Cancelled";
         return {
           ...state,
           tasks: state.tasks.map((row) =>
@@ -1424,10 +1423,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
               ? {
                   ...task,
                   updatedAt: now,
-                  completedAt:
-                    isDone
-                      ? task.completedAt ?? existing?.completedAt ?? now
-                      : task.completedAt,
+                  completedAt: task.completedAt ?? existing?.completedAt,
                   archivedAt: task.archivedAt ?? existing?.archivedAt,
                   watcherUserIds: Array.from(
                     new Set([...(task.watcherUserIds ?? []), task.createdByUserId, task.assigneeUserId].filter(Boolean)),

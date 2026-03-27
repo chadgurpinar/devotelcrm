@@ -20,7 +20,7 @@ export interface TaskKanbanBoardProps {
 }
 
 export function TaskKanbanBoard({ tasks, users, labels, onUpdateTask, onOpenTask, getUserName, getProjectName }: TaskKanbanBoardProps) {
-  const activeTasks = tasks.filter((t) => !t.completedAt);
+  const activeTasks = tasks;
 
   const byStatus: Record<TaskStatus, Task[]> = { Backlog: [], ToDo: [], InProgress: [], Done: [], Cancelled: [] };
   for (const t of activeTasks) {
@@ -35,7 +35,7 @@ export function TaskKanbanBoard({ tasks, users, labels, onUpdateTask, onOpenTask
   });
 
   const moveToStatus = (task: Task, status: TaskStatus) => {
-    onUpdateTask(task.id, { status, kanbanStage: status, ...(status === "Done" ? { completedAt: new Date().toISOString() } : {}) });
+    onUpdateTask(task.id, { status, kanbanStage: status });
   };
 
   return (

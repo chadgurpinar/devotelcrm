@@ -87,7 +87,7 @@ export function TasksPage() {
 
   useEffect(() => { if (isSpecialSection) setViewModePersisted("LIST"); }, [isSpecialSection, setViewModePersisted]);
 
-  const isActive = (t: Task) => t.status !== "Done" && t.status !== "Cancelled" && !t.completedAt;
+  const isActive = (t: Task) => t.status !== "Cancelled" && !t.completedAt;
 
   const sectionTasks = useMemo(() => {
     if (isCompletedSection) return state.tasks.filter((t) => t.completedAt);
