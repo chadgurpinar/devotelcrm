@@ -128,5 +128,5 @@ export function useWeeklyReports(projectId: string) {
     state.updateProjectWeeklyReport({ ...report, managerSummary: { authorUserId: ms?.authorUserId ?? state.activeUserId, executiveSummaryText: ms?.executiveSummaryText ?? "", riskLevel: ms?.riskLevel ?? "Medium", blockers: ms?.blockers ?? [], decisionsRequired: ms?.decisionsRequired ?? [], deckLinks: ms?.deckLinks ?? [], submittedAt: ms?.submittedAt, updatedAt: new Date().toISOString(), [field]: value } });
   }, [allReports, selectedWeekId, state]);
 
-  return { weeks, selectedWeekId, selectedWeek, selectWeek, addManagerNote, createQuickTask, submitManagerSummary, regenerateAiSummary, addComment, updateManagerField, getUserName: (uid: string) => getUserName(state, uid), users: state.users, activeUserId: state.activeUserId };
+  return { weeks, selectedWeekId, selectedWeek, selectWeek, addManagerNote, createQuickTask, submitManagerSummary, regenerateAiSummary, addComment, updateManagerField, getUserName: (uid: string) => getUserName(state, uid), users: state.users, activeUserId: state.activeUserId, currentMonday, projectCreatedAt: project?.createdAt ?? currentMonday };
 }
