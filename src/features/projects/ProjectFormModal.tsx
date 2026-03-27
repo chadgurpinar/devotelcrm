@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { X, ChevronDown, Plus, Trash2 } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import type { Project } from "../../store/types";
 
@@ -10,20 +10,53 @@ interface ProjectFormModalProps {
   onClose: () => void;
 }
 
+type RoleRow = { key: string; label: string; userId: string };
+
 type FormState = {
   name: string; description: string; status: Project["status"]; strategicPriority: Project["strategicPriority"];
-  ownerUserId: string; technicalResponsibleUserId: string; salesResponsibleUserId: string; productResponsibleUserId: string;
-  managerUserIds: string[]; tagsText: string;
+  ownerUserId: string; managerUserIds: string[]; tagsText: string;
   startDate: string; endDate: string; budget: string;
+  responsibleRoles: RoleRow[];
   memberLockDay: string; memberLockTime: string; managerLockDay: string; managerLockTime: string;
 };
 
+function buildRolesFromLegacy(p: { technicalResponsibleUserId: string; salesResponsibleUserId: string; productResponsibleUserId: string }): RoleRow[] {
+  const roles: RoleRow[] = [];
+  if (p.technicalResponsibleUserId) roles.push({ key: "technical", label: "Technical Responsible", userId: p.technicalResponsibleUserId });
+  if (p.salesResponsibleUserId) roles.push({ key: "sales", label: "Sales Responsible", userId: p.salesResponsibleUserId });
+  if (p.productResponsibleUserId) roles.push({ key: "product", label: "Product Responsible", userId: p.productResponsibleUserId });
+  return roles;
+}
+
 function emptyForm(activeUserId: string): FormState {
-  return { name: "", description: "", status: "InProgress", strategicPriority: "Medium", ownerUserId: activeUserId, technicalResponsibleUserId: activeUserId, salesResponsibleUserId: activeUserId, productResponsibleUserId: activeUserId, managerUserIds: [activeUserId], tagsText: "", startDate: "", endDate: "", budget: "", memberLockDay: "", memberLockTime: "", managerLockDay: "", managerLockTime: "" };
+  return {
+    name: "", description: "", status: "InProgress", strategicPriority: "Medium",
+    ownerUserId: activeUserId, managerUserIds: [activeUserId], tagsText: "",
+    startDate: "", endDate: "", budget: "",
+    responsibleRoles: [
+      { key: "technical", label: "Technical Responsible", userId: activeUserId },
+      { key: "sales", label: "Sales Responsible", userId: activeUserId },
+      { key: "product", label: "Product Responsible", userId: activeUserId },
+    ],
+    memberLockDay: "", memberLockTime: "", managerLockDay: "", managerLockTime: "",
+  };
 }
 
 function fromProject(p: Project): FormState {
-  return { name: p.name, description: p.description, status: p.status, strategicPriority: p.strategicPriority, ownerUserId: p.ownerUserId, technicalResponsibleUserId: p.technicalResponsibleUserId, salesResponsibleUserId: p.salesResponsibleUserId, productResponsibleUserId: p.productResponsibleUserId, managerUserIds: p.managerUserIds, tagsText: (p.tags ?? []).join(", "), startDate: p.startDate ?? "", endDate: p.endDate ?? "", budget: p.budget != null ? String(p.budget) : "", memberLockDay: p.reportDeadlines ? String(p.reportDeadlines.memberLockDay) : "", memberLockTime: p.reportDeadlines?.memberLockTime ?? "", managerLockDay: p.reportDeadlines ? String(p.reportDeadlines.managerLockDay) : "", managerLockTime: p.reportDeadlines?.managerLockTime ?? "" };
+  const responsibleRoles = (p.responsibleRoles && p.responsibleRoles.length > 0)
+    ? p.responsibleRoles
+    : buildRolesFromLegacy(p);
+  return {
+    name: p.name, description: p.description, status: p.status, strategicPriority: p.strategicPriority,
+    ownerUserId: p.ownerUserId, managerUserIds: p.managerUserIds,
+    tagsText: (p.tags ?? []).join(", "), startDate: p.startDate ?? "", endDate: p.endDate ?? "",
+    budget: p.budget != null ? String(p.budget) : "",
+    responsibleRoles,
+    memberLockDay: p.reportDeadlines ? String(p.reportDeadlines.memberLockDay) : "",
+    memberLockTime: p.reportDeadlines?.memberLockTime ?? "",
+    managerLockDay: p.reportDeadlines ? String(p.reportDeadlines.managerLockDay) : "",
+    managerLockTime: p.reportDeadlines?.managerLockTime ?? "",
+  };
 }
 
 export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalProps) {
@@ -37,6 +70,18 @@ export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalPr
 
   function toggleManager(userId: string) { setForm((p) => ({ ...p, managerUserIds: p.managerUserIds.includes(userId) ? p.managerUserIds.filter((id) => id !== userId) : [...p.managerUserIds, userId] })); }
 
+  function updateRoleRow(index: number, patch: Partial<RoleRow>) {
+    setForm((p) => ({ ...p, responsibleRoles: p.responsibleRoles.map((r, i) => i === index ? { ...r, ...patch } : r) }));
+  }
+
+  function addRoleRow() {
+    setForm((p) => ({ ...p, responsibleRoles: [...p.responsibleRoles, { key: "", label: "", userId: "" }] }));
+  }
+
+  function removeRoleRow(index: number) {
+    setForm((p) => ({ ...p, responsibleRoles: p.responsibleRoles.filter((_, i) => i !== index) }));
+  }
+
   function handleSave() {
     if (!form.name.trim()) { setError("Project name is required."); return; }
     setError("");
@@ -45,12 +90,32 @@ export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalPr
       ? { memberLockDay: Number(form.memberLockDay), memberLockTime: form.memberLockTime, managerLockDay: Number(form.managerLockDay), managerLockTime: form.managerLockTime }
       : undefined;
     const managerUserIds = Array.from(new Set([...form.managerUserIds, form.ownerUserId].filter(Boolean)));
-    const watcherUserIds = Array.from(new Set([...managerUserIds, form.ownerUserId, form.technicalResponsibleUserId, form.salesResponsibleUserId, form.productResponsibleUserId].filter(Boolean)));
+
+    const cleanedRoles = form.responsibleRoles
+      .map((r) => ({ key: (r.key || r.label.toLowerCase().replace(/\s+/g, "_")).trim(), label: r.label.trim(), userId: r.userId }))
+      .filter((r) => r.label && r.userId);
+
+    const findRole = (key: string) => cleanedRoles.find((r) => r.key === key)?.userId ?? form.ownerUserId;
+    const technicalResponsibleUserId = findRole("technical");
+    const salesResponsibleUserId = findRole("sales");
+    const productResponsibleUserId = findRole("product");
+
+    const allUserIds = [form.ownerUserId, technicalResponsibleUserId, salesResponsibleUserId, productResponsibleUserId, ...cleanedRoles.map((r) => r.userId), ...managerUserIds];
+    const watcherUserIds = Array.from(new Set(allUserIds.filter(Boolean)));
+
+    const base = {
+      name: form.name.trim(), description: form.description.trim(), status: form.status,
+      strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds,
+      technicalResponsibleUserId, salesResponsibleUserId, productResponsibleUserId,
+      watcherUserIds, tags, responsibleRoles: cleanedRoles,
+      startDate: form.startDate || undefined, endDate: form.endDate || undefined,
+      budget: form.budget ? Number(form.budget) : undefined, reportDeadlines,
+    };
 
     if (isEdit && editingProject) {
-      state.updateProject({ ...editingProject, name: form.name.trim(), description: form.description.trim(), status: form.status, strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds, technicalResponsibleUserId: form.technicalResponsibleUserId, salesResponsibleUserId: form.salesResponsibleUserId, productResponsibleUserId: form.productResponsibleUserId, watcherUserIds, tags, startDate: form.startDate || undefined, endDate: form.endDate || undefined, budget: form.budget ? Number(form.budget) : undefined, reportDeadlines });
+      state.updateProject({ ...editingProject, ...base });
     } else {
-      state.createProject({ name: form.name.trim(), description: form.description.trim(), status: form.status, strategicPriority: form.strategicPriority, ownerUserId: form.ownerUserId, managerUserIds, technicalResponsibleUserId: form.technicalResponsibleUserId, salesResponsibleUserId: form.salesResponsibleUserId, productResponsibleUserId: form.productResponsibleUserId, watcherUserIds, tags, startDate: form.startDate || undefined, endDate: form.endDate || undefined, budget: form.budget ? Number(form.budget) : undefined, reportDeadlines });
+      state.createProject(base);
     }
     onClose();
   }
@@ -78,13 +143,31 @@ export function ProjectFormModal({ editingProject, onClose }: ProjectFormModalPr
             <div><label className="mb-1 block text-xs font-medium text-gray-500">Budget (USD)</label><input type="number" min={0} className={inputCls} value={form.budget} onChange={(e) => setForm((p) => ({ ...p, budget: e.target.value }))} placeholder="Optional" /></div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Owner *</label><select className={inputCls} value={form.ownerUserId} onChange={(e) => setForm((p) => ({ ...p, ownerUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Technical Responsible</label><select className={inputCls} value={form.technicalResponsibleUserId} onChange={(e) => setForm((p) => ({ ...p, technicalResponsibleUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Sales Responsible</label><select className={inputCls} value={form.salesResponsibleUserId} onChange={(e) => setForm((p) => ({ ...p, salesResponsibleUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
-            <div><label className="mb-1 block text-xs font-medium text-gray-500">Product Responsible</label><select className={inputCls} value={form.productResponsibleUserId} onChange={(e) => setForm((p) => ({ ...p, productResponsibleUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+          {/* Owner */}
+          <div><label className="mb-1 block text-xs font-medium text-gray-500">Owner *</label><select className={inputCls} value={form.ownerUserId} onChange={(e) => setForm((p) => ({ ...p, ownerUserId: e.target.value }))}>{state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+
+          {/* Dynamic Responsible Roles */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-gray-500">Responsible Roles</label>
+              <button type="button" onClick={addRoleRow} className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium"><Plus className="h-3.5 w-3.5" /> Add role</button>
+            </div>
+            <div className="space-y-2">
+              {form.responsibleRoles.map((role, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input className={`flex-1 ${inputCls}`} value={role.label} onChange={(e) => updateRoleRow(idx, { label: e.target.value })} placeholder="Role label (e.g. Finance Responsible)" />
+                  <select className={`flex-1 ${inputCls}`} value={role.userId} onChange={(e) => updateRoleRow(idx, { userId: e.target.value })}>
+                    <option value="">— Select user —</option>
+                    {state.users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                  <button type="button" onClick={() => removeRoleRow(idx)} className="rounded-lg p-1.5 text-gray-400 hover:text-rose-500 hover:bg-rose-50 transition"><Trash2 className="h-4 w-4" /></button>
+                </div>
+              ))}
+              {form.responsibleRoles.length === 0 && <p className="text-xs text-gray-400 italic py-2">No roles defined. Click "+ Add role" to add one.</p>}
+            </div>
           </div>
 
+          {/* Managers */}
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">Managers</label>
             <div className="flex flex-wrap gap-2 rounded-lg border border-gray-200 p-2">

@@ -258,6 +258,7 @@ export interface Project {
     managerLockDay: number;
     managerLockTime: string;
   };
+  responsibleRoles?: { key: string; label: string; userId: string }[];
   startDate?: string;
   endDate?: string;
   budget?: number;

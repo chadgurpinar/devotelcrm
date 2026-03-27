@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, Briefcase, CheckSquare, Clock, Eye, LayoutGrid, Plus } from "lucide-react";
+import { AlertTriangle, Briefcase, CheckSquare, Clock, Eye, LayoutGrid, Plus, Shield } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { UiPageHeader } from "../../ui/UiPageHeader";
 import { UiKpiCard } from "../../ui/UiKpiCard";
@@ -9,8 +9,10 @@ import { ProjectFormModal } from "./ProjectFormModal";
 
 const STATUS_COLOR: Record<string, string> = { Planning: "bg-blue-100 text-blue-700", InProgress: "bg-amber-100 text-amber-700", Paused: "bg-gray-100 text-gray-600", Completed: "bg-emerald-100 text-emerald-700", OnHold: "bg-gray-100 text-gray-600", Cancelled: "bg-rose-100 text-rose-700" };
 const STATUS_LABEL: Record<string, string> = { Planning: "Planning", InProgress: "In Progress", Paused: "Paused", Completed: "Completed", OnHold: "On Hold", Cancelled: "Cancelled" };
+const PRIORITY_CLR: Record<string, string> = { High: "bg-rose-50 text-rose-700", Medium: "bg-amber-50 text-amber-700", Low: "bg-gray-100 text-gray-500" };
 const EXEC_STATUS_CLR: Record<string, string> = { approved: "bg-emerald-50 text-emerald-700", changes_requested: "bg-amber-50 text-amber-700", escalated: "bg-rose-50 text-rose-700" };
 const EXEC_STATUS_LBL: Record<string, string> = { approved: "Approved", changes_requested: "Changes Requested", escalated: "Escalated" };
+const RISK_CLR: Record<string, string> = { High: "text-rose-600", Medium: "text-amber-600", Low: "text-emerald-600" };
 
 type ViewMode = "team" | "executive";
 
@@ -34,39 +36,54 @@ export function ProjectsAndTasksPage() {
   const [view, setView] = useState<ViewMode>("team");
   const [showForm, setShowForm] = useState(false);
 
+  const activeUserId = state.activeUserId;
+  const activeUser = state.users.find((u) => u.id === activeUserId);
+  const isSuperAdmin = activeUser?.role === "SuperAdmin";
+
   const userById = useMemo(() => new Map(state.users.map((u) => [u.id, u])), [state.users]);
-  const totalProjects = state.projects.length;
-  const totalTasks = state.tasks.length;
-  const overdueTasks = useMemo(() => { const now = new Date().toISOString(); return state.tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed" && !t.archivedAt).length; }, [state.tasks]);
   const currentMonday = getCurrentMonday();
 
-  const projectsWithCounts = useMemo(() => state.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((project) => {
+  const allProjectsWithCounts = useMemo(() => state.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((project) => {
     const tasks = state.tasks.filter((t) => t.projectId === project.id);
     const todo = tasks.filter((t) => t.status === "Backlog" || t.status === "Open").length;
     const inProgress = tasks.filter((t) => t.status === "InProgress").length;
     const done = tasks.filter((t) => t.status === "Done" || t.status === "Completed").length;
     const owner = userById.get(project.ownerUserId);
-    return { project, ownerName: owner?.name ?? "Unknown", totalTasks: tasks.length, taskCounts: [{ label: "To Do", count: todo, color: "bg-gray-400" }, { label: "In Progress", count: inProgress, color: "bg-blue-500" }, { label: "Done", count: done, color: "bg-emerald-500" }] };
-  }), [state.projects, state.tasks, userById]);
+    const isVisible = isSuperAdmin
+      || project.ownerUserId === activeUserId
+      || project.managerUserIds.includes(activeUserId)
+      || project.technicalResponsibleUserId === activeUserId
+      || project.salesResponsibleUserId === activeUserId
+      || project.productResponsibleUserId === activeUserId
+      || (project.watcherUserIds ?? []).includes(activeUserId)
+      || (project.responsibleRoles ?? []).some((r) => r.userId === activeUserId);
+    return { project, ownerName: owner?.name ?? "Unknown", totalTasks: tasks.length, isVisible, taskCounts: [{ label: "To Do", count: todo, color: "bg-gray-400" }, { label: "In Progress", count: inProgress, color: "bg-blue-500" }, { label: "Done", count: done, color: "bg-emerald-500" }] };
+  }), [state.projects, state.tasks, userById, activeUserId, isSuperAdmin]);
+
+  const teamProjects = useMemo(() => allProjectsWithCounts.filter((p) => p.isVisible), [allProjectsWithCounts]);
+
+  const totalTasks = state.tasks.length;
+  const overdueTasks = useMemo(() => { const now = new Date().toISOString(); return state.tasks.filter((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed" && !t.archivedAt).length; }, [state.tasks]);
 
   const executiveRows = useMemo(() => state.projects.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map((project) => {
     const tasks = state.tasks.filter((t) => t.projectId === project.id);
     const completedCount = tasks.filter((t) => t.status === "Done" || t.status === "Completed").length;
     const now = new Date().toISOString();
     const hasOverdue = tasks.some((t) => t.dueAt && t.dueAt < now && t.status !== "Done" && t.status !== "Completed");
-    const reports = state.projectWeeklyReports.filter((r) => r.projectId === project.id);
+    const reports = state.projectWeeklyReports.filter((r) => r.projectId === project.id).sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate));
     const thisWeekReport = reports.find((r) => r.weekStartDate === currentMonday);
     const hasReportThisWeek = Boolean(thisWeekReport && (thisWeekReport.roleReports.technical?.submittedAt || thisWeekReport.roleReports.sales?.submittedAt || thisWeekReport.roleReports.product?.submittedAt || thisWeekReport.managerSummary?.submittedAt));
     const latestComments = state.weeklyReportManagerComments.filter((c) => reports.some((r) => r.id === c.reportId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const lastComment = latestComments[0]?.commentText ?? null;
     const owner = userById.get(project.ownerUserId);
     const deadline = daysRemaining(project.endDate);
-    return { project, ownerName: owner?.name ?? "Unknown", totalTasks: tasks.length, completedCount, hasOverdue, hasReportThisWeek, lastComment, deadline };
+    const latestRiskLevel = reports[0]?.managerSummary?.riskLevel ?? null;
+    return { project, ownerName: owner?.name ?? "Unknown", totalTasks: tasks.length, completedCount, hasOverdue, hasReportThisWeek, lastComment, deadline, latestRiskLevel };
   }), [state.projects, state.tasks, state.projectWeeklyReports, state.weeklyReportManagerComments, userById, currentMonday]);
 
   return (
     <div className="space-y-6">
-      <UiPageHeader title="Projects" subtitle={`${totalProjects} projects`} actions={
+      <UiPageHeader title="Projects" subtitle={`${state.projects.length} projects`} actions={
         <button onClick={() => setShowForm(true)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition">
           <Plus className="h-4 w-4" /> New Project
         </button>
@@ -77,22 +94,26 @@ export function ProjectsAndTasksPage() {
         <button onClick={() => setView("executive")} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${view === "executive" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}><Eye className="h-4 w-4" /> Executive View</button>
       </div>
 
+      {/* Helper text */}
+      <p className="text-xs text-gray-500">{view === "team" ? "Showing projects you are involved in." : "Showing all company projects with summary KPIs."}</p>
+
+      {/* ═══ TEAM VIEW ═══ */}
       {view === "team" && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <UiKpiCard label="Total Projects" value={totalProjects} icon={<Briefcase className="h-5 w-5" />} />
+            <UiKpiCard label="My Projects" value={teamProjects.length} icon={<Briefcase className="h-5 w-5" />} />
             <UiKpiCard label="Total Tasks" value={totalTasks} icon={<CheckSquare className="h-5 w-5" />} />
             <UiKpiCard label="Overdue Tasks" value={overdueTasks} icon={<Clock className="h-5 w-5" />} className={overdueTasks > 0 ? "border-rose-200 bg-rose-50/50" : ""} />
           </div>
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-gray-800">All Projects</h2>
-            <span className="text-xs text-gray-500">{totalProjects} project{totalProjects !== 1 ? "s" : ""}</span>
+            <h2 className="text-base font-semibold text-gray-800">My Projects</h2>
+            <span className="text-xs text-gray-500">{teamProjects.length} project{teamProjects.length !== 1 ? "s" : ""}</span>
           </div>
-          {projectsWithCounts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16"><Briefcase className="h-10 w-10 text-gray-300 mb-3" /><p className="text-sm text-gray-500">No projects yet</p></div>
+          {teamProjects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16"><Briefcase className="h-10 w-10 text-gray-300 mb-3" /><p className="text-sm text-gray-500">No projects assigned to you</p></div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {projectsWithCounts.map(({ project, ownerName, totalTasks: tt, taskCounts }) => (
+              {teamProjects.map(({ project, ownerName, totalTasks: tt, taskCounts }) => (
                 <UiProjectCard key={project.id} name={project.name} owner={ownerName} status={STATUS_LABEL[project.status] ?? project.status} statusColor={STATUS_COLOR[project.status]} priority={project.strategicPriority} totalTasks={tt} taskCounts={taskCounts} onClick={() => navigate(`/projects/${project.id}`)} />
               ))}
             </div>
@@ -100,9 +121,9 @@ export function ProjectsAndTasksPage() {
         </>
       )}
 
+      {/* ═══ EXECUTIVE VIEW ═══ */}
       {view === "executive" && (
         <>
-          <p className="text-sm text-gray-500">{executiveRows.length} projects (all statuses)</p>
           {executiveRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-16"><Briefcase className="h-10 w-10 text-gray-300 mb-3" /><p className="text-sm text-gray-500">No projects</p></div>
           ) : (
@@ -120,16 +141,19 @@ export function ProjectsAndTasksPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {executiveRows.map(({ project, ownerName, totalTasks: tt, completedCount, hasOverdue, hasReportThisWeek, lastComment, deadline }) => {
+                  {executiveRows.map(({ project, ownerName, totalTasks: tt, completedCount, hasOverdue, hasReportThisWeek, lastComment, deadline, latestRiskLevel }) => {
                     const pct = tt > 0 ? Math.round((completedCount / tt) * 100) : 0;
                     return (
                       <tr key={project.id} className="border-b border-gray-100 hover:bg-indigo-50/30 transition-colors cursor-pointer" onClick={() => navigate(`/projects/${project.id}`)}>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-sm font-medium text-gray-900">{project.name}</p>
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium flex-shrink-0 ${STATUS_COLOR[project.status] ?? "bg-gray-100 text-gray-600"}`}>{STATUS_LABEL[project.status] ?? project.status}</span>
                           </div>
-                          {project.executiveStatus && <span className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${EXEC_STATUS_CLR[project.executiveStatus] ?? ""}`}>{EXEC_STATUS_LBL[project.executiveStatus] ?? project.executiveStatus}</span>}
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_CLR[project.strategicPriority] ?? "bg-gray-100 text-gray-500"}`}>{project.strategicPriority}</span>
+                            {project.executiveStatus && <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${EXEC_STATUS_CLR[project.executiveStatus] ?? ""}`}>{EXEC_STATUS_LBL[project.executiveStatus] ?? project.executiveStatus}</span>}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700">{ownerName}</td>
                         <td className="px-4 py-3">{deadline ? <span className={`text-xs font-medium ${deadline.color}`}>{deadline.label}</span> : <span className="text-xs text-gray-400">—</span>}</td>
@@ -141,7 +165,16 @@ export function ProjectsAndTasksPage() {
                         </td>
                         <td className="px-4 py-3 text-center"><span className="text-sm">{hasReportThisWeek ? "✅" : "❌"}</span></td>
                         <td className="px-4 py-3">{lastComment ? <p className="text-xs text-gray-500 italic truncate max-w-[200px]">{lastComment.length > 60 ? lastComment.slice(0, 60) + "…" : lastComment}</p> : <span className="text-xs text-gray-400">—</span>}</td>
-                        <td className="px-4 py-3 text-center">{hasOverdue ? <AlertTriangle className="h-4 w-4 text-amber-500 inline-block" /> : <span className="text-xs text-emerald-500">OK</span>}</td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex flex-col items-center gap-0.5">
+                            {hasOverdue && <AlertTriangle className="h-4 w-4 text-amber-500" />}
+                            {latestRiskLevel ? (
+                              <span className={`text-[10px] font-medium ${RISK_CLR[latestRiskLevel] ?? "text-gray-500"}`}>{latestRiskLevel}</span>
+                            ) : (
+                              !hasOverdue && <span className="text-xs text-emerald-500">OK</span>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
