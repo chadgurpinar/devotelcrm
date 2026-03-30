@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronLeft, ChevronRight, Send, Sparkles, X } from "lucide-react";
+import { BarChart2, ChevronDown, ChevronLeft, ChevronRight, FileText, LayoutGrid, Send, Sparkles, X } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { getUserName } from "../../store/selectors";
 import { UiPageHeader } from "../../ui/UiPageHeader";
@@ -30,7 +30,7 @@ function wlColor(v: number) { if (v >= 5) return "text-rose-600"; if (v >= 4) re
 function prColor(v: number) { if (v >= 4) return "text-emerald-600"; if (v <= 2) return "text-rose-600"; return "text-gray-600"; }
 
 function WeekNav({ week, onPrev, onNext }: { week: string; onPrev: () => void; onNext: () => void }) {
-  return (<div className="flex items-center gap-2"><button onClick={onPrev} className="rounded-lg border border-gray-200 bg-white p-1.5 hover:bg-gray-50 transition"><ChevronLeft className="h-4 w-4 text-gray-500" /></button><span className="text-sm font-medium text-gray-700 min-w-[140px] text-center">Week of {formatWeekLabel(week)}</span><button onClick={onNext} className="rounded-lg border border-gray-200 bg-white p-1.5 hover:bg-gray-50 transition"><ChevronRight className="h-4 w-4 text-gray-500" /></button></div>);
+  return (<div className="flex items-center gap-2"><button onClick={onPrev} className="rounded p-1 text-gray-400 hover:bg-gray-100 transition"><ChevronLeft className="h-4 w-4" /></button><span className="text-sm font-medium text-gray-700 min-w-[140px] text-center">Week of {formatWeekLabel(week)}</span><button onClick={onNext} className="rounded p-1 text-gray-400 hover:bg-gray-100 transition"><ChevronRight className="h-4 w-4" /></button></div>);
 }
 
 function StatusPill({ status }: { status: "Submitted" | "Draft" | "missing" }) {
@@ -47,13 +47,13 @@ export function ManagementReportsPage() {
   const state = useAppStore();
   const [activeTab, setActiveTab] = useState<"my" | "team" | "management">("my");
   const myEmployee = useMemo(() => { const bySystem = state.hrEmployees.find((e) => e.systemUserId === state.activeUserId && e.active); if (bySystem) return bySystem; return state.hrEmployees.find((e) => e.active) ?? state.hrEmployees[0] ?? null; }, [state.hrEmployees, state.activeUserId]);
-  const tabs: { key: typeof activeTab; label: string }[] = [{ key: "my", label: "My Report" }, { key: "team", label: "Team View" }, { key: "management", label: "Management" }];
+  const tabs: { key: typeof activeTab; label: string; icon: React.ReactNode }[] = [{ key: "my", label: "My Report", icon: <FileText className="h-3.5 w-3.5" /> }, { key: "team", label: "Team View", icon: <LayoutGrid className="h-3.5 w-3.5" /> }, { key: "management", label: "Management", icon: <BarChart2 className="h-3.5 w-3.5" /> }];
 
   return (
     <div className="space-y-6">
       <UiPageHeader title="Management Reports" subtitle="Weekly staff reports & team analytics" />
       <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1 w-fit">
-        {tabs.map((t) => (<button key={t.key} onClick={() => setActiveTab(t.key)} className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>{t.label}</button>))}
+        {tabs.map((t) => (<button key={t.key} onClick={() => setActiveTab(t.key)} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all ${activeTab === t.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>{t.icon}{t.label}</button>))}
       </div>
       {activeTab === "my" && <MyReportTab myEmployee={myEmployee} />}
       {activeTab === "team" && <TeamViewTab myEmployee={myEmployee} />}
@@ -191,7 +191,7 @@ function TeamViewTab({ myEmployee }: { myEmployee: HrEmployee | null }) {
       </div>
 
       {/* Team summary */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
         <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-semibold text-gray-800">Team Summary</h3><button onClick={() => state.generateWeeklyReportAiSummary("team", myEmployee.id, teamWeek)} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition"><Sparkles className="h-3.5 w-3.5" /> Generate</button></div>
         {teamSummary ? (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1"><p className="font-semibold text-gray-800">{teamSummary.overallVerdict}</p><p className="text-xs text-gray-600">{teamSummary.workloadAssessment}</p><p className="text-xs text-gray-600">{teamSummary.productivityAssessment}</p>{teamSummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{teamSummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-1">Based on {submittedCount} of {directReports.length} submitted reports.</p></div>) : <p className="text-xs text-gray-400">No team summary generated yet.</p>}
       </div>
@@ -249,7 +249,7 @@ function ManagementTab() {
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="border-b border-gray-100 px-5 py-3"><h3 className="text-sm font-semibold text-gray-800">Department Breakdown</h3></div>
+            <div className="px-4 py-3 border-b border-gray-100"><h3 className="text-sm font-semibold text-gray-800">Department Breakdown</h3></div>
             <table className="w-full text-left"><thead className="bg-gray-50 border-b border-gray-200"><tr><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Department</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Headcount</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Submission %</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Avg Workload</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Avg Productivity</th><th className="px-3 py-2.5 text-[10px] font-semibold text-gray-500 uppercase">Flags</th><th className="w-8" /></tr></thead>
               <tbody>{deptBreakdown.map((d) => (<tr key={d.id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors cursor-pointer" onClick={() => { setDeptFilter(d.id); setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth" }), 100); }}><td className="px-3 py-2 text-sm font-medium text-indigo-600 cursor-pointer">{d.name}</td><td className="px-3 py-2 text-sm text-gray-600">{d.headcount}</td><td className="px-3 py-2 text-sm text-gray-600">{d.submitted} / {d.headcount} <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-600">{d.subPct}%</span></td><td className="px-4 py-2.5 text-sm text-gray-600">{d.avgWl}</td><td className="px-4 py-2.5 text-sm text-gray-600">{d.avgPr}</td><td className="px-4 py-2.5">{d.flags > 0 ? <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">{d.flags}</span> : <span className="text-gray-400">–</span>}</td><td className="px-4 py-2.5 text-gray-400">→</td></tr>))}{deptBreakdown.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-xs text-gray-400">No departments.</td></tr>}</tbody>
             </table>
@@ -271,7 +271,7 @@ function ManagementTab() {
             </table>
           </div>
 
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5">
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
             <div className="flex items-center gap-2 mb-3"><h3 className="text-sm font-semibold text-gray-800">Company AI Summary</h3><span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">Weekly</span></div>
             {companySummary && (<div className="rounded-lg border border-violet-200 bg-violet-50/50 p-4 text-sm space-y-1 mb-4"><div className="flex items-center gap-1.5 mb-1"><Sparkles className="h-3.5 w-3.5 text-violet-600" /><span className="text-xs font-medium text-violet-700">AI Summary</span></div><p className="font-semibold text-gray-800">{companySummary.overallVerdict}</p><p className="text-xs text-gray-600">{companySummary.workloadAssessment}</p><p className="text-xs text-gray-600">{companySummary.productivityAssessment}</p>{companySummary.flags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{companySummary.flags.map((f, i) => <span key={i} className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] text-rose-600">{f}</span>)}</div>}<p className="text-[10px] text-gray-400 mt-2">Generated {timeAgo(companySummary.generatedAt)}</p></div>)}
             <div className="flex flex-wrap gap-1.5 mb-3">{AI_PROMPTS.map((p) => <button key={p} onClick={() => setAiInput(p)} className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-[11px] text-gray-600 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition">{p}</button>)}</div>
