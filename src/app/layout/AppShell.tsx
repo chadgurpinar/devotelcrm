@@ -5,7 +5,7 @@ import {
   Building2, FileText, StickyNote, Radio, Phone, Network, UserCheck,
   ClipboardList, PieChart, Users, UserCircle, Monitor, GitBranch, DollarSign,
   Receipt, CalendarOff, CreditCard, Settings2, Home, Landmark, Settings,
-  FolderKanban, LayoutList,
+  FolderKanban, LayoutList, ClipboardCheck,
 } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { Button } from "../../components/ui";
@@ -118,6 +118,7 @@ export function AppShell() {
       title: "CRM",
       items: [
         { to: "/events", label: "Events", icon: <Calendar /> },
+        { to: "/event-evaluation", label: "Event Planning", icon: <ClipboardCheck size={16} /> },
         { to: "/leads", label: "Leads", icon: <TrendingUp />, badge: badge(leadsCount, "bg-amber-500") },
         { to: "/interconnection", label: "Interconnection", icon: <GitMerge />, badge: badge(interconnectionCount, "bg-cyan-500") },
         { to: "/accounts", label: "Clients", icon: <Building2 /> },

@@ -3,6 +3,8 @@ import { AppShell } from "./layout/AppShell";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { EventsListPage } from "../features/events/EventsListPage";
 import { EventDetailPage } from "../features/events/EventDetailPage";
+import { EventEvaluationPage } from "../features/events/EventEvaluationPage";
+import { EventEvaluationDetailPage } from "../features/events/EventEvaluationDetailPage";
 import { CompaniesPage } from "../features/crm/CompaniesPage";
 import { CompanyDetailPage } from "../features/crm/CompanyDetailPage";
 import { LeadsPage } from "../features/leads/LeadsPage";
@@ -43,6 +45,8 @@ export const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: "/events", element: <EventsListPage /> },
       { path: "/events/:eventId", element: <EventDetailPage /> },
+      { path: "/event-evaluation", element: <EventEvaluationPage /> },
+      { path: "/event-evaluation/:eventId", element: <EventEvaluationDetailPage /> },
       { path: "/leads", element: <LeadsPage /> },
       { path: "/interconnection", element: <InterconnectionPage /> },
       { path: "/accounts", element: <CompaniesPage companyStatus="CLIENT" title="Clients" /> },

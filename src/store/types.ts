@@ -137,6 +137,48 @@ export interface Event {
   startDate: string;
   endDate: string;
   description: string;
+  planningStatus?: "Planned" | "PlanningComplete" | "Attended" | "Skipped";
+}
+
+export type EventAttendDecision = "Undecided" | "Attend" | "Skip";
+export type EventParticipationType = "Sponsor" | "Ticket" | "Undecided";
+
+export interface EventSponsorshipOption {
+  id: string;
+  label: string;
+  priceEur: number;
+}
+
+export interface EventEvaluation {
+  id: string;
+  eventId: string;
+  year: number;
+  attendDecision: EventAttendDecision;
+  participationType: EventParticipationType;
+  sponsorshipOptions: EventSponsorshipOption[];
+  selectedSponsorshipId?: string;
+  ticketPricePerPersonEur?: number;
+  estimatedAttendeesCount: number;
+  estimatedFlightPerPersonEur: number;
+  estimatedHotelPerPersonEur: number;
+  estimatedDailyExpensePerPersonEur: number;
+  estimatedEventDays: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type EventCostCategory = "Sponsorship" | "Ticket" | "Flight" | "Hotel" | "DailyExpense" | "Other";
+
+export interface EventCostLineItem {
+  id: string;
+  eventId: string;
+  category: EventCostCategory;
+  description: string;
+  amountEur: number;
+  paidByUserId?: string;
+  receiptFileName?: string;
+  createdAt: string;
 }
 
 export interface EventStaff {
@@ -1412,6 +1454,8 @@ export interface DbState {
   weeklyStaffReports: WeeklyStaffReport[];
   weeklyReportManagerComments: WeeklyReportManagerComment[];
   weeklyReportAiSummaries: WeeklyReportAiSummary[];
+  eventEvaluations: EventEvaluation[];
+  eventCostLineItems: EventCostLineItem[];
   outbox: string[];
 }
 

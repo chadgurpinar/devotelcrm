@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, CheckSquare, ChevronRight, Radio, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, Calendar, CheckSquare, ChevronRight, Radio, TrendingUp, Users } from "lucide-react";
 import { Badge } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import { getUserName } from "../../store/selectors";
@@ -67,6 +67,27 @@ export function DashboardPage() {
       .slice(0, 5),
     [state.nocCases],
   );
+
+  const currentYear = new Date().getFullYear();
+  const evalStats = useMemo(() => {
+    const yearEvals = state.eventEvaluations.filter((ev) => ev.year === currentYear);
+    const attending = yearEvals.filter((ev) => ev.attendDecision === "Attend");
+    const budget = attending.reduce((sum, ev) => {
+      const sponsorship = ev.selectedSponsorshipId
+        ? (ev.sponsorshipOptions.find((o) => o.id === ev.selectedSponsorshipId)?.priceEur ?? 0) : 0;
+      const tickets = ev.participationType === "Ticket"
+        ? (ev.ticketPricePerPersonEur ?? 0) * ev.estimatedAttendeesCount : 0;
+      const participation = ev.participationType === "Sponsor" ? sponsorship : tickets;
+      const travel = ev.estimatedAttendeesCount * (
+        ev.estimatedFlightPerPersonEur +
+        ev.estimatedHotelPerPersonEur * ev.estimatedEventDays +
+        ev.estimatedDailyExpensePerPersonEur * ev.estimatedEventDays
+      );
+      return sum + participation + travel;
+    }, 0);
+    const total = state.events.filter((e) => e.startDate && new Date(e.startDate).getFullYear() === currentYear).length;
+    return { total, attending: attending.length, budget };
+  }, [state.eventEvaluations, state.events, currentYear]);
 
   return (
     <div className="space-y-5">
@@ -175,6 +196,31 @@ export function DashboardPage() {
                 </div>
               ))
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Event Evaluation widget */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
+          <h3 className="text-sm font-semibold text-gray-800">Event Evaluation</h3>
+          <button onClick={() => navigate("/event-evaluation")} className="text-xs font-medium text-indigo-600 hover:text-indigo-700">Plan events →</button>
+        </div>
+        <div className="grid grid-cols-3 divide-x divide-gray-100">
+          <div className="px-5 py-4 text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-1">
+              <Calendar className="h-4 w-4 text-gray-400" />
+              <p className="text-[10px] font-medium text-gray-500">Events ({currentYear})</p>
+            </div>
+            <p className="text-xl font-bold text-gray-900">{evalStats.total}</p>
+          </div>
+          <div className="px-5 py-4 text-center">
+            <p className="text-[10px] font-medium text-gray-500 mb-1">Attending</p>
+            <p className="text-xl font-bold text-emerald-600">{evalStats.attending}</p>
+          </div>
+          <div className="px-5 py-4 text-center">
+            <p className="text-[10px] font-medium text-gray-500 mb-1">Est. Budget</p>
+            <p className="text-xl font-bold text-gray-900">{evalStats.budget > 0 ? `${evalStats.budget.toLocaleString("en")} EUR` : "—"}</p>
           </div>
         </div>
       </div>

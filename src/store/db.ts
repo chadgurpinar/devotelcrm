@@ -9,6 +9,8 @@ import {
   Contact,
   DbState,
   Event,
+  EventCostLineItem,
+  EventEvaluation,
   EventStaff,
   HrAsset,
   HrAssetAssignment,
@@ -92,6 +94,11 @@ interface DbActions {
   createMeeting: (payload: Omit<Meeting, "id">) => void;
   updateMeeting: (meeting: Meeting) => void;
   deleteMeeting: (meetingId: string) => void;
+  upsertEventEvaluation: (data: Omit<EventEvaluation, "id" | "createdAt" | "updatedAt">) => string;
+  deleteEventEvaluation: (id: string) => void;
+  addEventCostLineItem: (data: Omit<EventCostLineItem, "id" | "createdAt">) => string;
+  updateEventCostLineItem: (item: EventCostLineItem) => void;
+  deleteEventCostLineItem: (id: string) => void;
   createCompany: (payload: Omit<Company, "id">) => string;
   updateCompany: (company: Company) => void;
   createContact: (payload: Omit<Contact, "id">) => string;
@@ -1203,6 +1210,48 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         ...state,
         meetings: state.meetings.filter((meeting) => meeting.id !== meetingId),
         notes: state.notes.filter((note) => note.relatedMeetingId !== meetingId),
+      })),
+    upsertEventEvaluation: (data) => {
+      const now = new Date().toISOString();
+      const existing = get().eventEvaluations.find((e) => e.eventId === data.eventId && e.year === data.year);
+      if (existing) {
+        set((state) => ({
+          ...state,
+          eventEvaluations: state.eventEvaluations.map((e) =>
+            e.id === existing.id ? { ...e, ...data, updatedAt: now } : e,
+          ),
+        }));
+        return existing.id;
+      }
+      const id = uid("ee");
+      set((state) => ({
+        ...state,
+        eventEvaluations: [...state.eventEvaluations, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    deleteEventEvaluation: (id) =>
+      set((state) => ({
+        ...state,
+        eventEvaluations: state.eventEvaluations.filter((e) => e.id !== id),
+      })),
+    addEventCostLineItem: (data) => {
+      const id = uid("ecl");
+      set((state) => ({
+        ...state,
+        eventCostLineItems: [...state.eventCostLineItems, { ...data, id, createdAt: new Date().toISOString() }],
+      }));
+      return id;
+    },
+    updateEventCostLineItem: (item) =>
+      set((state) => ({
+        ...state,
+        eventCostLineItems: state.eventCostLineItems.map((e) => (e.id === item.id ? item : e)),
+      })),
+    deleteEventCostLineItem: (id) =>
+      set((state) => ({
+        ...state,
+        eventCostLineItems: state.eventCostLineItems.filter((e) => e.id !== id),
       })),
     createCompany: (payload) => {
       const id = uid("c");
@@ -4407,7 +4456,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 29,
+    version: 30,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -5746,6 +5795,12 @@ export const useAppStore = create<AppStore>()(
         weeklyReportAiSummaries: Array.isArray((state as Record<string, unknown>).weeklyReportAiSummaries)
           ? (state as Record<string, unknown>).weeklyReportAiSummaries as WeeklyReportAiSummary[]
           : [],
+        eventEvaluations: Array.isArray((state as Record<string, unknown>).eventEvaluations)
+          ? (state as Record<string, unknown>).eventEvaluations as EventEvaluation[]
+          : fallback.eventEvaluations,
+        eventCostLineItems: Array.isArray((state as Record<string, unknown>).eventCostLineItems)
+          ? (state as Record<string, unknown>).eventCostLineItems as EventCostLineItem[]
+          : fallback.eventCostLineItems,
       } as unknown as AppStore;
     },
   }),

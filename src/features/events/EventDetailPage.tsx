@@ -10,8 +10,9 @@ import { EventCalendar2Day } from "./EventCalendar2Day";
 import { StaffTravelModal } from "./StaffTravelModal";
 import { MeetingCard } from "./MeetingCard";
 import { MeetingStartModal } from "./MeetingStartModal";
+import { EventCostsTab } from "./EventCostsTab";
 
-type Tab = "Stream Board" | "Meetings List" | "Event Notes" | "Team Travel";
+type Tab = "Stream Board" | "Meetings List" | "Event Notes" | "Team Travel" | "Costs / Expenses";
 
 function toDateTimeLocalInput(value?: string): string {
   if (!value) return "";
@@ -204,7 +205,7 @@ export function EventDetailPage() {
       </div>
 
       <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-1">
-        {(["Stream Board", "Meetings List", "Event Notes", "Team Travel"] as Tab[]).map((item) => (
+        {(["Stream Board", "Meetings List", "Event Notes", "Team Travel", "Costs / Expenses"] as Tab[]).map((item) => (
           <Button
             key={item}
             variant={item === tab ? "primary" : "ghost"}
@@ -460,6 +461,8 @@ export function EventDetailPage() {
           </table>
         </Card>
       )}
+
+      {tab === "Costs / Expenses" && <EventCostsTab eventId={eventId} />}
 
       {createOpen && (
         <MeetingModal

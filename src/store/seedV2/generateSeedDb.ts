@@ -750,6 +750,32 @@ export function generateSeedDb(
     weeklyStaffReports: mgmtReports.weeklyStaffReports,
     weeklyReportManagerComments: mgmtReports.weeklyReportManagerComments,
     weeklyReportAiSummaries: mgmtReports.weeklyReportAiSummaries,
+    eventEvaluations: (() => {
+      const evts = crmCore.events;
+      if (evts.length < 3) return [];
+      const now = new Date().toISOString();
+      return [
+        { id: "ee-1", eventId: evts[0].id, year: 2026, attendDecision: "Attend" as const, participationType: "Sponsor" as const, sponsorshipOptions: [{ id: "so-1", label: "Gold Sponsor", priceEur: 15000 }, { id: "so-2", label: "Silver Sponsor", priceEur: 8000 }], selectedSponsorshipId: "so-1", estimatedAttendeesCount: 4, estimatedFlightPerPersonEur: 450, estimatedHotelPerPersonEur: 180, estimatedDailyExpensePerPersonEur: 80, estimatedEventDays: 3, notes: "Key industry event — high priority", createdAt: now, updatedAt: now },
+        { id: "ee-2", eventId: evts[1].id, year: 2026, attendDecision: "Attend" as const, participationType: "Ticket" as const, sponsorshipOptions: [], ticketPricePerPersonEur: 350, estimatedAttendeesCount: 2, estimatedFlightPerPersonEur: 300, estimatedHotelPerPersonEur: 150, estimatedDailyExpensePerPersonEur: 60, estimatedEventDays: 2, createdAt: now, updatedAt: now },
+        { id: "ee-3", eventId: evts[2].id, year: 2026, attendDecision: "Skip" as const, participationType: "Undecided" as const, sponsorshipOptions: [], estimatedAttendeesCount: 0, estimatedFlightPerPersonEur: 0, estimatedHotelPerPersonEur: 0, estimatedDailyExpensePerPersonEur: 0, estimatedEventDays: 2, notes: "Too expensive this year", createdAt: now, updatedAt: now },
+        ...(evts.length >= 4 ? [{ id: "ee-4", eventId: evts[3].id, year: 2026, attendDecision: "Undecided" as const, participationType: "Undecided" as const, sponsorshipOptions: [], estimatedAttendeesCount: 3, estimatedFlightPerPersonEur: 500, estimatedHotelPerPersonEur: 200, estimatedDailyExpensePerPersonEur: 70, estimatedEventDays: 3, createdAt: now, updatedAt: now }] : []),
+      ];
+    })(),
+    eventCostLineItems: (() => {
+      const evts = crmCore.events;
+      if (evts.length < 2) return [];
+      const now = new Date().toISOString();
+      const u0 = users[0]?.id ?? "";
+      const u1 = users[1]?.id ?? u0;
+      return [
+        { id: "ecl-1", eventId: evts[0].id, category: "Sponsorship" as const, description: "Gold Sponsorship package", amountEur: 15000, paidByUserId: u0, createdAt: now },
+        { id: "ecl-2", eventId: evts[0].id, category: "Flight" as const, description: "Round-trip flights x4", amountEur: 1920, paidByUserId: u0, createdAt: now },
+        { id: "ecl-3", eventId: evts[0].id, category: "Hotel" as const, description: "4 rooms x 3 nights", amountEur: 2160, paidByUserId: u0, createdAt: now },
+        { id: "ecl-4", eventId: evts[0].id, category: "DailyExpense" as const, description: "Per diem x4 x3 days", amountEur: 960, paidByUserId: u1, createdAt: now },
+        { id: "ecl-5", eventId: evts[1].id, category: "Ticket" as const, description: "Conference tickets x2", amountEur: 700, paidByUserId: u0, createdAt: now },
+        { id: "ecl-6", eventId: evts[1].id, category: "Flight" as const, description: "Round-trip flights x2", amountEur: 620, paidByUserId: u1, createdAt: now },
+      ];
+    })(),
     outbox: [],
   };
 
