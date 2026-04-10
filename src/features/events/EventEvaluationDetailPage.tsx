@@ -70,7 +70,7 @@ export function EventEvaluationDetailPage() {
   const totalEstimated = participationCost + travelCost;
 
   const handleSave = useCallback(() => {
-    if (!eventId) return;
+    if (!eventId || !event) return;
     state.upsertEventEvaluation({
       eventId,
       year: currentYear,
@@ -86,9 +86,15 @@ export function EventEvaluationDetailPage() {
       estimatedEventDays: eventDays,
       notes: notes.trim() || undefined,
     });
+    const nextStatus = attendDecision === "Attend" ? "Planned" as const
+      : attendDecision === "Skip" ? "Skipped" as const
+      : undefined;
+    if (event.planningStatus !== nextStatus) {
+      state.updateEvent({ ...event, planningStatus: nextStatus });
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }, [eventId, currentYear, attendDecision, participationType, sponsorshipOptions, selectedSponsorshipId, ticketPrice, attendeesCount, flightPerPerson, hotelPerPerson, dailyExpense, eventDays, notes, state]);
+  }, [eventId, event, currentYear, attendDecision, participationType, sponsorshipOptions, selectedSponsorshipId, ticketPrice, attendeesCount, flightPerPerson, hotelPerPerson, dailyExpense, eventDays, notes, state]);
 
   function addSponsorOption() {
     tempSponsorCounter++;

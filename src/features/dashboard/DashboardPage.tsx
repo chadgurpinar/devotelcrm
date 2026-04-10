@@ -220,7 +220,14 @@ export function DashboardPage() {
           </div>
           <div className="px-5 py-4 text-center">
             <p className="text-[10px] font-medium text-gray-500 mb-1">Est. Budget</p>
-            <p className="text-xl font-bold text-gray-900">{evalStats.budget > 0 ? `${evalStats.budget.toLocaleString("en")} EUR` : "—"}</p>
+            {evalStats.budget > 0 ? (
+              <>
+                <p className="text-xl font-bold text-gray-900">{evalStats.budget.toLocaleString("en")} &ndash; {Math.round(evalStats.budget * 1.2).toLocaleString("en")} EUR</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">{evalStats.attending} event{evalStats.attending !== 1 ? "s" : ""} planned</p>
+              </>
+            ) : (
+              <p className="text-xl font-bold text-gray-900">—</p>
+            )}
           </div>
         </div>
       </div>

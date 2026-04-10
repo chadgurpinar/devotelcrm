@@ -30,7 +30,7 @@ function estimatedTotal(ev: EventEvaluation): number {
   return participation + travel;
 }
 
-type FilterTab = "all" | "Attend" | "Skip" | "Undecided";
+type FilterTab = "all" | "Planned" | "Attend" | "Skip" | "Undecided";
 
 export function EventEvaluationPage() {
   const state = useAppStore();
@@ -40,6 +40,8 @@ export function EventEvaluationPage() {
   const [filter, setFilter] = useState<FilterTab>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [addEventId, setAddEventId] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionInitialized, setSelectionInitialized] = useState(false);
 
   const yearEvents = useMemo(() => {
     return state.events.filter((e) => {
@@ -59,7 +61,7 @@ export function EventEvaluationPage() {
     return m;
   }, [evaluations]);
 
-  const rows = useMemo(() => {
+  const allRows = useMemo(() => {
     const eventsWithEval = yearEvents.map((event) => ({
       event,
       evaluation: evalMap.get(event.id) ?? null,
@@ -70,16 +72,50 @@ export function EventEvaluationPage() {
         if (event) eventsWithEval.push({ event, evaluation: ev });
       }
     });
-    if (filter === "all") return eventsWithEval;
-    return eventsWithEval.filter((r) => {
+    return eventsWithEval;
+  }, [yearEvents, evaluations, evalMap, state.events]);
+
+  const rows = useMemo(() => {
+    if (filter === "all") return allRows;
+    if (filter === "Planned") return allRows.filter((r) => r.evaluation !== null);
+    return allRows.filter((r) => {
       const decision = r.evaluation?.attendDecision ?? "Undecided";
       return decision === filter;
     });
-  }, [yearEvents, evaluations, evalMap, filter, state.events]);
+  }, [allRows, filter]);
+
+  // Auto-select all Attend events once on load
+  if (!selectionInitialized && evaluations.length > 0) {
+    const attendIds = new Set(evaluations.filter((ev) => ev.attendDecision === "Attend").map((ev) => ev.eventId));
+    setSelectedIds(attendIds);
+    setSelectionInitialized(true);
+  }
+
+  function toggleSelection(eventId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventId)) next.delete(eventId);
+      else next.add(eventId);
+      return next;
+    });
+  }
+
+  const costMap = useMemo(() => {
+    const m = new Map<string, number>();
+    state.eventCostLineItems.forEach((item) => {
+      m.set(item.eventId, (m.get(item.eventId) ?? 0) + item.amountEur);
+    });
+    return m;
+  }, [state.eventCostLineItems]);
+
+  const selectedEvals = useMemo(() => {
+    return evaluations.filter((ev) => selectedIds.has(ev.eventId));
+  }, [evaluations, selectedIds]);
+
+  const selectedBudget = selectedEvals.reduce((sum, ev) => sum + estimatedTotal(ev), 0);
+  const selectedBudgetBuffer = Math.round(selectedBudget * 1.2);
 
   const attendingEvals = evaluations.filter((ev) => ev.attendDecision === "Attend");
-  const totalEstimated = attendingEvals.reduce((sum, ev) => sum + estimatedTotal(ev), 0);
-  const totalWithBuffer = Math.round(totalEstimated * 1.2);
 
   const unevaluatedEvents = useMemo(() => {
     return state.events.filter((e) => !evalMap.has(e.id));
@@ -99,8 +135,10 @@ export function EventEvaluationPage() {
       estimatedDailyExpensePerPersonEur: 0,
       estimatedEventDays: 2,
     });
+    const targetId = addEventId;
     setAddEventId("");
     setAddOpen(false);
+    navigate(`/event-evaluation/${targetId}`);
   }
 
   const yearOptions = useMemo(() => {
@@ -113,6 +151,7 @@ export function EventEvaluationPage() {
 
   const filterTabs: { key: FilterTab; label: string }[] = [
     { key: "all", label: "All" },
+    { key: "Planned", label: "Planned" },
     { key: "Attend", label: "Attending" },
     { key: "Skip", label: "Skipped" },
     { key: "Undecided", label: "Undecided" },
@@ -131,19 +170,22 @@ export function EventEvaluationPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <UiKpiCard label="Total Events" value={rows.length} icon={<Calendar className="h-5 w-5" />} />
+        <UiKpiCard label="Total Events" value={allRows.length} icon={<Calendar className="h-5 w-5" />} />
         <UiKpiCard label="Attending" value={attendingEvals.length} className="border-emerald-200 bg-emerald-50/40" />
         <UiKpiCard
-          label="Estimated Budget"
-          value={totalEstimated > 0 ? `${totalEstimated.toLocaleString("en")} EUR` : "—"}
-          trend={totalEstimated > 0 ? { value: `up to ${totalWithBuffer.toLocaleString("en")} EUR`, positive: true } : undefined}
+          label="Selected Budget"
+          value={selectedBudget > 0 ? `${selectedBudget.toLocaleString("en")} EUR` : "—"}
+          trend={selectedBudget > 0 ? { value: `up to ${selectedBudgetBuffer.toLocaleString("en")} EUR`, positive: true } : undefined}
         />
       </div>
 
-      {attendingEvals.length > 0 && (
+      {selectedEvals.length > 0 && (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-800">
-          If we attend the {attendingEvals.length} selected event{attendingEvals.length !== 1 ? "s" : ""}, estimated total budget is between{" "}
-          <strong>{totalEstimated.toLocaleString("en")}</strong> and <strong>{totalWithBuffer.toLocaleString("en")} EUR</strong>.
+          If we attend the <strong>{selectedEvals.length}</strong> selected event{selectedEvals.length !== 1 ? "s" : ""}, estimated total budget is between{" "}
+          <strong>{selectedBudget.toLocaleString("en")}</strong> and <strong>{selectedBudgetBuffer.toLocaleString("en")} EUR</strong>.
+          {selectedEvals.length !== attendingEvals.length && (
+            <span className="ml-1 text-indigo-600">({attendingEvals.length} marked as Attend total)</span>
+          )}
         </div>
       )}
 
@@ -182,41 +224,77 @@ export function EventEvaluationPage() {
         <table className="w-full text-left">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="px-4 py-3 text-[10px] font-semibold text-gray-500 uppercase">Event</th>
-              <th className="px-4 py-3 text-[10px] font-semibold text-gray-500 uppercase">City</th>
-              <th className="px-4 py-3 text-[10px] font-semibold text-gray-500 uppercase">Dates</th>
-              <th className="px-4 py-3 text-[10px] font-semibold text-gray-500 uppercase">Decision</th>
-              <th className="px-4 py-3 text-[10px] font-semibold text-gray-500 uppercase">Type</th>
-              <th className="px-4 py-3 text-[10px] font-semibold text-gray-500 uppercase">Est. Cost</th>
+              <th className="px-3 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={rows.length > 0 && rows.every((r) => selectedIds.has(r.event.id))}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedIds((prev) => { const next = new Set(prev); rows.forEach((r) => next.add(r.event.id)); return next; });
+                    } else {
+                      setSelectedIds((prev) => { const next = new Set(prev); rows.forEach((r) => next.delete(r.event.id)); return next; });
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                />
+              </th>
+              <th className="px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase">Event</th>
+              <th className="px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase">City</th>
+              <th className="px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase">Dates</th>
+              <th className="px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase">Decision</th>
+              <th className="px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase">Type</th>
+              <th className="px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase">Est. Cost</th>
+              <th className="px-3 py-3 text-[10px] font-semibold text-gray-500 uppercase">Actual</th>
               <th className="w-10" />
             </tr>
           </thead>
           <tbody>
             {rows.map(({ event, evaluation }) => {
               const decision = evaluation?.attendDecision ?? "Undecided";
-              const cost = evaluation ? estimatedTotal(evaluation) : 0;
+              const estCost = evaluation ? estimatedTotal(evaluation) : 0;
+              const actualCost = costMap.get(event.id) ?? 0;
+              const isChecked = selectedIds.has(event.id);
               return (
                 <tr
                   key={event.id}
-                  onClick={() => navigate(`/event-evaluation/${event.id}`)}
-                  className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors cursor-pointer"
+                  className={`border-b border-gray-50 hover:bg-indigo-50/30 transition-colors cursor-pointer ${isChecked ? "bg-indigo-50/20" : ""}`}
                 >
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">{event.name}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{event.city}</td>
-                  <td className="px-4 py-3 text-xs text-gray-500">
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => toggleSelection(event.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                    />
+                  </td>
+                  <td className="px-3 py-3 text-sm font-medium text-gray-900" onClick={() => navigate(`/event-evaluation/${event.id}`)}>{event.name}</td>
+                  <td className="px-3 py-3 text-sm text-gray-600" onClick={() => navigate(`/event-evaluation/${event.id}`)}>{event.city}</td>
+                  <td className="px-3 py-3 text-xs text-gray-500" onClick={() => navigate(`/event-evaluation/${event.id}`)}>
                     {event.startDate && new Date(event.startDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                     {event.endDate && ` — ${new Date(event.endDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3" onClick={() => navigate(`/event-evaluation/${event.id}`)}>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${DECISION_BADGE[decision]}`}>{decision}</span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-500">
+                  <td className="px-3 py-3 text-xs text-gray-500" onClick={() => navigate(`/event-evaluation/${event.id}`)}>
                     {evaluation?.participationType === "Sponsor" ? "Sponsor" : evaluation?.participationType === "Ticket" ? "Ticket" : "—"}
                   </td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-700">
-                    {cost > 0 ? `${cost.toLocaleString("en")} EUR` : "—"}
+                  <td className="px-3 py-3 text-sm font-medium text-gray-700" onClick={() => navigate(`/event-evaluation/${event.id}`)}>
+                    {estCost > 0 ? `${estCost.toLocaleString("en")}` : "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3 text-sm" onClick={() => navigate(`/event-evaluation/${event.id}`)}>
+                    {actualCost > 0 ? (
+                      <span className="font-medium text-gray-700">{actualCost.toLocaleString("en")}</span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                    {actualCost > 0 && estCost > 0 && (
+                      <span className={`ml-1.5 text-[10px] font-medium ${actualCost > estCost ? "text-rose-600" : "text-emerald-600"}`}>
+                        ({actualCost > estCost ? "+" : ""}{(actualCost - estCost).toLocaleString("en")})
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3" onClick={() => navigate(`/event-evaluation/${event.id}`)}>
                     <ChevronRight className="h-4 w-4 text-gray-300" />
                   </td>
                 </tr>
@@ -224,7 +302,7 @@ export function EventEvaluationPage() {
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-xs text-gray-400">
+                <td colSpan={9} className="px-4 py-12 text-center text-xs text-gray-400">
                   No events found for {year}. Add events or change the year filter.
                 </td>
               </tr>
