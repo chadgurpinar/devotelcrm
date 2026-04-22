@@ -58,6 +58,7 @@ import {
   WeeklyReportAiSummary,
   WeeklyReportManagerComment,
   WeeklyStaffReport,
+  WholesaleTrafficRecord,
 } from "./types";
 import {
   computePayrollPreview,
@@ -4456,7 +4457,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 30,
+    version: 31,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -5801,6 +5802,9 @@ export const useAppStore = create<AppStore>()(
         eventCostLineItems: Array.isArray((state as Record<string, unknown>).eventCostLineItems)
           ? (state as Record<string, unknown>).eventCostLineItems as EventCostLineItem[]
           : fallback.eventCostLineItems,
+        wholesaleTrafficRecords: Array.isArray((state as Record<string, unknown>).wholesaleTrafficRecords)
+          ? ((state as Record<string, unknown>).wholesaleTrafficRecords as WholesaleTrafficRecord[])
+          : fallback.wholesaleTrafficRecords,
       } as unknown as AppStore;
     },
   }),

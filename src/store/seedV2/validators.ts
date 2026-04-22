@@ -107,6 +107,7 @@ function buildCounts(db: DbState): Record<keyof DbState, number> {
     weeklyReportAiSummaries: db.weeklyReportAiSummaries.length,
     eventEvaluations: db.eventEvaluations.length,
     eventCostLineItems: db.eventCostLineItems.length,
+    wholesaleTrafficRecords: db.wholesaleTrafficRecords.length,
     outbox: db.outbox.length,
   };
 }

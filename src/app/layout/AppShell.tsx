@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, CheckSquare, BarChart2, Calendar, TrendingUp, GitMerge,
+  LayoutDashboard, CheckSquare, BarChart2, Calendar, TrendingUp, GitMerge, Activity,
   Building2, FileText, StickyNote, Radio, Phone, Network, UserCheck,
   ClipboardList, PieChart, Users, UserCircle, Monitor, GitBranch, DollarSign,
   Receipt, CalendarOff, CreditCard, Settings2, Home, Landmark, Settings,
@@ -135,6 +135,7 @@ export function AppShell() {
         { to: "/ops/account-managers", label: "Account Managers", icon: <UserCheck /> },
         { to: "/ops/noc-performance-audit", label: "Performance Audit", icon: <ClipboardList /> },
         { to: "/ops/analytics", label: "A2P Analytics", icon: <PieChart /> },
+        { to: "/ops/traffic-intelligence", label: "Traffic Intelligence", icon: <Activity size={16} /> },
       ],
     },
     {

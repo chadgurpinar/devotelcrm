@@ -1401,6 +1401,25 @@ export interface WeeklyReportAiSummary {
   generatedAt: string;
 }
 
+export type WholesaleTrafficType = "Direct" | "Generated";
+export type TrafficSourceType = "Facebook" | "TikTok" | "WhatsApp" | "Other";
+
+export interface WholesaleTrafficRecord {
+  id: string;
+  timestamp: string;
+  trafficType: WholesaleTrafficType;
+  trafficSourceType: TrafficSourceType;
+  sourceAccount: string;
+  destinationAccount: string;
+  senderId: string;
+  country: string;
+  operator: string;
+  submitCount: number;
+  deliveryCount: number;
+  buyPrice: number;
+  sellPrice: number;
+}
+
 export interface DbState {
   version: number;
   activeUserId: string;
@@ -1456,6 +1475,7 @@ export interface DbState {
   weeklyReportAiSummaries: WeeklyReportAiSummary[];
   eventEvaluations: EventEvaluation[];
   eventCostLineItems: EventCostLineItem[];
+  wholesaleTrafficRecords: WholesaleTrafficRecord[];
   outbox: string[];
 }
 
