@@ -22,6 +22,8 @@ import { seedHr } from "./seedHr";
 import { seedOps } from "./seedOps";
 import { assertSeedDb, logSeedDiagnosticsOnce } from "./validators";
 import { seedWholesaleTraffic } from "./seedWholesaleTraffic";
+import { seedTrafficIntelV3 } from "./seedTrafficIntelV3";
+import { seedFinance } from "./seedFinance";
 
 let determinismProbeInProgress = false;
 
@@ -512,6 +514,12 @@ export function generateSeedDb(
     activeUserId,
   });
 
+  const finance = seedFinance({
+    rng: rootRng.fork("finance"),
+    baseNowIso,
+    companies: companiesWithContacts,
+  });
+
   const mgmtReports = seedManagementReports(hr.hrEmployees, activeUserId);
 
   const db: DbState = {
@@ -779,6 +787,8 @@ export function generateSeedDb(
       ];
     })(),
     wholesaleTrafficRecords: seedWholesaleTraffic(trafficRng, baseNowIso),
+    ...seedTrafficIntelV3(baseNowIso),
+    ...finance,
     outbox: [],
   };
 
@@ -813,8 +823,12 @@ export function generateSeedDb(
             opsCases: state.opsCases.length,
             opsRequests: state.opsRequests.length,
             wholesaleTrafficRecords: state.wholesaleTrafficRecords.length,
+            trafficBaselines: state.trafficBaselines.length,
+            trafficAlertRules: state.trafficAlertRules.length,
+            trafficAlertEvents: state.trafficAlertEvents.length,
           },
           wholesaleTrafficIds: state.wholesaleTrafficRecords.map((row) => row.id),
+          trafficAlertEventIds: state.trafficAlertEvents.map((row) => row.id),
         });
       if (digest(db) !== digest(probeDb)) {
         throw new Error("Seed determinism probe failed: repeated generation produced different IDs/counts.");

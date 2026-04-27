@@ -108,6 +108,18 @@ function buildCounts(db: DbState): Record<keyof DbState, number> {
     eventEvaluations: db.eventEvaluations.length,
     eventCostLineItems: db.eventCostLineItems.length,
     wholesaleTrafficRecords: db.wholesaleTrafficRecords.length,
+    trafficBaselines: db.trafficBaselines.length,
+    trafficAlertRules: db.trafficAlertRules.length,
+    trafficAlertEvents: db.trafficAlertEvents.length,
+    finCounterparties: db.finCounterparties.length,
+    finArApTransactions: db.finArApTransactions.length,
+    finInvoices: db.finInvoices.length,
+    finInvoiceLines: db.finInvoiceLines.length,
+    finPayments: db.finPayments.length,
+    finPaymentApplications: db.finPaymentApplications.length,
+    finProjections: db.finProjections.length,
+    finInternalExpenses: db.finInternalExpenses.length,
+    finEntityCashBalances: db.finEntityCashBalances.length,
     outbox: db.outbox.length,
   };
 }

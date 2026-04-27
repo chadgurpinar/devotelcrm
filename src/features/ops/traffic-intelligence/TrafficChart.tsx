@@ -5,7 +5,9 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  ComposedChart,
   Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,6 +17,7 @@ import type { WholesaleTrafficRecord } from "../../../store/types";
 import {
   buildCompareBuckets,
   buildTimeBuckets,
+  blendedMarginFromBucket,
   compareDirectDlr,
   compareDirectMargin,
   compareGenDlr,
@@ -28,9 +31,8 @@ import {
   type CompareBucketRow,
   type CompareDimension,
   type TimeBucketRow,
+  type TrafficChartMode,
 } from "./trafficUtils";
-
-type ChartMode = "Trend" | "Compare" | "Mix";
 
 const COL_DIRECT = "#1e3a5f";
 const COL_GEN = "#94a3b8";
@@ -81,26 +83,58 @@ function comparePair(row: CompareBucketRow, metric: ChartMetric): { direct: numb
 
 interface TrafficChartProps {
   filtered: WholesaleTrafficRecord[];
+  filteredCompare?: WholesaleTrafficRecord[] | null;
+  chartMode: TrafficChartMode;
+  onChartMode: (m: TrafficChartMode) => void;
+  metric: ChartMetric;
+  onMetric: (m: ChartMetric) => void;
+  granularity: ChartGranularity;
+  onGranularity: (g: ChartGranularity) => void;
+  compareDim: CompareDimension;
+  onCompareDim: (d: CompareDimension) => void;
+  /** Click a Compare bar to apply that dimension as a filter (soft drill). */
+  onCompareDrill?: (dim: CompareDimension, value: string) => void;
 }
 
-export function TrafficChart({ filtered }: TrafficChartProps) {
-  const [chartMode, setChartMode] = useState<ChartMode>("Trend");
-  const [metric, setMetric] = useState<ChartMetric>("Volume");
-  const [granularity, setGranularity] = useState<ChartGranularity>("Daily");
-  const [compareDim, setCompareDim] = useState<CompareDimension>("country");
+export function TrafficChart({
+  filtered,
+  filteredCompare,
+  chartMode,
+  onChartMode,
+  metric,
+  onMetric,
+  granularity,
+  onGranularity,
+  compareDim,
+  onCompareDim,
+  onCompareDrill,
+}: TrafficChartProps) {
+  const [mixMarginOverlay, setMixMarginOverlay] = useState(true);
 
   const trendData = useMemo(() => {
     const rows = buildTimeBuckets(filtered, granularity);
+    const rowsB = filteredCompare?.length ? buildTimeBuckets(filteredCompare, granularity) : null;
+    const mapB = new Map((rowsB ?? []).map((r) => [r.key, r]));
     return rows.map((row) => {
       const { direct, generated } = trendPair(row, metric);
+      const bRow = mapB?.get(row.key);
+      const totalB =
+        bRow && metric === "Volume"
+          ? bRow.directVolume + bRow.generatedVolume
+          : bRow && metric === "Profit"
+            ? bRow.directProfit + bRow.generatedProfit
+            : bRow
+              ? trendPair(bRow, metric).direct + trendPair(bRow, metric).generated
+              : undefined;
       return {
         label: row.label,
         Direct: Math.round(direct * 1000) / 1000,
         Generated: Math.round(generated * 1000) / 1000,
         total: direct + generated,
+        compareTotal: totalB !== undefined ? Math.round(totalB * 1000) / 1000 : undefined,
       };
     });
-  }, [filtered, granularity, metric]);
+  }, [filtered, filteredCompare, granularity, metric]);
 
   const mixData = useMemo(() => {
     const rows = buildTimeBuckets(filtered, granularity);
@@ -110,6 +144,7 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
       TikTok: row.tiktok,
       WhatsApp: row.whatsapp,
       Other: row.other,
+      marginPct: row.bucketTotalRevenue > 0 ? blendedMarginFromBucket(row) * 100 : 0,
     }));
   }, [filtered, granularity]);
 
@@ -138,7 +173,7 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
             <button
               key={m}
               type="button"
-              onClick={() => setChartMode(m)}
+              onClick={() => onChartMode(m)}
               className={`rounded-md px-3 py-1 text-xs font-semibold ${
                 chartMode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"
               }`}
@@ -151,7 +186,7 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
           <select
             className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700"
             value={metric}
-            onChange={(e) => setMetric(e.target.value as ChartMetric)}
+            onChange={(e) => onMetric(e.target.value as ChartMetric)}
           >
             <option value="Volume">Volume</option>
             <option value="Profit">Profit</option>
@@ -164,7 +199,7 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
         <select
           className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700"
           value={granularity}
-          onChange={(e) => setGranularity(e.target.value as ChartGranularity)}
+          onChange={(e) => onGranularity(e.target.value as ChartGranularity)}
         >
           <option value="Hourly">Hourly</option>
           <option value="Daily">Daily</option>
@@ -174,7 +209,7 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
           <select
             className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700"
             value={compareDim}
-            onChange={(e) => setCompareDim(e.target.value as CompareDimension)}
+            onChange={(e) => onCompareDim(e.target.value as CompareDimension)}
           >
             <option value="country">Country</option>
             <option value="operator">Operator</option>
@@ -182,6 +217,12 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
             <option value="destinationAccount">Receiver</option>
             <option value="trafficSourceType">Source type</option>
           </select>
+        )}
+        {chartMode === "Mix" && (
+          <label className="flex cursor-pointer items-center gap-1 text-[10px] font-medium text-slate-600">
+            <input type="checkbox" checked={mixMarginOverlay} onChange={(e) => setMixMarginOverlay(e.target.checked)} />
+            Margin overlay
+          </label>
         )}
         <div className="ml-auto flex items-center gap-3 text-[10px] text-slate-500">
           <span className="flex items-center gap-1">
@@ -198,7 +239,7 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
       <div className="min-h-[280px] flex-1">
         {chartMode === "Trend" && (
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={trendData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+            <ComposedChart data={trendData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="fillDirect" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={COL_DIRECT} stopOpacity={0.35} />
@@ -213,19 +254,45 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="#94a3b8" />
               <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" width={44} />
               <Tooltip
-                formatter={(v: number, name: string) => [`${v.toLocaleString()}${metricSuffix}`, name]}
+                formatter={(value, name) => {
+                  const v = typeof value === "number" ? value : Number(value);
+                  if (value === undefined || value === null || Number.isNaN(v)) return ["—", String(name)];
+                  return [`${v.toLocaleString()}${metricSuffix}`, String(name)];
+                }}
                 labelFormatter={(l) => String(l)}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Area type="monotone" dataKey="Direct" stroke={COL_DIRECT} fill="url(#fillDirect)" strokeWidth={2} />
               <Area type="monotone" dataKey="Generated" stroke={COL_GEN} fill="url(#fillGen)" strokeWidth={2} />
-            </AreaChart>
+              {filteredCompare && filteredCompare.length > 0 && (
+                <Line
+                  type="monotone"
+                  dataKey="compareTotal"
+                  name="Compare window (total)"
+                  stroke="#f97316"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  dot={false}
+                  connectNulls
+                />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
         )}
 
         {chartMode === "Compare" && (
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={compareData} margin={{ top: 8, right: 12, left: 0, bottom: 32 }}>
+            <BarChart
+              data={compareData}
+              margin={{ top: 8, right: 12, left: 0, bottom: 32 }}
+              style={{ cursor: onCompareDrill ? "pointer" : undefined }}
+              onClick={(next) => {
+                if (!onCompareDrill) return;
+                const pl = next?.activePayload?.[0]?.payload as { full?: string } | undefined;
+                const full = pl?.full;
+                if (full) onCompareDrill(compareDim, full);
+              }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="#94a3b8" interval={0} angle={-18} textAnchor="end" height={48} />
               <YAxis tick={{ fontSize: 10 }} stroke="#94a3b8" width={44} />
@@ -237,7 +304,7 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
           </ResponsiveContainer>
         )}
 
-        {chartMode === "Mix" && (
+        {chartMode === "Mix" && !mixMarginOverlay && (
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={mixData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <defs>
@@ -270,8 +337,48 @@ export function TrafficChart({ filtered }: TrafficChartProps) {
             </AreaChart>
           </ResponsiveContainer>
         )}
+
+        {chartMode === "Mix" && mixMarginOverlay && (
+          <ResponsiveContainer width="100%" height={280}>
+            <ComposedChart data={mixData} margin={{ top: 8, right: 28, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gFb2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={SRC_COLORS.facebook} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={SRC_COLORS.facebook} stopOpacity={0.04} />
+                </linearGradient>
+                <linearGradient id="gTt2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={SRC_COLORS.tiktok} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={SRC_COLORS.tiktok} stopOpacity={0.04} />
+                </linearGradient>
+                <linearGradient id="gWa2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={SRC_COLORS.whatsapp} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={SRC_COLORS.whatsapp} stopOpacity={0.04} />
+                </linearGradient>
+                <linearGradient id="gOt2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={SRC_COLORS.other} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={SRC_COLORS.other} stopOpacity={0.04} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="#94a3b8" />
+              <YAxis yAxisId="vol" tick={{ fontSize: 10 }} stroke="#94a3b8" width={44} />
+              <YAxis yAxisId="pct" orientation="right" tick={{ fontSize: 10 }} stroke="#94a3b8" width={36} domain={[0, "auto"]} />
+              <Tooltip formatter={(v: number, name: string) => [name === "marginPct" ? `${v.toFixed(1)}%` : v.toLocaleString(), name === "marginPct" ? "Blended margin" : name]} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Area yAxisId="vol" type="monotone" stackId="a" dataKey="Facebook" stroke={SRC_COLORS.facebook} fill="url(#gFb2)" />
+              <Area yAxisId="vol" type="monotone" stackId="a" dataKey="TikTok" stroke={SRC_COLORS.tiktok} fill="url(#gTt2)" />
+              <Area yAxisId="vol" type="monotone" stackId="a" dataKey="WhatsApp" stroke={SRC_COLORS.whatsapp} fill="url(#gWa2)" />
+              <Area yAxisId="vol" type="monotone" stackId="a" dataKey="Other" stroke={SRC_COLORS.other} fill="url(#gOt2)" />
+              <Line yAxisId="pct" type="monotone" dataKey="marginPct" name="Blended margin %" stroke="#ea580c" strokeWidth={2} dot={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        )}
       </div>
-      {chartMode === "Mix" && <p className="mt-1 text-[10px] text-slate-400">Stacked volume by traffic source (mix shift view).</p>}
+      {chartMode === "Mix" && (
+        <p className="mt-1 text-[10px] text-slate-400">
+          Stacked volume by traffic source{mixMarginOverlay ? " with blended margin on delivered traffic (right axis)." : "."}
+        </p>
+      )}
     </section>
   );
 }

@@ -1,15 +1,21 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAppStore } from "../../../store/db";
 import type { TrafficSourceType, WholesaleTrafficRecord } from "../../../store/types";
 import {
   ALL_TRAFFIC_SOURCES,
+  buildRouteAggregates,
   buildTableAggregates,
+  computeCompareWindowB,
   computeKpis,
   defaultDateBounds,
   filterWholesaleRecords,
   pctTrend,
-  shiftDateWindow,
+  splitDirectGenerated,
+  type ChartGranularity,
+  type ChartMetric,
   type CompareDimension,
+  type ComparePreset,
+  type TrafficChartMode,
   type TrafficFilterState,
   type TrafficKpis,
   type TrafficTypeFilter,
@@ -28,6 +34,15 @@ export function useTrafficData() {
   const [sourceAccount, setSourceAccount] = useState("");
   const [destinationAccount, setDestinationAccount] = useState("");
   const [senderId, setSenderId] = useState("");
+
+  const [comparePreset, setComparePreset] = useState<ComparePreset>("prior");
+  const [compareCustomFrom, setCompareCustomFrom] = useState("");
+  const [compareCustomTo, setCompareCustomTo] = useState("");
+
+  const [chartMode, setChartMode] = useState<TrafficChartMode>("Trend");
+  const [metric, setMetric] = useState<ChartMetric>("Volume");
+  const [granularity, setGranularity] = useState<ChartGranularity>("Daily");
+  const [compareDim, setCompareDim] = useState<CompareDimension>("country");
 
   const filters: TrafficFilterState = useMemo(
     () => ({
@@ -54,14 +69,34 @@ export function useTrafficData() {
     ],
   );
 
+  const effectiveSources = useCallback(
+    (f: TrafficFilterState): TrafficSourceType[] =>
+      f.trafficSourceTypes.length === 0 ? [...ALL_TRAFFIC_SOURCES] : f.trafficSourceTypes,
+    [],
+  );
+
   const filtered = useMemo(() => {
     const effective: TrafficFilterState = {
       ...filters,
-      trafficSourceTypes:
-        filters.trafficSourceTypes.length === 0 ? [...ALL_TRAFFIC_SOURCES] : filters.trafficSourceTypes,
+      trafficSourceTypes: effectiveSources(filters),
     };
     return filterWholesaleRecords(records, effective);
-  }, [records, filters]);
+  }, [records, filters, effectiveSources]);
+
+  const compareWindow = useMemo(
+    () => computeCompareWindowB(dateFrom, dateTo, comparePreset, compareCustomFrom || undefined, compareCustomTo || undefined),
+    [dateFrom, dateTo, comparePreset, compareCustomFrom, compareCustomTo],
+  );
+
+  const compareFiltered = useMemo(() => {
+    const effective: TrafficFilterState = {
+      ...filters,
+      dateFrom: compareWindow.bFrom,
+      dateTo: compareWindow.bTo,
+      trafficSourceTypes: effectiveSources(filters),
+    };
+    return filterWholesaleRecords(records, effective);
+  }, [records, filters, compareWindow, effectiveSources]);
 
   const filterOptions = useMemo(() => {
     const countries = new Set<string>();
@@ -83,34 +118,35 @@ export function useTrafficData() {
   }, [records]);
 
   const kpis: TrafficKpis = useMemo(() => computeKpis(filtered), [filtered]);
-
-  const { prevFrom, prevTo } = useMemo(() => shiftDateWindow(dateFrom, dateTo), [dateFrom, dateTo]);
-  const priorFiltered = useMemo(() => {
-    const effective: TrafficFilterState = {
-      ...filters,
-      dateFrom: prevFrom,
-      dateTo: prevTo,
-      trafficSourceTypes:
-        filters.trafficSourceTypes.length === 0 ? [...ALL_TRAFFIC_SOURCES] : filters.trafficSourceTypes,
-    };
-    return filterWholesaleRecords(records, effective);
-  }, [records, filters, prevFrom, prevTo]);
-
-  const priorKpis = useMemo(() => computeKpis(priorFiltered), [priorFiltered]);
+  const compareKpis = useMemo(() => computeKpis(compareFiltered), [compareFiltered]);
 
   const kpiTrends = useMemo(
     () => ({
-      volume: pctTrend(kpis.totalVolume, priorKpis.totalVolume),
-      price: pctTrend(kpis.avgSellPerMsg, priorKpis.avgSellPerMsg),
-      profit: pctTrend(kpis.netProfit, priorKpis.netProfit),
-      dlr: pctTrend(kpis.avgDlr, priorKpis.avgDlr),
+      volume: pctTrend(kpis.totalVolume, compareKpis.totalVolume),
+      price: pctTrend(kpis.avgSellPerMsg, compareKpis.avgSellPerMsg),
+      profit: pctTrend(kpis.netProfit, compareKpis.netProfit),
+      dlr: pctTrend(kpis.avgDlr, compareKpis.avgDlr),
     }),
-    [kpis, priorKpis],
+    [kpis, compareKpis],
   );
 
-  const tableRows = useMemo(() => buildTableAggregates(filtered), [filtered]);
+  const splitA = useMemo(() => splitDirectGenerated(filtered), [filtered]);
+  const splitB = useMemo(() => splitDirectGenerated(compareFiltered), [compareFiltered]);
 
-  function toggleSource(src: TrafficSourceType) {
+  const tableRows = useMemo(() => buildTableAggregates(filtered), [filtered]);
+  const routeRows = useMemo(() => buildRouteAggregates(filtered), [filtered]);
+
+  const applyDrillFilter = useCallback(
+    (patch: Partial<{ country: string; operator: string; sourceAccount: string; destinationAccount: string }>) => {
+      if (patch.country !== undefined) setCountry(patch.country);
+      if (patch.operator !== undefined) setOperator(patch.operator);
+      if (patch.sourceAccount !== undefined) setSourceAccount(patch.sourceAccount);
+      if (patch.destinationAccount !== undefined) setDestinationAccount(patch.destinationAccount);
+    },
+    [],
+  );
+
+  const toggleSource = useCallback((src: TrafficSourceType) => {
     setTrafficSourceTypes((prev) => {
       const has = prev.includes(src);
       if (has) {
@@ -120,16 +156,14 @@ export function useTrafficData() {
       const next = [...prev, src];
       return next.length === ALL_TRAFFIC_SOURCES.length ? [...ALL_TRAFFIC_SOURCES] : next;
     });
-  }
+  }, []);
 
-  function selectAllSources() {
+  const selectAllSources = useCallback(() => {
     setTrafficSourceTypes([...ALL_TRAFFIC_SOURCES]);
-  }
+  }, []);
 
-  return {
-    records,
-    filtered,
-    filters: {
+  const filtersApi = useMemo(
+    () => ({
       dateFrom,
       dateTo,
       trafficSourceTypes,
@@ -147,14 +181,53 @@ export function useTrafficData() {
       setSourceAccount,
       setDestinationAccount,
       setSenderId,
+      setTrafficSourceTypes,
       toggleSource,
       selectAllSources,
-    },
+    }),
+    [
+      dateFrom,
+      dateTo,
+      trafficSourceTypes,
+      trafficType,
+      country,
+      operator,
+      sourceAccount,
+      destinationAccount,
+      senderId,
+      toggleSource,
+      selectAllSources,
+    ],
+  );
+
+  return {
+    records,
+    filtered,
+    compareFiltered,
+    compareWindow,
+    filters: filtersApi,
+    comparePreset,
+    setComparePreset,
+    compareCustomFrom,
+    compareCustomTo,
+    setCompareCustomFrom,
+    setCompareCustomTo,
+    chartMode,
+    setChartMode,
+    metric,
+    setMetric,
+    granularity,
+    setGranularity,
+    compareDim,
+    setCompareDim,
     filterOptions,
     kpis,
+    compareKpis,
     kpiTrends,
     tableRows,
+    routeRows,
+    splitA,
+    splitB,
+    applyDrillFilter,
   };
 }
-
-export type { TrafficFilterState, TrafficKpis, WholesaleTrafficRecord };

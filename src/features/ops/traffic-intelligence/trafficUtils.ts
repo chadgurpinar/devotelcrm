@@ -1,9 +1,11 @@
-import { endOfDay, format, parseISO, startOfDay, startOfHour, startOfMonth, subDays } from "date-fns";
+import { endOfDay, format, parseISO, startOfDay, startOfHour, startOfMonth, subDays, differenceInCalendarDays } from "date-fns";
 import type { TrafficSourceType, WholesaleTrafficRecord, WholesaleTrafficType } from "../../../store/types";
 
 export const ALL_TRAFFIC_SOURCES: TrafficSourceType[] = ["Facebook", "TikTok", "WhatsApp", "Other"];
 
 export type TrafficTypeFilter = "" | WholesaleTrafficType;
+
+export type TrafficChartMode = "Trend" | "Compare" | "Mix";
 
 export interface TrafficFilterState {
   dateFrom: string;
@@ -84,7 +86,7 @@ export function pctTrend(current: number, previous: number): { value: string; po
   if (previous === 0) return { value: current === 0 ? "0%" : "—", positive: true };
   const p = ((current - previous) / previous) * 100;
   return {
-    value: `${p >= 0 ? "+" : ""}${p.toFixed(1)}% vs prior`,
+    value: `${p >= 0 ? "+" : ""}${p.toFixed(1)}% vs compare`,
     positive: p >= 0,
   };
 }
@@ -115,6 +117,8 @@ export interface TimeBucketRow {
   tiktok: number;
   whatsapp: number;
   other: number;
+  bucketTotalProfit: number;
+  bucketTotalRevenue: number;
 }
 
 function emptyBucket(key: string, label: string): TimeBucketRow {
@@ -135,6 +139,8 @@ function emptyBucket(key: string, label: string): TimeBucketRow {
     tiktok: 0,
     whatsapp: 0,
     other: 0,
+    bucketTotalProfit: 0,
+    bucketTotalRevenue: 0,
   };
 }
 
@@ -168,6 +174,8 @@ export function buildTimeBuckets(rows: WholesaleTrafficRecord[], g: ChartGranula
     else if (r.trafficSourceType === "TikTok") row.tiktok += vol;
     else if (r.trafficSourceType === "WhatsApp") row.whatsapp += vol;
     else row.other += vol;
+    row.bucketTotalProfit += profit;
+    row.bucketTotalRevenue += revenue;
   }
   return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
 }
@@ -311,6 +319,10 @@ export function generatedMarginRatio(row: TimeBucketRow): number {
   return row.generatedRevenue > 0 ? row.generatedProfit / row.generatedRevenue : 0;
 }
 
+export function blendedMarginFromBucket(row: TimeBucketRow): number {
+  return row.bucketTotalRevenue > 0 ? row.bucketTotalProfit / row.bucketTotalRevenue : 0;
+}
+
 export function compareDirectDlr(row: CompareBucketRow): number {
   return row.directSubmit > 0 ? row.directDelivery / row.directSubmit : 0;
 }
@@ -393,4 +405,365 @@ export function shiftDateWindow(fromYmd: string, toYmd: string): { prevFrom: str
   const prevToDate = subDays(from, 1);
   const prevFromDate = subDays(from, days);
   return { prevFrom: format(prevFromDate, "yyyy-MM-dd"), prevTo: format(prevToDate, "yyyy-MM-dd") };
+}
+
+export type ComparePreset = "prior" | "prior_month" | "prior_quarter" | "custom";
+
+export function computeCompareWindowB(
+  fromYmd: string,
+  toYmd: string,
+  preset: ComparePreset,
+  customFrom?: string,
+  customTo?: string,
+): { bFrom: string; bTo: string } {
+  if (preset === "custom" && customFrom && customTo) {
+    return { bFrom: customFrom, bTo: customTo };
+  }
+  const from = startOfDay(parseISO(`${fromYmd}T12:00:00`));
+  const to = endOfDay(parseISO(`${toYmd}T12:00:00`));
+  const spanDays = Math.max(1, differenceInCalendarDays(to, from) + 1);
+  if (preset === "prior_month") {
+    const bTo = subDays(from, 1);
+    const bFrom = subDays(bTo, spanDays - 1);
+    return { bFrom: format(bFrom, "yyyy-MM-dd"), bTo: format(bTo, "yyyy-MM-dd") };
+  }
+  if (preset === "prior_quarter") {
+    const back = spanDays * 3;
+    const bTo = subDays(from, 1);
+    const bFrom = subDays(bTo, back - 1);
+    return { bFrom: format(bFrom, "yyyy-MM-dd"), bTo: format(bTo, "yyyy-MM-dd") };
+  }
+  const { prevFrom, prevTo } = shiftDateWindow(fromYmd, toYmd);
+  return { bFrom: prevFrom, bTo: prevTo };
+}
+
+export interface TrafficTypeSlice {
+  volume: number;
+  profit: number;
+  revenue: number;
+  submit: number;
+  delivery: number;
+  sellWeighted: number;
+}
+
+export function splitDirectGenerated(rows: WholesaleTrafficRecord[]): {
+  direct: TrafficTypeSlice;
+  generated: TrafficTypeSlice;
+} {
+  const empty = (): TrafficTypeSlice => ({
+    volume: 0,
+    profit: 0,
+    revenue: 0,
+    submit: 0,
+    delivery: 0,
+    sellWeighted: 0,
+  });
+  const direct = empty();
+  const generated = empty();
+  for (const r of rows) {
+    const slice = r.trafficType === "Direct" ? direct : generated;
+    slice.volume += r.submitCount;
+    slice.profit += recordProfit(r);
+    slice.revenue += recordRevenue(r);
+    slice.submit += r.submitCount;
+    slice.delivery += r.deliveryCount;
+    slice.sellWeighted += r.sellPrice * r.submitCount;
+  }
+  return { direct, generated };
+}
+
+export function sliceToHealthMetrics(s: TrafficTypeSlice): {
+  shareVolume: number;
+  avgSell: number;
+  avgDlr: number;
+  margin: number;
+  profit: number;
+} {
+  const vol = s.submit;
+  return {
+    shareVolume: vol,
+    avgSell: vol > 0 ? s.sellWeighted / vol : 0,
+    avgDlr: vol > 0 ? s.delivery / vol : 0,
+    margin: s.revenue > 0 ? s.profit / s.revenue : 0,
+    profit: s.profit,
+  };
+}
+
+export interface RouteAggRow {
+  key: string;
+  country: string;
+  operator: string;
+  sourceAccount: string;
+  destinationAccount: string;
+  submitCount: number;
+  deliveryCount: number;
+  profit: number;
+  revenue: number;
+}
+
+export function buildRouteAggregates(rows: WholesaleTrafficRecord[]): RouteAggRow[] {
+  const map = new Map<string, RouteAggRow>();
+  for (const r of rows) {
+    const key = `${r.country}|${r.operator}|${r.sourceAccount}|${r.destinationAccount}`;
+    let row = map.get(key);
+    if (!row) {
+      row = {
+        key,
+        country: r.country,
+        operator: r.operator,
+        sourceAccount: r.sourceAccount,
+        destinationAccount: r.destinationAccount,
+        submitCount: 0,
+        deliveryCount: 0,
+        profit: 0,
+        revenue: 0,
+      };
+      map.set(key, row);
+    }
+    row.submitCount += r.submitCount;
+    row.deliveryCount += r.deliveryCount;
+    row.profit += recordProfit(r);
+    row.revenue += recordRevenue(r);
+  }
+  return Array.from(map.values());
+}
+
+export type TopAccountMetric = "volume" | "profit" | "margin";
+
+export interface TopAccountRow {
+  name: string;
+  volume: number;
+  profit: number;
+  margin: number;
+}
+
+function marginFromAgg(vol: number, profit: number, revenue: number): number {
+  return revenue > 0 ? profit / revenue : 0;
+}
+
+export function topSourceAccounts(rows: WholesaleTrafficRecord[], metric: TopAccountMetric, n: number): TopAccountRow[] {
+  const m = new Map<string, { vol: number; profit: number; rev: number }>();
+  for (const r of rows) {
+    const cur = m.get(r.sourceAccount) ?? { vol: 0, profit: 0, rev: 0 };
+    cur.vol += r.submitCount;
+    cur.profit += recordProfit(r);
+    cur.rev += recordRevenue(r);
+    m.set(r.sourceAccount, cur);
+  }
+  const list = Array.from(m.entries()).map(([name, v]) => ({
+    name,
+    volume: v.vol,
+    profit: v.profit,
+    margin: marginFromAgg(v.vol, v.profit, v.rev),
+  }));
+  if (metric === "volume") list.sort((a, b) => b.volume - a.volume);
+  else if (metric === "profit") list.sort((a, b) => b.profit - a.profit);
+  else list.sort((a, b) => b.margin - a.margin);
+  return list.slice(0, n);
+}
+
+export function topDestinationAccounts(rows: WholesaleTrafficRecord[], metric: TopAccountMetric, n: number): TopAccountRow[] {
+  const m = new Map<string, { vol: number; profit: number; rev: number }>();
+  for (const r of rows) {
+    const cur = m.get(r.destinationAccount) ?? { vol: 0, profit: 0, rev: 0 };
+    cur.vol += r.submitCount;
+    cur.profit += recordProfit(r);
+    cur.rev += recordRevenue(r);
+    m.set(r.destinationAccount, cur);
+  }
+  const list = Array.from(m.entries()).map(([name, v]) => ({
+    name,
+    volume: v.vol,
+    profit: v.profit,
+    margin: marginFromAgg(v.vol, v.profit, v.rev),
+  }));
+  if (metric === "volume") list.sort((a, b) => b.volume - a.volume);
+  else if (metric === "profit") list.sort((a, b) => b.profit - a.profit);
+  else list.sort((a, b) => b.margin - a.margin);
+  return list.slice(0, n);
+}
+
+export interface TopDimensionSlice {
+  label: string;
+  volumeShare: number;
+}
+
+export function topCountryByVolume(rows: WholesaleTrafficRecord[], n: number): TopDimensionSlice[] {
+  const m = new Map<string, number>();
+  let total = 0;
+  for (const r of rows) {
+    m.set(r.country, (m.get(r.country) ?? 0) + r.submitCount);
+    total += r.submitCount;
+  }
+  return Array.from(m.entries())
+    .map(([label, vol]) => ({ label, volumeShare: total > 0 ? vol / total : 0 }))
+    .sort((a, b) => b.volumeShare - a.volumeShare)
+    .slice(0, n);
+}
+
+export function topTrafficSourceByVolume(rows: WholesaleTrafficRecord[]): { type: TrafficSourceType; share: number } | null {
+  const m = new Map<TrafficSourceType, number>();
+  let total = 0;
+  for (const r of rows) {
+    m.set(r.trafficSourceType, (m.get(r.trafficSourceType) ?? 0) + r.submitCount);
+    total += r.submitCount;
+  }
+  if (total <= 0) return null;
+  let best: TrafficSourceType = "Other";
+  let bestV = 0;
+  for (const [t, v] of m) {
+    if (v > bestV) {
+      bestV = v;
+      best = t;
+    }
+  }
+  return { type: best, share: bestV / total };
+}
+
+export function blendedMarginOnDelivered(rows: WholesaleTrafficRecord[]): number {
+  let profit = 0;
+  let rev = 0;
+  for (const r of rows) {
+    profit += recordProfit(r);
+    rev += recordRevenue(r);
+  }
+  return rev > 0 ? profit / rev : 0;
+}
+
+export function composeQuickSummary(input: {
+  kpis: TrafficKpis;
+  kpiTrends: { volume: { value: string }; profit: { value: string }; dlr: { value: string } };
+  dateFrom: string;
+  dateTo: string;
+  filteredCount: number;
+  topCountries: TopDimensionSlice[];
+  topSource: ReturnType<typeof topTrafficSourceByVolume>;
+  directShare: number;
+  generatedShare: number;
+  blendedMargin: number;
+}): string {
+  const vol = input.kpis.totalVolume;
+  const volStr = vol >= 1_000_000 ? `${(vol / 1_000_000).toFixed(2)}M` : vol >= 1_000 ? `${(vol / 1_000).toFixed(1)}K` : vol.toLocaleString();
+  const marginPct = Number.isFinite(input.blendedMargin) ? (input.blendedMargin * 100).toFixed(1) : "0.0";
+  const geo =
+    input.topCountries.length > 0
+      ? `${input.topCountries[0]!.label}${input.topCountries[1] ? ` and ${input.topCountries[1]!.label}` : ""}`
+      : "multiple markets";
+  const src = input.topSource ? `${input.topSource.type} (~${(input.topSource.share * 100).toFixed(0)}% of volume)` : "mixed sources";
+  const tot = input.directShare + input.generatedShare;
+  const split =
+    tot > 0
+      ? `Direct ~${((input.directShare / tot) * 100).toFixed(0)}% of volume vs hubbed/generated ~${((input.generatedShare / tot) * 100).toFixed(0)}%.`
+      : "";
+  return (
+    `Between ${input.dateFrom} and ${input.dateTo}, filtered slice shows ${volStr} submits across ${input.filteredCount} MDR rows. ` +
+    `Largest country mix: ${geo}. Dominant traffic source: ${src}. ` +
+    `Blended DLR ${(input.kpis.avgDlr * 100).toFixed(2)}% and net profit $${input.kpis.netProfit.toLocaleString(undefined, { maximumFractionDigits: 0 })} ` +
+    `(volume ${input.kpiTrends.volume.value}, profit ${input.kpiTrends.profit.value}, DLR ${input.kpiTrends.dlr.value}). ` +
+    `Blended margin on delivered traffic ~${marginPct}%. ${split}`
+  );
+}
+
+export function herfindahlFromShares(shares: number[]): number {
+  return shares.reduce((s, p) => s + p * p, 0);
+}
+
+export function providerVolumeShares(rows: WholesaleTrafficRecord[]): { names: string[]; shares: number[] } {
+  const m = new Map<string, number>();
+  let total = 0;
+  for (const r of rows) {
+    m.set(r.sourceAccount, (m.get(r.sourceAccount) ?? 0) + r.submitCount);
+    total += r.submitCount;
+  }
+  if (total <= 0) return { names: [], shares: [] };
+  const entries = Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+  return {
+    names: entries.map(([n]) => n),
+    shares: entries.map(([, v]) => v / total),
+  };
+}
+
+export function providerProfitShares(rows: WholesaleTrafficRecord[]): { names: string[]; shares: number[] } {
+  const m = new Map<string, number>();
+  let total = 0;
+  for (const r of rows) {
+    const p = recordProfit(r);
+    m.set(r.sourceAccount, (m.get(r.sourceAccount) ?? 0) + p);
+    total += p;
+  }
+  if (total <= 0) return { names: [], shares: [] };
+  const entries = Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+  return {
+    names: entries.map(([n]) => n),
+    shares: entries.map(([, v]) => v / total),
+  };
+}
+
+export interface DlrWatchRow {
+  key: string;
+  label: string;
+  dlr: number;
+  submit: number;
+}
+
+export function buildDlrWatchByProvider(rows: WholesaleTrafficRecord[], minSubmit: number): DlrWatchRow[] {
+  const m = new Map<string, { s: number; d: number }>();
+  for (const r of rows) {
+    const cur = m.get(r.sourceAccount) ?? { s: 0, d: 0 };
+    cur.s += r.submitCount;
+    cur.d += r.deliveryCount;
+    m.set(r.sourceAccount, cur);
+  }
+  return Array.from(m.entries())
+    .filter(([, v]) => v.s >= minSubmit)
+    .map(([name, v]) => ({
+      key: `p-${name}`,
+      label: name,
+      dlr: v.s > 0 ? v.d / v.s : 0,
+      submit: v.s,
+    }))
+    .sort((a, b) => a.dlr - b.dlr);
+}
+
+export function buildDlrWatchByOperator(rows: WholesaleTrafficRecord[], minSubmit: number): DlrWatchRow[] {
+  const m = new Map<string, { s: number; d: number }>();
+  for (const r of rows) {
+    const cur = m.get(r.operator) ?? { s: 0, d: 0 };
+    cur.s += r.submitCount;
+    cur.d += r.deliveryCount;
+    m.set(r.operator, cur);
+  }
+  return Array.from(m.entries())
+    .filter(([, v]) => v.s >= minSubmit)
+    .map(([name, v]) => ({
+      key: `o-${name}`,
+      label: name,
+      dlr: v.s > 0 ? v.d / v.s : 0,
+      submit: v.s,
+    }))
+    .sort((a, b) => a.dlr - b.dlr);
+}
+
+export function qualityScoreForAccount(
+  rows: WholesaleTrafficRecord[],
+  field: "sourceAccount" | "destinationAccount",
+  name: string,
+): { score: number; dlr: number; margin: number; volume: number } {
+  const subset = rows.filter((r) => (field === "sourceAccount" ? r.sourceAccount : r.destinationAccount) === name);
+  let vol = 0;
+  let del = 0;
+  let profit = 0;
+  let rev = 0;
+  for (const r of subset) {
+    vol += r.submitCount;
+    del += r.deliveryCount;
+    profit += recordProfit(r);
+    rev += recordRevenue(r);
+  }
+  const dlr = vol > 0 ? del / vol : 0;
+  const margin = rev > 0 ? profit / rev : 0;
+  const dlrScore = Math.min(100, dlr * 105);
+  const marginScore = Math.min(100, Math.max(0, margin * 400));
+  const score = Math.round(dlrScore * 0.65 + marginScore * 0.35);
+  return { score, dlr, margin, volume: vol };
 }

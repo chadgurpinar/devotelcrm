@@ -153,10 +153,17 @@ export function AppShell() {
       ],
     },
     {
+      title: "Finance",
+      items: [
+        { to: "/finance/ar-ap", label: "AR/AP Overview", icon: <Landmark size={16} /> },
+        { to: "/finance/cashflow-planning", label: "Cashflow Planning", icon: <BarChart2 size={16} /> },
+        { to: "/finance/internal-expenses", label: "Internal Expenses", icon: <Receipt size={16} /> },
+      ],
+    },
+    {
       title: "Other",
       items: [
         { to: "/", label: "Dashboard", icon: <Home /> },
-        { to: "/finance", label: "Finance", icon: <Landmark /> },
         { to: "/settings", label: "Settings", icon: <Settings /> },
       ],
     },

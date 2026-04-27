@@ -1420,6 +1420,214 @@ export interface WholesaleTrafficRecord {
   sellPrice: number;
 }
 
+/** Reserved for cached baseline stats (v3); may stay empty while heuristics run client-side. */
+export interface TrafficBaseline {
+  id: string;
+  dimensionKey: string;
+  hourOfDay: number;
+  avgVolume: number;
+  stdVolume: number;
+  createdAt: string;
+}
+
+export type TrafficAlertSeverity = "info" | "warning" | "critical";
+export type TrafficAlertMetric = "dlr" | "volume_spike";
+export type TrafficAlertCompareOp = "lt" | "gt";
+
+export interface TrafficAlertRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  metric: TrafficAlertMetric;
+  compareOp: TrafficAlertCompareOp;
+  threshold: number;
+  dimension: "global" | "sourceAccount" | "operator";
+  minSubmit: number;
+  createdAt: string;
+}
+
+export interface TrafficAlertEvent {
+  id: string;
+  ruleId: string;
+  severity: TrafficAlertSeverity;
+  title: string;
+  detail: string;
+  sourceAccount?: string;
+  country?: string;
+  operator?: string;
+  /** Stable key for evaluation de-duplication across runs. */
+  dedupeKey?: string;
+  read: boolean;
+  dismissed: boolean;
+  createdAt: string;
+}
+
+// ----------------------------
+// Finance (AR/AP + Cashflow)
+// ----------------------------
+
+export type FinCounterpartyType = "Customer" | "Provider" | "Other";
+
+export interface FinCounterparty {
+  id: string;
+  type: FinCounterpartyType;
+  name: string;
+  companyId?: string;
+  primaryContactId?: string;
+  defaultCurrency: HrCurrencyCode;
+  taxId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinDirection = "Receivable" | "Payable";
+export type FinSourceType = "Usage" | "Invoice" | "Payment" | "Projection" | "Manual";
+export type FinReferenceType = "TrafficSummary" | "Invoice" | "Payment" | "Projection" | "Manual";
+export type FinTxStatus = "Planned" | "Open" | "PartiallyPaid" | "Paid" | "Overdue" | "Cancelled";
+
+export interface FinArApTransaction {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId: string | null;
+  direction: FinDirection;
+  sourceType: FinSourceType;
+  referenceType: FinReferenceType;
+  referenceId: string | null;
+  currency: HrCurrencyCode;
+  /** Always positive; direction encodes AR/AP. */
+  amount: number;
+  /** Total applied payments against this transaction. */
+  paidAmount: number;
+  issueDate: string;
+  dueDate?: string;
+  status: FinTxStatus;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinInvoiceType = "CustomerInvoice" | "SupplierInvoice";
+export type FinInvoiceStatus = "Draft" | "Issued" | "PartiallyPaid" | "Paid" | "Overdue" | "Cancelled";
+
+export interface FinInvoice {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId: string;
+  type: FinInvoiceType;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  currency: HrCurrencyCode;
+  totalAmount: number;
+  status: FinInvoiceStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinInvoiceServiceType = "SMS" | "Voice" | "Setup" | "Other";
+
+export interface FinInvoiceLine {
+  id: string;
+  invoiceId: string;
+  description: string;
+  serviceType: FinInvoiceServiceType;
+  periodFrom?: string;
+  periodTo?: string;
+  amount: number;
+}
+
+export type FinPaymentDirection = "Incoming" | "Outgoing";
+export type FinPaymentMethod = "BankTransfer" | "Card" | "Cash" | "Other";
+
+export interface FinPayment {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId: string;
+  direction: FinPaymentDirection;
+  paymentDate: string;
+  amount: number;
+  currency: HrCurrencyCode;
+  method: FinPaymentMethod;
+  reference?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface FinPaymentApplication {
+  id: string;
+  paymentId: string;
+  appliedToInvoiceId?: string;
+  appliedToTransactionId?: string;
+  appliedAmount: number;
+  appliedAt: string;
+}
+
+export type FinProjectionCategory = "Customer" | "Provider" | "Salary" | "Rent" | "Tax" | "Card" | "Loan" | "Other";
+export type FinProjectionStatus = "Planned" | "Confirmed" | "Cancelled";
+
+export interface FinProjection {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId?: string;
+  direction: FinDirection;
+  label: string;
+  dueDate: string;
+  amount: number;
+  currency: HrCurrencyCode;
+  category: FinProjectionCategory;
+  status: FinProjectionStatus;
+  confidence?: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinInternalExpenseCategory = "Salary" | "Rent" | "Tax" | "Card" | "Loan" | "Software" | "Other";
+export type FinExpenseRecurrence = "Monthly" | "OneOff";
+
+export interface FinInternalExpense {
+  id: string;
+  entityId: OurEntity;
+  label: string;
+  category: FinInternalExpenseCategory;
+  recurrence: FinExpenseRecurrence;
+  amount: number;
+  currency: HrCurrencyCode;
+  dayOfMonth?: number;
+  fixedDate?: string;
+  active: boolean;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinEntityCashBalance {
+  entityId: OurEntity;
+  asOfDate: string;
+  openingBalance: number;
+  currency: HrCurrencyCode;
+}
+
+export type FinUsageTrack = "SMS" | "Voice";
+export type FinUsagePositionStatus = "Provisional" | "Confirmed";
+
+export interface FinUsageArApPosition {
+  id: string;
+  counterpartyId: string;
+  entityId: OurEntity;
+  track: FinUsageTrack;
+  direction: FinDirection;
+  periodFrom: string;
+  periodTo: string;
+  volume: number;
+  amount: number;
+  currency: HrCurrencyCode;
+  status: FinUsagePositionStatus;
+  fetchedAt: string;
+}
+
 export interface DbState {
   version: number;
   activeUserId: string;
@@ -1476,6 +1684,18 @@ export interface DbState {
   eventEvaluations: EventEvaluation[];
   eventCostLineItems: EventCostLineItem[];
   wholesaleTrafficRecords: WholesaleTrafficRecord[];
+  trafficBaselines: TrafficBaseline[];
+  trafficAlertRules: TrafficAlertRule[];
+  trafficAlertEvents: TrafficAlertEvent[];
+  finCounterparties: FinCounterparty[];
+  finArApTransactions: FinArApTransaction[];
+  finInvoices: FinInvoice[];
+  finInvoiceLines: FinInvoiceLine[];
+  finPayments: FinPayment[];
+  finPaymentApplications: FinPaymentApplication[];
+  finProjections: FinProjection[];
+  finInternalExpenses: FinInternalExpense[];
+  finEntityCashBalances: FinEntityCashBalance[];
   outbox: string[];
 }
 

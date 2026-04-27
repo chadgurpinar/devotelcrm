@@ -17,9 +17,11 @@ function dlrPct(row: TableAggRow): number {
 
 interface TrafficTableProps {
   rows: TableAggRow[];
+  /** Click a row to drill filters to that slice. */
+  onRowClick?: (row: TableAggRow) => void;
 }
 
-export function TrafficTable({ rows }: TrafficTableProps) {
+export function TrafficTable({ rows, onRowClick }: TrafficTableProps) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("submitCount");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -150,7 +152,11 @@ export function TrafficTable({ rows }: TrafficTableProps) {
                   <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">HUBBED</span>
                 );
               return (
-                <tr key={r.key} className="border-b border-slate-100 hover:bg-slate-50/80">
+                <tr
+                  key={r.key}
+                  className={`border-b border-slate-100 hover:bg-slate-50/80 ${onRowClick ? "cursor-pointer" : ""}`}
+                  onClick={() => onRowClick?.(r)}
+                >
                   <td className="px-2 py-1.5">{badge}</td>
                   <td className="px-2 py-1.5 text-slate-800">{r.country}</td>
                   <td className="px-2 py-1.5 text-slate-700">{r.operator}</td>
