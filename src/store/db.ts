@@ -66,6 +66,17 @@ import {
   FinPayment,
   FinPaymentApplication,
   FinProjection,
+  FinanceARAPItem,
+  FinanceARAPStatus,
+  FinanceCashPosition,
+  FinanceCounterparty,
+  FinanceCreditCard,
+  FinanceCreditCardStatement,
+  FinanceDirectDebit,
+  FinanceInvoice,
+  FinancePayment,
+  FinanceProjection,
+  FinanceSalaryPlan,
   WeeklyReportAiSummary,
   WeeklyReportManagerComment,
   WeeklyStaffReport,
@@ -135,6 +146,33 @@ interface DbActions {
   ) => string;
   deleteFinInternalExpense: (id: string) => void;
   setFinEntityCashBalance: (entityId: OurEntity, openingBalance: number, asOfDate?: string) => void;
+  // Finance (Phase 1) — additive parallel layer
+  upsertFinanceCashPosition: (data: Omit<FinanceCashPosition, "id" | "updatedAt">) => string;
+  addFinanceCounterparty: (data: Omit<FinanceCounterparty, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceCounterparty: (item: FinanceCounterparty) => void;
+  deleteFinanceCounterparty: (id: string) => void;
+  addFinanceARAPItem: (data: Omit<FinanceARAPItem, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceARAPItem: (item: FinanceARAPItem) => void;
+  deleteFinanceARAPItem: (id: string) => void;
+  addFinanceInvoice: (data: Omit<FinanceInvoice, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceInvoice: (item: FinanceInvoice) => void;
+  deleteFinanceInvoice: (id: string) => void;
+  addFinancePayment: (data: Omit<FinancePayment, "id" | "createdAt">) => string;
+  deleteFinancePayment: (id: string) => void;
+  addFinanceProjection: (data: Omit<FinanceProjection, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceProjection: (item: FinanceProjection) => void;
+  deleteFinanceProjection: (id: string) => void;
+  addFinanceCreditCard: (data: Omit<FinanceCreditCard, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceCreditCard: (item: FinanceCreditCard) => void;
+  deleteFinanceCreditCard: (id: string) => void;
+  addFinanceCreditCardStatement: (data: Omit<FinanceCreditCardStatement, "id" | "importedAt">) => string;
+  updateFinanceCreditCardStatement: (item: FinanceCreditCardStatement) => void;
+  addFinanceDirectDebit: (data: Omit<FinanceDirectDebit, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceDirectDebit: (item: FinanceDirectDebit) => void;
+  deleteFinanceDirectDebit: (id: string) => void;
+  addFinanceSalaryPlan: (data: Omit<FinanceSalaryPlan, "id" | "createdAt">) => string;
+  updateFinanceSalaryPlan: (item: FinanceSalaryPlan) => void;
+  deleteFinanceSalaryPlan: (id: string) => void;
   createCompany: (payload: Omit<Company, "id">) => string;
   updateCompany: (company: Company) => void;
   createContact: (payload: Omit<Contact, "id">) => string;
@@ -1515,6 +1553,270 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
         }
         return { ...state, finEntityCashBalances: next };
       }),
+    // ─── Finance (Phase 1) ───────────────────────────────────────
+    upsertFinanceCashPosition: (data) => {
+      const now = new Date().toISOString();
+      const id = uid("fcp");
+      set((state) => {
+        const idx = state.financeCashPositions.findIndex(
+          (p) => p.entityId === data.entityId && p.currency === data.currency,
+        );
+        if (idx >= 0) {
+          const next = state.financeCashPositions.slice();
+          next[idx] = { ...next[idx]!, ...data, updatedAt: now };
+          return { ...state, financeCashPositions: next };
+        }
+        return { ...state, financeCashPositions: [...state.financeCashPositions, { ...data, id, updatedAt: now }] };
+      });
+      return id;
+    },
+    addFinanceCounterparty: (data) => {
+      const id = uid("fcpty");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeCounterparties: [...state.financeCounterparties, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceCounterparty: (item) =>
+      set((state) => ({
+        ...state,
+        financeCounterparties: state.financeCounterparties.map((c) =>
+          c.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : c,
+        ),
+      })),
+    deleteFinanceCounterparty: (id) =>
+      set((state) => ({
+        ...state,
+        financeCounterparties: state.financeCounterparties.filter((c) => c.id !== id),
+      })),
+    addFinanceARAPItem: (data) => {
+      const id = uid("farap");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeARAPItems: [...state.financeARAPItems, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceARAPItem: (item) =>
+      set((state) => ({
+        ...state,
+        financeARAPItems: state.financeARAPItems.map((it) =>
+          it.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : it,
+        ),
+      })),
+    deleteFinanceARAPItem: (id) =>
+      set((state) => ({ ...state, financeARAPItems: state.financeARAPItems.filter((it) => it.id !== id) })),
+    addFinanceInvoice: (data) => {
+      const id = uid("finv");
+      const now = new Date().toISOString();
+      set((state) => {
+        const lines = (data.lines ?? []).map((l) => ({
+          ...l,
+          id: l.id && l.id.length > 0 ? l.id : uid("finvl"),
+          invoiceId: id,
+        }));
+        const invoice: FinanceInvoice = { ...data, lines, id, createdAt: now, updatedAt: now };
+        const nextInvoices = [...state.financeInvoices, invoice];
+        let nextARAP = state.financeARAPItems;
+        if (invoice.status === "Issued" || invoice.status === "PartiallyPaid" || invoice.status === "Overdue") {
+          const arapStatus: FinanceARAPStatus =
+            invoice.status === "PartiallyPaid"
+              ? "PartiallyPaid"
+              : invoice.status === "Overdue"
+                ? "Overdue"
+                : "Open";
+          const arap: FinanceARAPItem = {
+            id: uid("farap"),
+            entityId: invoice.entityId,
+            counterpartyId: invoice.counterpartyId,
+            direction: invoice.type === "CustomerInvoice" ? "Receivable" : "Payable",
+            sourceType: "Invoice",
+            currency: invoice.currency,
+            amountOriginal: invoice.amountOriginal,
+            amountEur: invoice.amountEur,
+            paidAmountOriginal: invoice.paidAmountOriginal,
+            paidAmountEur: invoice.paidAmountEur,
+            issueDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            status: arapStatus,
+            description: `${invoice.type === "CustomerInvoice" ? "Invoice" : "Supplier invoice"} ${invoice.invoiceNumber}`,
+            invoiceId: invoice.id,
+            createdAt: now,
+            updatedAt: now,
+          };
+          nextARAP = [...state.financeARAPItems, arap];
+        }
+        return { ...state, financeInvoices: nextInvoices, financeARAPItems: nextARAP };
+      });
+      return id;
+    },
+    updateFinanceInvoice: (item) =>
+      set((state) => {
+        const now = new Date().toISOString();
+        const next = state.financeInvoices.map((inv) => (inv.id === item.id ? { ...item, updatedAt: now } : inv));
+        const existingArap = state.financeARAPItems.find((a) => a.invoiceId === item.id && a.sourceType === "Invoice");
+        let nextARAP = state.financeARAPItems;
+        const triggerStatuses: FinanceInvoice["status"][] = ["Issued", "PartiallyPaid", "Overdue"];
+        if (triggerStatuses.includes(item.status)) {
+          const arapStatus: FinanceARAPStatus =
+            item.status === "PartiallyPaid" ? "PartiallyPaid" : item.status === "Overdue" ? "Overdue" : "Open";
+          if (existingArap) {
+            nextARAP = state.financeARAPItems.map((a) =>
+              a.id === existingArap.id
+                ? {
+                    ...a,
+                    entityId: item.entityId,
+                    counterpartyId: item.counterpartyId,
+                    direction: item.type === "CustomerInvoice" ? "Receivable" : "Payable",
+                    currency: item.currency,
+                    amountOriginal: item.amountOriginal,
+                    amountEur: item.amountEur,
+                    paidAmountOriginal: item.paidAmountOriginal,
+                    paidAmountEur: item.paidAmountEur,
+                    issueDate: item.invoiceDate,
+                    dueDate: item.dueDate,
+                    status: arapStatus,
+                    description: `${item.type === "CustomerInvoice" ? "Invoice" : "Supplier invoice"} ${item.invoiceNumber}`,
+                    updatedAt: now,
+                  }
+                : a,
+            );
+          } else {
+            nextARAP = [
+              ...state.financeARAPItems,
+              {
+                id: uid("farap"),
+                entityId: item.entityId,
+                counterpartyId: item.counterpartyId,
+                direction: item.type === "CustomerInvoice" ? "Receivable" : "Payable",
+                sourceType: "Invoice",
+                currency: item.currency,
+                amountOriginal: item.amountOriginal,
+                amountEur: item.amountEur,
+                paidAmountOriginal: item.paidAmountOriginal,
+                paidAmountEur: item.paidAmountEur,
+                issueDate: item.invoiceDate,
+                dueDate: item.dueDate,
+                status: arapStatus,
+                description: `${item.type === "CustomerInvoice" ? "Invoice" : "Supplier invoice"} ${item.invoiceNumber}`,
+                invoiceId: item.id,
+                createdAt: now,
+                updatedAt: now,
+              },
+            ];
+          }
+        }
+        return { ...state, financeInvoices: next, financeARAPItems: nextARAP };
+      }),
+    deleteFinanceInvoice: (id) =>
+      set((state) => ({ ...state, financeInvoices: state.financeInvoices.filter((inv) => inv.id !== id) })),
+    addFinancePayment: (data) => {
+      const id = uid("fpmt");
+      const now = new Date().toISOString();
+      set((state) => ({ ...state, financePayments: [...state.financePayments, { ...data, id, createdAt: now }] }));
+      return id;
+    },
+    deleteFinancePayment: (id) =>
+      set((state) => ({ ...state, financePayments: state.financePayments.filter((p) => p.id !== id) })),
+    addFinanceProjection: (data) => {
+      const id = uid("fproj");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeProjections: [...state.financeProjections, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceProjection: (item) =>
+      set((state) => ({
+        ...state,
+        financeProjections: state.financeProjections.map((p) =>
+          p.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : p,
+        ),
+      })),
+    deleteFinanceProjection: (id) =>
+      set((state) => ({ ...state, financeProjections: state.financeProjections.filter((p) => p.id !== id) })),
+    addFinanceCreditCard: (data) => {
+      const id = uid("fcc");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeCreditCards: [...state.financeCreditCards, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceCreditCard: (item) =>
+      set((state) => ({
+        ...state,
+        financeCreditCards: state.financeCreditCards.map((c) =>
+          c.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : c,
+        ),
+      })),
+    deleteFinanceCreditCard: (id) =>
+      set((state) => ({ ...state, financeCreditCards: state.financeCreditCards.filter((c) => c.id !== id) })),
+    addFinanceCreditCardStatement: (data) => {
+      const id = uid("fccs");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeCreditCardStatements: [...state.financeCreditCardStatements, { ...data, id, importedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceCreditCardStatement: (item) =>
+      set((state) => ({
+        ...state,
+        financeCreditCardStatements: state.financeCreditCardStatements.map((s) => (s.id === item.id ? item : s)),
+      })),
+    addFinanceDirectDebit: (data) => {
+      const id = uid("fdd");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeDirectDebits: [...state.financeDirectDebits, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceDirectDebit: (item) =>
+      set((state) => ({
+        ...state,
+        financeDirectDebits: state.financeDirectDebits.map((d) =>
+          d.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : d,
+        ),
+      })),
+    deleteFinanceDirectDebit: (id) =>
+      set((state) => ({ ...state, financeDirectDebits: state.financeDirectDebits.filter((d) => d.id !== id) })),
+    addFinanceSalaryPlan: (data) => {
+      const id = uid("fsp");
+      const now = new Date().toISOString();
+      set((state) => {
+        const lines = (data.lines ?? []).map((l) => ({
+          ...l,
+          id: l.id && l.id.length > 0 ? l.id : uid("fspl"),
+          salaryPlanId: id,
+        }));
+        return {
+          ...state,
+          financeSalaryPlans: [
+            ...state.financeSalaryPlans,
+            { ...data, lines, id, createdAt: now, updatedAt: now },
+          ],
+        };
+      });
+      return id;
+    },
+    updateFinanceSalaryPlan: (item) =>
+      set((state) => ({
+        ...state,
+        financeSalaryPlans: state.financeSalaryPlans.map((p) =>
+          p.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : p,
+        ),
+      })),
+    deleteFinanceSalaryPlan: (id) =>
+      set((state) => ({ ...state, financeSalaryPlans: state.financeSalaryPlans.filter((p) => p.id !== id) })),
     createCompany: (payload) => {
       const id = uid("c");
       const createdAt = payload.createdAt ?? new Date().toISOString();
@@ -4718,7 +5020,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 33,
+    version: 34,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -6102,6 +6404,36 @@ export const useAppStore = create<AppStore>()(
         finEntityCashBalances: Array.isArray((state as Record<string, unknown>).finEntityCashBalances)
           ? ((state as Record<string, unknown>).finEntityCashBalances as import("./types").FinEntityCashBalance[])
           : fallback.finEntityCashBalances,
+        financeCounterparties: Array.isArray((state as Record<string, unknown>).financeCounterparties)
+          ? ((state as Record<string, unknown>).financeCounterparties as import("./types").FinanceCounterparty[])
+          : fallback.financeCounterparties,
+        financeCashPositions: Array.isArray((state as Record<string, unknown>).financeCashPositions)
+          ? ((state as Record<string, unknown>).financeCashPositions as import("./types").FinanceCashPosition[])
+          : fallback.financeCashPositions,
+        financeARAPItems: Array.isArray((state as Record<string, unknown>).financeARAPItems)
+          ? ((state as Record<string, unknown>).financeARAPItems as import("./types").FinanceARAPItem[])
+          : fallback.financeARAPItems,
+        financeInvoices: Array.isArray((state as Record<string, unknown>).financeInvoices)
+          ? ((state as Record<string, unknown>).financeInvoices as import("./types").FinanceInvoice[])
+          : fallback.financeInvoices,
+        financePayments: Array.isArray((state as Record<string, unknown>).financePayments)
+          ? ((state as Record<string, unknown>).financePayments as import("./types").FinancePayment[])
+          : fallback.financePayments,
+        financeProjections: Array.isArray((state as Record<string, unknown>).financeProjections)
+          ? ((state as Record<string, unknown>).financeProjections as import("./types").FinanceProjection[])
+          : fallback.financeProjections,
+        financeCreditCards: Array.isArray((state as Record<string, unknown>).financeCreditCards)
+          ? ((state as Record<string, unknown>).financeCreditCards as import("./types").FinanceCreditCard[])
+          : fallback.financeCreditCards,
+        financeCreditCardStatements: Array.isArray((state as Record<string, unknown>).financeCreditCardStatements)
+          ? ((state as Record<string, unknown>).financeCreditCardStatements as import("./types").FinanceCreditCardStatement[])
+          : fallback.financeCreditCardStatements,
+        financeDirectDebits: Array.isArray((state as Record<string, unknown>).financeDirectDebits)
+          ? ((state as Record<string, unknown>).financeDirectDebits as import("./types").FinanceDirectDebit[])
+          : fallback.financeDirectDebits,
+        financeSalaryPlans: Array.isArray((state as Record<string, unknown>).financeSalaryPlans)
+          ? ((state as Record<string, unknown>).financeSalaryPlans as import("./types").FinanceSalaryPlan[])
+          : fallback.financeSalaryPlans,
       } as unknown as AppStore;
     },
   }),

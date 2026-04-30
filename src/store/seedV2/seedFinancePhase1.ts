@@ -1,0 +1,1034 @@
+import type {
+  Company,
+  FinanceARAPItem,
+  FinanceCashPosition,
+  FinanceCounterparty,
+  FinanceCreditCard,
+  FinanceCreditCardStatement,
+  FinanceDirectDebit,
+  FinanceInvoice,
+  FinanceInvoiceLine,
+  FinancePayment,
+  FinanceProjection,
+  FinanceSalaryPlan,
+  FinanceSalaryPlanLine,
+} from "../types";
+
+interface SeedInput {
+  baseNowIso: string;
+  companies: Company[];
+  activeUserId: string;
+}
+
+export interface SeedFinancePhase1Output {
+  financeCounterparties: FinanceCounterparty[];
+  financeCashPositions: FinanceCashPosition[];
+  financeARAPItems: FinanceARAPItem[];
+  financeInvoices: FinanceInvoice[];
+  financePayments: FinancePayment[];
+  financeProjections: FinanceProjection[];
+  financeCreditCards: FinanceCreditCard[];
+  financeCreditCardStatements: FinanceCreditCardStatement[];
+  financeDirectDebits: FinanceDirectDebit[];
+  financeSalaryPlans: FinanceSalaryPlan[];
+}
+
+// Approximate FX rates for deterministic seeding (used only when an
+// HrFxRate entry is unavailable for the date in question).
+const FX_TO_EUR: Record<string, number> = {
+  EUR: 1,
+  GBP: 1.18,
+  USD: 0.92,
+  TRY: 0.028,
+  CHF: 1.05,
+  AED: 0.25,
+};
+
+function toEur(amount: number, currency: keyof typeof FX_TO_EUR): number {
+  return Math.round(amount * (FX_TO_EUR[currency] ?? 1) * 100) / 100;
+}
+
+function ymd(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function startOfMonthYmd(d: Date): string {
+  return ymd(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 12, 0, 0)));
+}
+
+function startOfNextMonthYmd(d: Date): string {
+  return ymd(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 12, 0, 0)));
+}
+
+function startOfPrevMonthYmd(d: Date): string {
+  return ymd(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1, 12, 0, 0)));
+}
+
+function addDays(base: string, n: number): string {
+  const d = new Date(`${base}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return ymd(d);
+}
+
+function monthKey(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(`${date}T12:00:00Z`) : date;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function seedFinancePhase1({ baseNowIso, companies, activeUserId }: SeedInput): SeedFinancePhase1Output {
+  const today = baseNowIso.slice(0, 10);
+  const todayDate = new Date(`${today}T12:00:00Z`);
+  const monthStart = startOfMonthYmd(todayDate);
+  const nextMonthStart = startOfNextMonthYmd(todayDate);
+  const prevMonthStart = startOfPrevMonthYmd(todayDate);
+
+  // Companies — pick a customer + provider link target if available.
+  const customerCompany = companies.find((c) => c.companyStatus === "CLIENT") ?? companies[0];
+  const providerCompany = companies.find((c) => c.companyStatus === "INTERCONNECTION") ?? companies[1] ?? companies[0];
+
+  // ─── 1. Counterparties (6) ─────────────────────────────────────
+  const cpCustomer1: FinanceCounterparty = {
+    id: "fcpty-0001",
+    type: "Customer",
+    companyId: customerCompany?.id,
+    name: customerCompany?.name ?? "TechFlow Wholesale Ltd",
+    defaultCurrency: "GBP",
+    notes: "Strategic A2P customer.",
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+  const cpCustomer2: FinanceCounterparty = {
+    id: "fcpty-0002",
+    type: "Customer",
+    name: "Atlantic Voice Carriers Inc.",
+    defaultCurrency: "USD",
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+  const cpProvider1: FinanceCounterparty = {
+    id: "fcpty-0003",
+    type: "Provider",
+    companyId: providerCompany?.id,
+    name: providerCompany?.name ?? "RouteHub Connect",
+    defaultCurrency: "USD",
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+  const cpProvider2: FinanceCounterparty = {
+    id: "fcpty-0004",
+    type: "Provider",
+    name: "Anatolia Termination AS",
+    defaultCurrency: "TRY",
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+  const cpInternal: FinanceCounterparty = {
+    id: "fcpty-0005",
+    type: "Internal",
+    name: "Devotel Group — Inter-entity",
+    defaultCurrency: "EUR",
+    notes: "Used for internal TR↔UK funding transfers.",
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+  const cpOther: FinanceCounterparty = {
+    id: "fcpty-0006",
+    type: "Other",
+    name: "ABC Landlord Holdings Ltd",
+    defaultCurrency: "GBP",
+    notes: "Office lease (London).",
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+
+  const financeCounterparties: FinanceCounterparty[] = [
+    cpCustomer1,
+    cpCustomer2,
+    cpProvider1,
+    cpProvider2,
+    cpInternal,
+    cpOther,
+  ];
+
+  // ─── 2. Cash positions (3) ─────────────────────────────────────
+  const financeCashPositions: FinanceCashPosition[] = [
+    {
+      id: "fcp-0001",
+      entityId: "UK",
+      currency: "GBP",
+      amountOriginal: 180_000,
+      amountEur: toEur(180_000, "GBP"),
+      asOf: monthStart,
+      source: "BankFeed",
+      updatedAt: baseNowIso,
+      updatedByUserId: activeUserId,
+    },
+    {
+      id: "fcp-0002",
+      entityId: "USA",
+      currency: "USD",
+      amountOriginal: 95_000,
+      amountEur: toEur(95_000, "USD"),
+      asOf: monthStart,
+      source: "BankFeed",
+      updatedAt: baseNowIso,
+      updatedByUserId: activeUserId,
+    },
+    {
+      id: "fcp-0003",
+      entityId: "TR",
+      currency: "EUR",
+      amountOriginal: 45_000,
+      amountEur: 45_000,
+      asOf: monthStart,
+      source: "Manual",
+      notes: "EUR-denominated treasury sub-account.",
+      updatedAt: baseNowIso,
+      updatedByUserId: activeUserId,
+    },
+  ];
+
+  // ─── 3. AR/AP items (8) ────────────────────────────────────────
+  const financeARAPItems: FinanceARAPItem[] = [
+    {
+      id: "farap-0001",
+      entityId: "UK",
+      counterpartyId: cpCustomer1.id,
+      direction: "Receivable",
+      sourceType: "Manual",
+      currency: "GBP",
+      amountOriginal: 42_500,
+      amountEur: toEur(42_500, "GBP"),
+      issueDate: addDays(today, -12),
+      dueDate: addDays(today, 18),
+      status: "Open",
+      description: "April A2P SMS — UK fan-out",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "farap-0002",
+      entityId: "USA",
+      counterpartyId: cpCustomer2.id,
+      direction: "Receivable",
+      sourceType: "Usage",
+      currency: "USD",
+      amountOriginal: 67_000,
+      amountEur: toEur(67_000, "USD"),
+      issueDate: addDays(today, -25),
+      dueDate: addDays(today, -3),
+      status: "Overdue",
+      description: "Voice termination — Mar usage",
+      referenceId: "platform-mar-2026",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "farap-0003",
+      entityId: "UK",
+      counterpartyId: cpCustomer1.id,
+      direction: "Receivable",
+      sourceType: "Invoice",
+      currency: "GBP",
+      amountOriginal: 18_400,
+      amountEur: toEur(18_400, "GBP"),
+      paidAmountOriginal: 18_400,
+      paidAmountEur: toEur(18_400, "GBP"),
+      issueDate: addDays(today, -45),
+      dueDate: addDays(today, -15),
+      status: "Paid",
+      description: "Setup fees — Q1",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "farap-0004",
+      entityId: "TR",
+      counterpartyId: cpProvider2.id,
+      direction: "Payable",
+      sourceType: "Invoice",
+      currency: "TRY",
+      amountOriginal: 1_250_000,
+      amountEur: toEur(1_250_000, "TRY"),
+      issueDate: addDays(today, -8),
+      dueDate: addDays(today, 22),
+      status: "Open",
+      description: "TR termination — Apr usage",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "farap-0005",
+      entityId: "USA",
+      counterpartyId: cpProvider1.id,
+      direction: "Payable",
+      sourceType: "Manual",
+      currency: "USD",
+      amountOriginal: 31_500,
+      amountEur: toEur(31_500, "USD"),
+      issueDate: addDays(today, -32),
+      dueDate: addDays(today, -2),
+      status: "Overdue",
+      description: "RouteHub interconnect — Mar",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "farap-0006",
+      entityId: "UK",
+      counterpartyId: cpProvider1.id,
+      direction: "Payable",
+      sourceType: "Invoice",
+      currency: "USD",
+      amountOriginal: 22_000,
+      amountEur: toEur(22_000, "USD"),
+      paidAmountOriginal: 22_000,
+      paidAmountEur: toEur(22_000, "USD"),
+      issueDate: addDays(today, -50),
+      dueDate: addDays(today, -20),
+      status: "Paid",
+      description: "Voice termination — Feb",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "farap-0007",
+      entityId: "USA",
+      counterpartyId: cpCustomer2.id,
+      direction: "Receivable",
+      sourceType: "Manual",
+      currency: "USD",
+      amountOriginal: 9_400,
+      amountEur: toEur(9_400, "USD"),
+      issueDate: addDays(today, -6),
+      dueDate: addDays(today, 24),
+      status: "Open",
+      description: "API platform — Apr subscription",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "farap-0008",
+      entityId: "TR",
+      counterpartyId: cpOther.id,
+      direction: "Payable",
+      sourceType: "Projection",
+      currency: "GBP",
+      amountOriginal: 8_000,
+      amountEur: toEur(8_000, "GBP"),
+      issueDate: today,
+      dueDate: addDays(today, 28),
+      status: "Planned",
+      description: "London office rent — May",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+  ];
+
+  // ─── 4. Invoices (4) ───────────────────────────────────────────
+  const inv1Lines: FinanceInvoiceLine[] = [
+    {
+      id: "finvl-0001",
+      invoiceId: "finv-0001",
+      description: "A2P SMS — UK fan-out",
+      serviceType: "SMS",
+      periodFrom: addDays(today, -42),
+      periodTo: addDays(today, -12),
+      quantity: 1_400_000,
+      unitPrice: 0.022,
+      amountOriginal: 30_800,
+      currency: "GBP",
+    },
+    {
+      id: "finvl-0002",
+      invoiceId: "finv-0001",
+      description: "Voice termination — UK",
+      serviceType: "Voice",
+      periodFrom: addDays(today, -42),
+      periodTo: addDays(today, -12),
+      quantity: 240_000,
+      unitPrice: 0.038,
+      amountOriginal: 9_120,
+      currency: "GBP",
+    },
+    {
+      id: "finvl-0003",
+      invoiceId: "finv-0001",
+      description: "Platform tier — Q2",
+      serviceType: "Platform",
+      amountOriginal: 2_580,
+      currency: "GBP",
+    },
+  ];
+  const inv1Original = inv1Lines.reduce((s, l) => s + l.amountOriginal, 0);
+  const invoice1: FinanceInvoice = {
+    id: "finv-0001",
+    entityId: "UK",
+    counterpartyId: cpCustomer1.id,
+    type: "CustomerInvoice",
+    invoiceNumber: "C-UK-2026-0042",
+    invoiceDate: addDays(today, -12),
+    dueDate: addDays(today, 18),
+    currency: "GBP",
+    amountOriginal: inv1Original,
+    amountEur: toEur(inv1Original, "GBP"),
+    status: "Issued",
+    lines: inv1Lines,
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+
+  const inv2Lines: FinanceInvoiceLine[] = [
+    {
+      id: "finvl-0004",
+      invoiceId: "finv-0002",
+      description: "Voice termination — Mar usage",
+      serviceType: "Voice",
+      periodFrom: addDays(today, -56),
+      periodTo: addDays(today, -25),
+      quantity: 1_200_000,
+      unitPrice: 0.045,
+      amountOriginal: 54_000,
+      currency: "USD",
+    },
+    {
+      id: "finvl-0005",
+      invoiceId: "finv-0002",
+      description: "International A2P SMS",
+      serviceType: "SMS",
+      amountOriginal: 13_000,
+      currency: "USD",
+    },
+  ];
+  const inv2Original = inv2Lines.reduce((s, l) => s + l.amountOriginal, 0);
+  const invoice2: FinanceInvoice = {
+    id: "finv-0002",
+    entityId: "USA",
+    counterpartyId: cpCustomer2.id,
+    type: "CustomerInvoice",
+    invoiceNumber: "C-US-2026-0017",
+    invoiceDate: addDays(today, -25),
+    dueDate: addDays(today, -3),
+    currency: "USD",
+    amountOriginal: inv2Original,
+    amountEur: toEur(inv2Original, "USD"),
+    status: "Overdue",
+    lines: inv2Lines,
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+
+  const inv3Lines: FinanceInvoiceLine[] = [
+    {
+      id: "finvl-0006",
+      invoiceId: "finv-0003",
+      description: "RouteHub interconnect — Feb",
+      serviceType: "Voice",
+      amountOriginal: 16_500,
+      currency: "USD",
+    },
+    {
+      id: "finvl-0007",
+      invoiceId: "finv-0003",
+      description: "Premium routes top-up",
+      serviceType: "SMS",
+      amountOriginal: 5_500,
+      currency: "USD",
+    },
+  ];
+  const inv3Original = inv3Lines.reduce((s, l) => s + l.amountOriginal, 0);
+  const invoice3: FinanceInvoice = {
+    id: "finv-0003",
+    entityId: "UK",
+    counterpartyId: cpProvider1.id,
+    type: "SupplierInvoice",
+    invoiceNumber: "S-RH-2026-0091",
+    invoiceDate: addDays(today, -50),
+    dueDate: addDays(today, -20),
+    currency: "USD",
+    amountOriginal: inv3Original,
+    amountEur: toEur(inv3Original, "USD"),
+    paidAmountOriginal: inv3Original,
+    paidAmountEur: toEur(inv3Original, "USD"),
+    status: "Paid",
+    lines: inv3Lines,
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+
+  const inv4Lines: FinanceInvoiceLine[] = [
+    {
+      id: "finvl-0008",
+      invoiceId: "finv-0004",
+      description: "TR termination — Apr usage",
+      serviceType: "Voice",
+      quantity: 8_500_000,
+      unitPrice: 0.12,
+      amountOriginal: 1_020_000,
+      currency: "TRY",
+    },
+    {
+      id: "finvl-0009",
+      invoiceId: "finv-0004",
+      description: "TR A2P uplift",
+      serviceType: "SMS",
+      amountOriginal: 230_000,
+      currency: "TRY",
+    },
+  ];
+  const inv4Original = inv4Lines.reduce((s, l) => s + l.amountOriginal, 0);
+  const invoice4: FinanceInvoice = {
+    id: "finv-0004",
+    entityId: "TR",
+    counterpartyId: cpProvider2.id,
+    type: "SupplierInvoice",
+    invoiceNumber: "S-AT-2026-0008",
+    invoiceDate: addDays(today, -8),
+    dueDate: addDays(today, 22),
+    currency: "TRY",
+    amountOriginal: inv4Original,
+    amountEur: toEur(inv4Original, "TRY"),
+    status: "Issued",
+    lines: inv4Lines,
+    createdAt: baseNowIso,
+    updatedAt: baseNowIso,
+  };
+
+  const financeInvoices: FinanceInvoice[] = [invoice1, invoice2, invoice3, invoice4];
+
+  // ─── 5. Payments (5) ───────────────────────────────────────────
+  const financePayments: FinancePayment[] = [
+    {
+      id: "fpmt-0001",
+      entityId: "UK",
+      counterpartyId: cpCustomer1.id,
+      direction: "Incoming",
+      paymentDate: addDays(today, -15),
+      currency: "GBP",
+      amountOriginal: 18_400,
+      amountEur: toEur(18_400, "GBP"),
+      method: "BankTransfer",
+      arapItemId: "farap-0003",
+      description: "Q1 setup fees settlement",
+      createdAt: baseNowIso,
+      createdByUserId: activeUserId,
+    },
+    {
+      id: "fpmt-0002",
+      entityId: "USA",
+      counterpartyId: cpCustomer2.id,
+      direction: "Incoming",
+      paymentDate: addDays(today, -42),
+      currency: "USD",
+      amountOriginal: 12_000,
+      amountEur: toEur(12_000, "USD"),
+      method: "BankTransfer",
+      description: "Top-up wire — Atlantic Voice",
+      createdAt: baseNowIso,
+      createdByUserId: activeUserId,
+    },
+    {
+      id: "fpmt-0003",
+      entityId: "UK",
+      counterpartyId: cpProvider1.id,
+      direction: "Outgoing",
+      paymentDate: addDays(today, -20),
+      currency: "USD",
+      amountOriginal: 22_000,
+      amountEur: toEur(22_000, "USD"),
+      method: "BankTransfer",
+      invoiceId: invoice3.id,
+      arapItemId: "farap-0006",
+      description: "RouteHub Feb invoice",
+      createdAt: baseNowIso,
+      createdByUserId: activeUserId,
+    },
+    {
+      id: "fpmt-0004",
+      entityId: "TR",
+      counterpartyId: cpOther.id,
+      direction: "Outgoing",
+      paymentDate: addDays(today, -28),
+      currency: "GBP",
+      amountOriginal: 8_000,
+      amountEur: toEur(8_000, "GBP"),
+      method: "BankTransfer",
+      description: "London office rent — Apr",
+      createdAt: baseNowIso,
+      createdByUserId: activeUserId,
+    },
+    {
+      id: "fpmt-0005",
+      entityId: "UK",
+      direction: "Outgoing",
+      paymentDate: addDays(today, -7),
+      currency: "GBP",
+      amountOriginal: 4_200,
+      amountEur: toEur(4_200, "GBP"),
+      method: "DirectDebit",
+      description: "AWS hosting — Apr",
+      createdAt: baseNowIso,
+      createdByUserId: activeUserId,
+    },
+  ];
+
+  // ─── 6. Projections (8) ────────────────────────────────────────
+  const financeProjections: FinanceProjection[] = [
+    {
+      id: "fproj-0001",
+      entityId: "UK",
+      counterpartyId: cpCustomer1.id,
+      direction: "Inflow",
+      label: "TechFlow expected payment",
+      dueDate: addDays(today, 20),
+      currency: "GBP",
+      amountOriginal: 42_500,
+      amountEur: toEur(42_500, "GBP"),
+      category: "CustomerPayment",
+      confidence: "Expected",
+      status: "Pending",
+      linkedARAPItemId: "farap-0001",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fproj-0002",
+      entityId: "USA",
+      counterpartyId: cpCustomer2.id,
+      direction: "Inflow",
+      label: "Atlantic Voice expected payment",
+      dueDate: addDays(today, 9),
+      currency: "USD",
+      amountOriginal: 67_000,
+      amountEur: toEur(67_000, "USD"),
+      category: "CustomerPayment",
+      confidence: "Expected",
+      status: "Pending",
+      linkedARAPItemId: "farap-0002",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fproj-0003",
+      entityId: "UK",
+      counterpartyId: cpProvider1.id,
+      direction: "Outflow",
+      label: "RouteHub Apr settlement",
+      dueDate: addDays(today, 14),
+      currency: "USD",
+      amountOriginal: 31_500,
+      amountEur: toEur(31_500, "USD"),
+      category: "ProviderPayment",
+      confidence: "Confirmed",
+      status: "Pending",
+      linkedARAPItemId: "farap-0005",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fproj-0004",
+      entityId: "TR",
+      counterpartyId: cpProvider2.id,
+      direction: "Outflow",
+      label: "Anatolia Termination Apr",
+      dueDate: addDays(today, 22),
+      currency: "TRY",
+      amountOriginal: 1_250_000,
+      amountEur: toEur(1_250_000, "TRY"),
+      category: "ProviderPayment",
+      confidence: "Confirmed",
+      status: "Pending",
+      linkedARAPItemId: "farap-0004",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fproj-0005",
+      entityId: "UK",
+      direction: "Outflow",
+      label: "UK payroll — May",
+      dueDate: nextMonthStart,
+      currency: "GBP",
+      amountOriginal: 96_000,
+      amountEur: toEur(96_000, "GBP"),
+      category: "Salary",
+      confidence: "Confirmed",
+      status: "Pending",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fproj-0006",
+      entityId: "TR",
+      direction: "Outflow",
+      label: "TR payroll — May",
+      dueDate: nextMonthStart,
+      currency: "TRY",
+      amountOriginal: 4_200_000,
+      amountEur: toEur(4_200_000, "TRY"),
+      category: "Salary",
+      confidence: "Confirmed",
+      status: "Pending",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fproj-0007",
+      entityId: "UK",
+      direction: "Outflow",
+      label: "Devotel UK Amex statement",
+      dueDate: addDays(today, 15),
+      currency: "GBP",
+      amountOriginal: 14_800,
+      amountEur: toEur(14_800, "GBP"),
+      category: "CreditCard",
+      confidence: "Confirmed",
+      status: "Pending",
+      linkedCreditCardId: "fcc-0001",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fproj-0008",
+      entityId: "UK",
+      direction: "Outflow",
+      label: "AWS direct debit",
+      dueDate: addDays(today, 7),
+      currency: "USD",
+      amountOriginal: 4_200,
+      amountEur: toEur(4_200, "USD"),
+      category: "DirectDebit",
+      confidence: "Confirmed",
+      status: "Pending",
+      linkedDirectDebitId: "fdd-0001",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+  ];
+
+  // ─── 7. Credit cards (3) ───────────────────────────────────────
+  const financeCreditCards: FinanceCreditCard[] = [
+    {
+      id: "fcc-0001",
+      entityId: "UK",
+      cardName: "Devotel UK Amex Business",
+      lastFourDigits: "4421",
+      currency: "GBP",
+      creditLimitOriginal: 75_000,
+      currentBalanceOriginal: 14_800,
+      currentBalanceEur: toEur(14_800, "GBP"),
+      statementDayOfMonth: 25,
+      paymentDueDayOfMonth: 15,
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fcc-0002",
+      entityId: "USA",
+      cardName: "Devotel US Mastercard",
+      lastFourDigits: "9907",
+      currency: "USD",
+      creditLimitOriginal: 50_000,
+      currentBalanceOriginal: 6_400,
+      currentBalanceEur: toEur(6_400, "USD"),
+      statementDayOfMonth: 28,
+      paymentDueDayOfMonth: 18,
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fcc-0003",
+      entityId: "TR",
+      cardName: "Devotel TR EUR Visa",
+      lastFourDigits: "1138",
+      currency: "EUR",
+      creditLimitOriginal: 30_000,
+      currentBalanceOriginal: 4_200,
+      currentBalanceEur: 4_200,
+      statementDayOfMonth: 22,
+      paymentDueDayOfMonth: 12,
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+  ];
+
+  // ─── 8. Credit card statements (3, last month) ─────────────────
+  const lastStatementMonth = monthKey(prevMonthStart);
+  const ukStatementCats = [
+    { category: "Software" as const, amount: 5_400, description: "Atlassian, GitHub, Datadog" },
+    { category: "Advertising" as const, amount: 4_100, description: "Google, LinkedIn" },
+    { category: "Travel" as const, amount: 1_950, description: "BA, Eurostar" },
+    { category: "Office" as const, amount: 1_300, description: "Stationery, courier" },
+    { category: "Other" as const, amount: 2_050 },
+  ];
+  const usStatementCats = [
+    { category: "Software" as const, amount: 2_300, description: "Notion, Vercel, Cloudflare" },
+    { category: "Advertising" as const, amount: 1_900, description: "Meta Ads" },
+    { category: "Travel" as const, amount: 1_400, description: "United, Marriott" },
+    { category: "Office" as const, amount: 800 },
+  ];
+  const trStatementCats = [
+    { category: "Software" as const, amount: 1_500, description: "Adobe, SumUp, Zoom" },
+    { category: "Advertising" as const, amount: 950, description: "Local Google Ads" },
+    { category: "Travel" as const, amount: 700 },
+    { category: "Office" as const, amount: 350 },
+    { category: "Subscription" as const, amount: 700 },
+  ];
+  const sumOf = (arr: { amount: number }[]) => arr.reduce((s, x) => s + x.amount, 0);
+
+  const financeCreditCardStatements: FinanceCreditCardStatement[] = [
+    {
+      id: "fccs-0001",
+      cardId: "fcc-0001",
+      statementMonth: lastStatementMonth,
+      totalAmountOriginal: sumOf(ukStatementCats),
+      totalAmountEur: toEur(sumOf(ukStatementCats), "GBP"),
+      currency: "GBP",
+      categories: ukStatementCats.map((c) => ({
+        category: c.category,
+        amountOriginal: c.amount,
+        amountEur: toEur(c.amount, "GBP"),
+        description: c.description,
+      })),
+      dueDate: addDays(prevMonthStart, 14 + 25),
+      status: "Paid",
+      paidDate: addDays(prevMonthStart, 14 + 25),
+      paidAmountOriginal: sumOf(ukStatementCats),
+      paidAmountEur: toEur(sumOf(ukStatementCats), "GBP"),
+      importedAt: baseNowIso,
+    },
+    {
+      id: "fccs-0002",
+      cardId: "fcc-0002",
+      statementMonth: lastStatementMonth,
+      totalAmountOriginal: sumOf(usStatementCats),
+      totalAmountEur: toEur(sumOf(usStatementCats), "USD"),
+      currency: "USD",
+      categories: usStatementCats.map((c) => ({
+        category: c.category,
+        amountOriginal: c.amount,
+        amountEur: toEur(c.amount, "USD"),
+        description: c.description,
+      })),
+      dueDate: addDays(prevMonthStart, 17 + 28),
+      status: "Unpaid",
+      importedAt: baseNowIso,
+    },
+    {
+      id: "fccs-0003",
+      cardId: "fcc-0003",
+      statementMonth: lastStatementMonth,
+      totalAmountOriginal: sumOf(trStatementCats),
+      totalAmountEur: sumOf(trStatementCats),
+      currency: "EUR",
+      categories: trStatementCats.map((c) => ({
+        category: c.category,
+        amountOriginal: c.amount,
+        amountEur: c.amount,
+        description: c.description,
+      })),
+      dueDate: addDays(prevMonthStart, 11 + 22),
+      status: "Paid",
+      paidDate: addDays(prevMonthStart, 11 + 22),
+      paidAmountOriginal: sumOf(trStatementCats),
+      paidAmountEur: sumOf(trStatementCats),
+      importedAt: baseNowIso,
+    },
+  ];
+
+  // ─── 9. Direct debits (6) ──────────────────────────────────────
+  const financeDirectDebits: FinanceDirectDebit[] = [
+    {
+      id: "fdd-0001",
+      entityId: "UK",
+      label: "AWS hosting",
+      currency: "USD",
+      amountOriginal: 4_200,
+      amountEur: toEur(4_200, "USD"),
+      frequency: "Monthly",
+      nextDueDate: addDays(today, 7),
+      dayOfMonth: 7,
+      category: "Software",
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fdd-0002",
+      entityId: "UK",
+      label: "Google Workspace",
+      currency: "GBP",
+      amountOriginal: 1_350,
+      amountEur: toEur(1_350, "GBP"),
+      frequency: "Monthly",
+      nextDueDate: addDays(today, 11),
+      dayOfMonth: 11,
+      category: "Software",
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fdd-0003",
+      entityId: "UK",
+      counterpartyId: cpOther.id,
+      label: "London office rent",
+      currency: "GBP",
+      amountOriginal: 8_000,
+      amountEur: toEur(8_000, "GBP"),
+      frequency: "Monthly",
+      nextDueDate: addDays(today, 1),
+      dayOfMonth: 1,
+      category: "Rent",
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fdd-0004",
+      entityId: "USA",
+      label: "AT&T fibre",
+      currency: "USD",
+      amountOriginal: 720,
+      amountEur: toEur(720, "USD"),
+      frequency: "Monthly",
+      nextDueDate: addDays(today, 4),
+      dayOfMonth: 4,
+      category: "Utilities",
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fdd-0005",
+      entityId: "TR",
+      label: "Türk Telekom hat",
+      currency: "TRY",
+      amountOriginal: 38_000,
+      amountEur: toEur(38_000, "TRY"),
+      frequency: "Monthly",
+      nextDueDate: addDays(today, 6),
+      dayOfMonth: 6,
+      category: "Utilities",
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+    {
+      id: "fdd-0006",
+      entityId: "UK",
+      label: "Hiscox Cyber Insurance",
+      currency: "GBP",
+      amountOriginal: 9_600,
+      amountEur: toEur(9_600, "GBP"),
+      frequency: "Annual",
+      nextDueDate: addDays(today, 60),
+      category: "Insurance",
+      status: "Active",
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+    },
+  ];
+
+  // ─── 10. Salary plans (current month + last month) ─────────────
+  // Reference deterministic seed employee ids generated by the HR
+  // factory (`hr-emp-0001` … `hr-emp-NNNN`).
+  const currentMonthLines: FinanceSalaryPlanLine[] = [
+    {
+      id: "fspl-0001",
+      salaryPlanId: "fsp-0001",
+      employeeId: "hr-emp-0001",
+      entityId: "UK",
+      currency: "GBP",
+      plannedNetOriginal: 4_500,
+      plannedNetEur: toEur(4_500, "GBP"),
+      plannedEmployerCostOriginal: 5_900,
+      plannedEmployerCostEur: toEur(5_900, "GBP"),
+    },
+    {
+      id: "fspl-0002",
+      salaryPlanId: "fsp-0001",
+      employeeId: "hr-emp-0002",
+      entityId: "USA",
+      currency: "USD",
+      plannedNetOriginal: 5_800,
+      plannedNetEur: toEur(5_800, "USD"),
+      plannedEmployerCostOriginal: 7_400,
+      plannedEmployerCostEur: toEur(7_400, "USD"),
+    },
+    {
+      id: "fspl-0003",
+      salaryPlanId: "fsp-0001",
+      employeeId: "hr-emp-0003",
+      entityId: "TR",
+      currency: "TRY",
+      plannedNetOriginal: 95_000,
+      plannedNetEur: toEur(95_000, "TRY"),
+      plannedEmployerCostOriginal: 130_000,
+      plannedEmployerCostEur: toEur(130_000, "TRY"),
+    },
+    {
+      id: "fspl-0004",
+      salaryPlanId: "fsp-0001",
+      employeeId: "hr-emp-0004",
+      entityId: "UK",
+      currency: "EUR",
+      plannedNetOriginal: 3_900,
+      plannedNetEur: 3_900,
+      plannedEmployerCostOriginal: 5_100,
+      plannedEmployerCostEur: 5_100,
+    },
+  ];
+  const currentTotalNet = currentMonthLines.reduce((s, l) => s + l.plannedNetEur, 0);
+  const currentTotalCost = currentMonthLines.reduce((s, l) => s + (l.plannedEmployerCostEur ?? 0), 0);
+
+  const lastMonthLines: FinanceSalaryPlanLine[] = currentMonthLines.map((l, idx) => ({
+    ...l,
+    id: `fspl-${String(0o0010 + idx + 1).padStart(4, "0")}`,
+    salaryPlanId: "fsp-0002",
+  }));
+  const lastTotalNet = lastMonthLines.reduce((s, l) => s + l.plannedNetEur, 0);
+  const lastTotalCost = lastMonthLines.reduce((s, l) => s + (l.plannedEmployerCostEur ?? 0), 0);
+
+  const financeSalaryPlans: FinanceSalaryPlan[] = [
+    {
+      id: "fsp-0001",
+      month: monthKey(todayDate),
+      status: "Planned",
+      lines: currentMonthLines,
+      totalNetEur: currentTotalNet,
+      totalEmployerCostEur: currentTotalCost,
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+      createdByUserId: activeUserId,
+    },
+    {
+      id: "fsp-0002",
+      month: lastStatementMonth,
+      status: "Paid",
+      lines: lastMonthLines,
+      totalNetEur: lastTotalNet,
+      totalEmployerCostEur: lastTotalCost,
+      paidDate: addDays(prevMonthStart, 27),
+      createdAt: baseNowIso,
+      updatedAt: baseNowIso,
+      createdByUserId: activeUserId,
+    },
+  ];
+
+  return {
+    financeCounterparties,
+    financeCashPositions,
+    financeARAPItems,
+    financeInvoices,
+    financePayments,
+    financeProjections,
+    financeCreditCards,
+    financeCreditCardStatements,
+    financeDirectDebits,
+    financeSalaryPlans,
+  };
+}

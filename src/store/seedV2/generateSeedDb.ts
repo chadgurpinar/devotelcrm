@@ -24,6 +24,7 @@ import { assertSeedDb, logSeedDiagnosticsOnce } from "./validators";
 import { seedWholesaleTraffic } from "./seedWholesaleTraffic";
 import { seedTrafficIntelV3 } from "./seedTrafficIntelV3";
 import { seedFinance } from "./seedFinance";
+import { seedFinancePhase1 } from "./seedFinancePhase1";
 
 let determinismProbeInProgress = false;
 
@@ -520,6 +521,12 @@ export function generateSeedDb(
     companies: companiesWithContacts,
   });
 
+  const financePhase1 = seedFinancePhase1({
+    baseNowIso,
+    companies: companiesWithContacts,
+    activeUserId,
+  });
+
   const mgmtReports = seedManagementReports(hr.hrEmployees, activeUserId);
 
   const db: DbState = {
@@ -789,6 +796,7 @@ export function generateSeedDb(
     wholesaleTrafficRecords: seedWholesaleTraffic(trafficRng, baseNowIso),
     ...seedTrafficIntelV3(baseNowIso),
     ...finance,
+    ...financePhase1,
     outbox: [],
   };
 

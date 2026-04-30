@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter } from "react-router-dom";
 import { AppShell } from "./layout/AppShell";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { EventsListPage } from "../features/events/EventsListPage";
@@ -37,10 +37,17 @@ import { ManagementReportsPage } from "../features/management-reports/Management
 import { ProjectsAndTasksPage } from "../features/projects/ProjectsAndTasksPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { AllTasksPage } from "../features/tasks/AllTasksPage";
-import { FinanceArApOverviewPage } from "../features/finance/FinanceArApOverviewPage";
+import { FinanceArApPage } from "../features/finance/FinanceArApPage";
+import { FinanceArApDetailPage } from "../features/finance/FinanceArApDetailPage";
+import { FinanceCreditCardsPage } from "../features/finance/FinanceCreditCardsPage";
+import { FinanceCreditCardDetailPage } from "../features/finance/FinanceCreditCardDetailPage";
+import { FinanceDirectDebitsPage } from "../features/finance/FinanceDirectDebitsPage";
+import { FinanceInvoicesPage } from "../features/finance/FinanceInvoicesPage";
+import { FinanceSalariesPage } from "../features/finance/FinanceSalariesPage";
 import { FinanceCashflowPlanningPage } from "../features/finance/FinanceCashflowPlanningPage";
 import { FinanceCounterpartyDetailPage } from "../features/finance/FinanceCounterpartyDetailPage";
 import { FinanceInternalExpensesPage } from "../features/finance/FinanceInternalExpensesPage";
+import { FinanceOverviewPage } from "../features/finance/FinanceOverviewPage";
 
 export const router = createBrowserRouter([
   {
@@ -65,8 +72,15 @@ export const router = createBrowserRouter([
       { path: "/reports", element: <ReportsPage /> },
       { path: "/reports/timeline", element: <ProjectTimelinePage /> },
       { path: "/management-reports", element: <ManagementReportsPage /> },
-      { path: "/finance", element: <Navigate to="/finance/ar-ap" replace /> },
-      { path: "/finance/ar-ap", element: <FinanceArApOverviewPage /> },
+      { path: "/finance", element: <FinancePage /> },
+      { path: "/finance/overview", element: <FinanceOverviewPage /> },
+      { path: "/finance/ar-ap", element: <FinanceArApPage /> },
+      { path: "/finance/ar-ap/:counterpartyId", element: <FinanceArApDetailPage /> },
+      { path: "/finance/credit-cards", element: <FinanceCreditCardsPage /> },
+      { path: "/finance/credit-cards/:cardId", element: <FinanceCreditCardDetailPage /> },
+      { path: "/finance/direct-debits", element: <FinanceDirectDebitsPage /> },
+      { path: "/finance/invoices", element: <FinanceInvoicesPage /> },
+      { path: "/finance/salaries", element: <FinanceSalariesPage /> },
       { path: "/finance/counterparties/:counterpartyId", element: <FinanceCounterpartyDetailPage /> },
       { path: "/finance/cashflow-planning", element: <FinanceCashflowPlanningPage /> },
       { path: "/finance/internal-expenses", element: <FinanceInternalExpensesPage /> },

@@ -1628,6 +1628,271 @@ export interface FinUsageArApPosition {
   fetchedAt: string;
 }
 
+// ─── Finance (Phase 1 — additive, parallel to legacy Fin* types) ────
+
+export type FinanceCurrencyCode = "EUR" | "USD" | "GBP" | "TRY" | "CHF" | "AED";
+
+export type FinanceDirection = "Inflow" | "Outflow";
+export type FinanceBilateralDirection = "Receivable" | "Payable";
+export type FinanceConfidence = "Confirmed" | "Expected" | "Planned";
+export type FinancePaymentMethod = "BankTransfer" | "CreditCard" | "DirectDebit" | "Cash" | "Other";
+
+export interface FinanceCashPosition {
+  id: string;
+  entityId: OurEntity;
+  currency: FinanceCurrencyCode;
+  amountOriginal: number;
+  amountEur: number;
+  asOf: string;
+  source: "Manual" | "BankFeed";
+  notes?: string;
+  updatedAt: string;
+  updatedByUserId: string;
+}
+
+export type FinanceCounterpartyType = "Customer" | "Provider" | "Internal" | "Other";
+
+export interface FinanceCounterparty {
+  id: string;
+  type: FinanceCounterpartyType;
+  companyId?: string;
+  name: string;
+  defaultCurrency: FinanceCurrencyCode;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinanceARAPSourceType = "Usage" | "Invoice" | "Projection" | "Manual";
+export type FinanceARAPStatus = "Planned" | "Open" | "PartiallyPaid" | "Paid" | "Overdue" | "Cancelled";
+
+export interface FinanceARAPItem {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId: string;
+  direction: FinanceBilateralDirection;
+  sourceType: FinanceARAPSourceType;
+  currency: FinanceCurrencyCode;
+  amountOriginal: number;
+  amountEur: number;
+  paidAmountOriginal?: number;
+  paidAmountEur?: number;
+  issueDate: string;
+  dueDate?: string;
+  status: FinanceARAPStatus;
+  description: string;
+  referenceId?: string;
+  invoiceId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinanceInvoiceType = "CustomerInvoice" | "SupplierInvoice";
+export type FinanceInvoiceStatus = "Draft" | "Issued" | "PartiallyPaid" | "Paid" | "Overdue" | "Cancelled";
+export type FinanceInvoiceServiceType = "SMS" | "Voice" | "Platform" | "Consulting" | "Other";
+
+export interface FinanceInvoiceLine {
+  id: string;
+  invoiceId: string;
+  description: string;
+  serviceType: FinanceInvoiceServiceType;
+  periodFrom?: string;
+  periodTo?: string;
+  quantity?: number;
+  unitPrice?: number;
+  amountOriginal: number;
+  currency: FinanceCurrencyCode;
+}
+
+export interface FinanceInvoice {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId: string;
+  type: FinanceInvoiceType;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  currency: FinanceCurrencyCode;
+  amountOriginal: number;
+  amountEur: number;
+  paidAmountOriginal?: number;
+  paidAmountEur?: number;
+  status: FinanceInvoiceStatus;
+  /** Embedded; not stored as a separate DbState array. */
+  lines: FinanceInvoiceLine[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinancePayment {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId?: string;
+  direction: "Incoming" | "Outgoing";
+  paymentDate: string;
+  currency: FinanceCurrencyCode;
+  amountOriginal: number;
+  amountEur: number;
+  method: FinancePaymentMethod;
+  invoiceId?: string;
+  arapItemId?: string;
+  description: string;
+  notes?: string;
+  createdAt: string;
+  createdByUserId: string;
+}
+
+export type FinanceProjectionCategory =
+  | "CustomerPayment"
+  | "ProviderPayment"
+  | "Salary"
+  | "Rent"
+  | "Tax"
+  | "CreditCard"
+  | "DirectDebit"
+  | "Loan"
+  | "Other";
+
+export type FinanceProjectionStatus = "Pending" | "Realised" | "Cancelled";
+
+export interface FinanceProjection {
+  id: string;
+  entityId: OurEntity;
+  counterpartyId?: string;
+  direction: FinanceDirection;
+  label: string;
+  dueDate: string;
+  currency: FinanceCurrencyCode;
+  amountOriginal: number;
+  amountEur: number;
+  category: FinanceProjectionCategory;
+  confidence: FinanceConfidence;
+  status: FinanceProjectionStatus;
+  linkedARAPItemId?: string;
+  linkedDirectDebitId?: string;
+  linkedCreditCardId?: string;
+  linkedSalaryPlanId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinanceCreditCardStatus = "Active" | "Cancelled" | "Suspended";
+
+export type FinanceCreditCardExpenseCategory =
+  | "Software"
+  | "Advertising"
+  | "Travel"
+  | "Office"
+  | "Subscription"
+  | "Utilities"
+  | "Meals"
+  | "Hardware"
+  | "Other";
+
+export interface FinanceCreditCardStatementCategory {
+  category: FinanceCreditCardExpenseCategory;
+  amountOriginal: number;
+  amountEur: number;
+  description?: string;
+}
+
+export interface FinanceCreditCardStatement {
+  id: string;
+  cardId: string;
+  statementMonth: string;
+  totalAmountOriginal: number;
+  totalAmountEur: number;
+  currency: FinanceCurrencyCode;
+  categories: FinanceCreditCardStatementCategory[];
+  dueDate: string;
+  paidDate?: string;
+  paidAmountOriginal?: number;
+  paidAmountEur?: number;
+  status: "Unpaid" | "Paid" | "PartiallyPaid" | "Overdue";
+  importedAt: string;
+  notes?: string;
+}
+
+export interface FinanceCreditCard {
+  id: string;
+  entityId: OurEntity;
+  cardName: string;
+  lastFourDigits: string;
+  currency: FinanceCurrencyCode;
+  creditLimitOriginal?: number;
+  currentBalanceOriginal?: number;
+  currentBalanceEur?: number;
+  statementDayOfMonth: number;
+  paymentDueDayOfMonth: number;
+  status: FinanceCreditCardStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinanceDirectDebitFrequency = "Monthly" | "Quarterly" | "Annual" | "OneOff";
+export type FinanceDirectDebitStatus = "Active" | "Cancelled" | "Paused";
+
+export type FinanceDirectDebitCategory =
+  | "Software"
+  | "Utilities"
+  | "Rent"
+  | "Insurance"
+  | "Loan"
+  | "Subscription"
+  | "Tax"
+  | "Other";
+
+export interface FinanceDirectDebit {
+  id: string;
+  entityId: OurEntity;
+  label: string;
+  counterpartyId?: string;
+  currency: FinanceCurrencyCode;
+  amountOriginal: number;
+  amountEur: number;
+  frequency: FinanceDirectDebitFrequency;
+  nextDueDate: string;
+  dayOfMonth?: number;
+  category: FinanceDirectDebitCategory;
+  status: FinanceDirectDebitStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinanceSalaryPlanStatus = "Planned" | "Paid" | "Cancelled";
+
+export interface FinanceSalaryPlanLine {
+  id: string;
+  salaryPlanId: string;
+  employeeId: string;
+  entityId: OurEntity;
+  currency: FinanceCurrencyCode;
+  plannedNetOriginal: number;
+  plannedNetEur: number;
+  plannedEmployerCostOriginal?: number;
+  plannedEmployerCostEur?: number;
+  notes?: string;
+}
+
+export interface FinanceSalaryPlan {
+  id: string;
+  month: string;
+  status: FinanceSalaryPlanStatus;
+  lines: FinanceSalaryPlanLine[];
+  totalNetEur: number;
+  totalEmployerCostEur: number;
+  paidDate?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdByUserId: string;
+}
+
 export interface DbState {
   version: number;
   activeUserId: string;
@@ -1696,6 +1961,17 @@ export interface DbState {
   finProjections: FinProjection[];
   finInternalExpenses: FinInternalExpense[];
   finEntityCashBalances: FinEntityCashBalance[];
+  financeCounterparties: FinanceCounterparty[];
+  financeCashPositions: FinanceCashPosition[];
+  financeARAPItems: FinanceARAPItem[];
+  /** Lines are embedded in `FinanceInvoice.lines`; no separate top-level array. */
+  financeInvoices: FinanceInvoice[];
+  financePayments: FinancePayment[];
+  financeProjections: FinanceProjection[];
+  financeCreditCards: FinanceCreditCard[];
+  financeCreditCardStatements: FinanceCreditCardStatement[];
+  financeDirectDebits: FinanceDirectDebit[];
+  financeSalaryPlans: FinanceSalaryPlan[];
   outbox: string[];
 }
 
