@@ -61,6 +61,9 @@ const CATEGORY_COLORS: Record<FinanceCreditCardExpenseCategory, string> = {
   Utilities: "#06b6d4",
   Meals: "#f97316",
   Hardware: "#64748b",
+  Legal: "#1e3a5f",
+  Hosting: "#0ea5e9",
+  Telecom: "#a855f7",
   Other: "#9ca3af",
 };
 

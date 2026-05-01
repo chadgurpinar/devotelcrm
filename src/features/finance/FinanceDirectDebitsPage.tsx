@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, PauseCircle, Pencil, Play, Plus, Repeat, Trash2 } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  PauseCircle,
+  Pencil,
+  Play,
+  Plus,
+  Repeat,
+  Trash2,
+} from "lucide-react";
 import { Button } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import type {
@@ -398,6 +410,12 @@ export function FinanceDirectDebitsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("Active");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
 
+  const [viewMode, setViewMode] = useState<"List" | "Calendar">("List");
+  const [calendarMonth, setCalendarMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<FinanceDirectDebit | null>(null);
 
@@ -499,6 +517,27 @@ export function FinanceDirectDebitsPage() {
             ))}
           </div>
 
+          <div className="flex rounded-lg bg-gray-100 p-0.5 text-xs">
+            {(
+              [
+                { id: "List", label: "List", icon: <List size={11} /> },
+                { id: "Calendar", label: "Calendar", icon: <CalendarIcon size={11} /> },
+              ] as const
+            ).map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setViewMode(v.id)}
+                className={`inline-flex items-center gap-1 rounded-md px-3 py-1 font-semibold ${
+                  viewMode === v.id ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
+                }`}
+              >
+                {v.icon}
+                {v.label}
+              </button>
+            ))}
+          </div>
+
           <label className="text-xs font-semibold text-gray-600">
             Category
             <select
@@ -523,6 +562,21 @@ export function FinanceDirectDebitsPage() {
         </Button>
       </div>
 
+      {viewMode === "Calendar" && (
+        <CalendarMonthView
+          monthKey={calendarMonth}
+          debits={filtered}
+          onPrev={() => setCalendarMonth(shiftMonthDD(calendarMonth, -1))}
+          onNext={() => setCalendarMonth(shiftMonthDD(calendarMonth, 1))}
+          onToday={() => {
+            const d = new Date();
+            setCalendarMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+          }}
+        />
+      )}
+
+      {viewMode === "List" && (
+      <>
       {/* Section 3 — Table */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="border-b border-gray-100 px-5 py-3.5">
@@ -640,6 +694,8 @@ export function FinanceDirectDebitsPage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       <DirectDebitFormModal
         open={modalOpen}
@@ -649,6 +705,166 @@ export function FinanceDirectDebitsPage() {
           setEditing(null);
         }}
       />
+    </div>
+  );
+}
+
+// ─── Calendar view ───────────────────────────────────────────────────
+
+function shiftMonthDD(monthKey: string, delta: number): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return monthKey;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1 + delta, 1, 12, 0, 0));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function formatCalendarMonth(monthKey: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!m) return monthKey;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1, 12, 0, 0));
+  return d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+const CATEGORY_DOT_COLORS: Record<FinanceDirectDebitCategory, string> = {
+  Software: "bg-indigo-500",
+  Utilities: "bg-cyan-500",
+  Rent: "bg-rose-500",
+  Insurance: "bg-amber-500",
+  Loan: "bg-orange-500",
+  Subscription: "bg-violet-500",
+  Tax: "bg-red-600",
+  Other: "bg-gray-400",
+};
+
+function CalendarMonthView({
+  monthKey,
+  debits,
+  onPrev,
+  onNext,
+  onToday,
+}: {
+  monthKey: string;
+  debits: FinanceDirectDebit[];
+  onPrev: () => void;
+  onNext: () => void;
+  onToday: () => void;
+}) {
+  const m = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  const year = m ? Number(m[1]) : new Date().getFullYear();
+  const monthIdx = m ? Number(m[2]) - 1 : new Date().getMonth();
+
+  // Days in month + leading offset (Monday=0).
+  const firstOfMonth = new Date(Date.UTC(year, monthIdx, 1));
+  const daysInMonth = new Date(Date.UTC(year, monthIdx + 1, 0)).getUTCDate();
+  // Map JS getUTCDay (Sun=0..Sat=6) → Monday-anchored 0..6.
+  const lead = (firstOfMonth.getUTCDay() + 6) % 7;
+
+  const cells: Array<{ ymd: string | null; day: number | null }> = [];
+  for (let i = 0; i < lead; i++) cells.push({ ymd: null, day: null });
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ymd = `${year}-${String(monthIdx + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    cells.push({ ymd, day: d });
+  }
+  while (cells.length % 7 !== 0) cells.push({ ymd: null, day: null });
+
+  // Group debits by ymd.
+  const eventsByDay = new Map<string, FinanceDirectDebit[]>();
+  for (const dd of debits) {
+    if (!dd.nextDueDate) continue;
+    const key = dd.nextDueDate.slice(0, 10);
+    const arr = eventsByDay.get(key) ?? [];
+    arr.push(dd);
+    eventsByDay.set(key, arr);
+  }
+
+  const todayYmd = new Date().toISOString().slice(0, 10);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-800">{formatCalendarMonth(monthKey)}</h3>
+          <p className="mt-0.5 text-xs text-gray-500">Direct debits with next-due in this month</p>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            onClick={onPrev}
+            aria-label="Previous month"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            type="button"
+            className="rounded-md px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+            onClick={onToday}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+            onClick={onNext}
+            aria-label="Next month"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+      <div className="p-3">
+        <div className="grid grid-cols-7 gap-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+            <div key={d} className="px-2 py-1">{d}</div>
+          ))}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-2">
+          {cells.map((c, idx) => {
+            const events = c.ymd ? eventsByDay.get(c.ymd) ?? [] : [];
+            const isToday = c.ymd === todayYmd;
+            const isWeekend = idx % 7 >= 5;
+            return (
+              <div
+                key={idx}
+                className={`min-h-[88px] rounded-lg border p-2 ${
+                  c.ymd
+                    ? isToday
+                      ? "border-indigo-300 bg-indigo-50/40"
+                      : isWeekend
+                      ? "border-gray-100 bg-gray-50/40"
+                      : "border-gray-200 bg-white"
+                    : "border-transparent bg-transparent"
+                }`}
+              >
+                {c.day !== null && (
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[11px] font-semibold tabular-nums ${isToday ? "text-indigo-700" : "text-gray-600"}`}>
+                      {c.day}
+                    </span>
+                    {events.length > 0 && (
+                      <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-medium text-gray-600">
+                        {events.length}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="mt-1 space-y-0.5">
+                  {events.slice(0, 3).map((dd) => (
+                    <div key={dd.id} className="flex items-center gap-1 truncate text-[10px] text-gray-700">
+                      <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${CATEGORY_DOT_COLORS[dd.category]}`} />
+                      <span className="truncate font-medium">{dd.label}</span>
+                      <span className="ml-auto shrink-0 tabular-nums">{fmtEur(dd.amountEur)}</span>
+                    </div>
+                  ))}
+                  {events.length > 3 && (
+                    <div className="text-[10px] text-gray-400">+{events.length - 3} more</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

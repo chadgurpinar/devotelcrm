@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ArrowDownRight, ArrowUpRight, Wallet } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Calendar, TrendingDown, Wallet } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import type {
   FinanceCashPosition,
@@ -19,6 +19,7 @@ import type {
   FinanceCurrencyCode,
   OurEntity,
 } from "../../store/types";
+import { UiKpiCard } from "../../ui/UiKpiCard";
 import { UiPageHeader } from "../../ui/UiPageHeader";
 
 // ─── Local helpers ───────────────────────────────────────────────────
@@ -170,6 +171,15 @@ export function FinanceOverviewPage() {
   const creditCards = useAppStore((s) => s.financeCreditCards);
   const creditCardStatements = useAppStore((s) => s.financeCreditCardStatements);
   const directDebits = useAppStore((s) => s.financeDirectDebits);
+  const liquidityThresholds = useAppStore((s) => s.financeLiquidityThresholds);
+  const forecastSnapshots = useAppStore((s) => s.financeForecastSnapshots);
+  const recordSnapshot = useAppStore((s) => s.recordFinanceForecastSnapshot);
+
+  // Sum of min liquidity thresholds (group floor used in chart).
+  const minLiquidityFloor = useMemo(
+    () => liquidityThresholds.reduce((s, t) => s + t.minOperatingCashEur, 0),
+    [liquidityThresholds],
+  );
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const todayYmd = ymd(today);
@@ -204,60 +214,267 @@ export function FinanceOverviewPage() {
     return sorted.length > 0 ? sorted[sorted.length - 1] : null;
   }, [cashPositions]);
 
-  // ── Section 3: 90-day weekly buckets ───────────────────────────────
+  // ── Section 3: 90-day weekly buckets, by category ─────────────────
+  /**
+   * Stacked-category buckets:
+   *   Inflow categories: Collections (ARAP receivable), Other inflow (projections).
+   *   Outflow categories: SupplierPayments (ARAP payable), Payroll (Salary projection),
+   *     Tax, DirectDebits, CardSettlements, Intercompany, OtherOutflow.
+   */
   const chartData = useMemo(() => {
-    const WEEKS = 13; // 13 weeks ≈ 91 days, covers the 90-day window
-    const buckets: { idx: number; label: string; weekStartYmd: string; inflow: number; outflow: number }[] = [];
+    const WEEKS = 13;
+    type Bucket = {
+      weekStartYmd: string;
+      Collections: number;
+      OtherInflow: number;
+      SupplierPayments: number;
+      Payroll: number;
+      Tax: number;
+      DirectDebits: number;
+      CardSettlements: number;
+      Intercompany: number;
+      OtherOutflow: number;
+    };
+    const buckets: Bucket[] = [];
     for (let i = 0; i < WEEKS; i++) {
       const start = addDays(today, i * 7);
-      buckets.push({ idx: i, label: ymd(start), weekStartYmd: ymd(start), inflow: 0, outflow: 0 });
+      buckets.push({
+        weekStartYmd: ymd(start),
+        Collections: 0,
+        OtherInflow: 0,
+        SupplierPayments: 0,
+        Payroll: 0,
+        Tax: 0,
+        DirectDebits: 0,
+        CardSettlements: 0,
+        Intercompany: 0,
+        OtherOutflow: 0,
+      });
     }
-    const addOutflow = (dateStr: string, eur: number) => {
+    const bucketIdx = (dateStr: string) => {
       const idx = getWeekBucket(dateStr, today);
-      if (idx >= 0 && idx < WEEKS) buckets[idx]!.outflow += eur;
+      return idx >= 0 && idx < WEEKS ? idx : -1;
     };
-    const addInflow = (dateStr: string, eur: number) => {
-      const idx = getWeekBucket(dateStr, today);
-      if (idx >= 0 && idx < WEEKS) buckets[idx]!.inflow += eur;
-    };
+    const cpById = new Map<string, FinanceCounterparty>();
+    for (const c of counterparties) cpById.set(c.id, c);
 
-    // Outflows
-    for (const p of projections) {
-      if (p.status !== "Pending") continue;
-      if (p.direction === "Outflow") addOutflow(p.dueDate, p.amountEur);
-      else if (p.direction === "Inflow") addInflow(p.dueDate, p.amountEur);
-    }
-    for (const s of creditCardStatements) {
-      if (s.status !== "Paid") addOutflow(s.dueDate, s.totalAmountEur);
-    }
-    for (const dd of directDebits) {
-      if (dd.status === "Active") addOutflow(dd.nextDueDate, dd.amountEur);
-    }
-    // Inflows from open / planned receivables
+    // ARAP items: receivables → Collections (or Intercompany when Internal cp).
     for (const item of arapItems) {
-      if (
-        item.direction === "Receivable" &&
-        (item.status === "Open" || item.status === "Planned") &&
-        item.dueDate
-      ) {
-        addInflow(item.dueDate, item.amountEur);
+      if (item.status === "Paid" || item.status === "Cancelled") continue;
+      if (!item.dueDate) continue;
+      const idx = bucketIdx(item.dueDate);
+      if (idx < 0) continue;
+      const cp = cpById.get(item.counterpartyId);
+      const isIc = item.intercompany || cp?.type === "Internal";
+      if (item.direction === "Receivable") {
+        if (isIc) buckets[idx]!.Intercompany += item.amountEur;
+        else buckets[idx]!.Collections += item.amountEur;
+      } else {
+        if (isIc) buckets[idx]!.Intercompany += item.amountEur;
+        else buckets[idx]!.SupplierPayments += item.amountEur;
       }
     }
 
-    // Running balance starting from total cash
+    // Projections: split by category.
+    for (const p of projections) {
+      if (p.status !== "Pending") continue;
+      const idx = bucketIdx(p.dueDate);
+      if (idx < 0) continue;
+      if (p.direction === "Inflow") {
+        buckets[idx]!.OtherInflow += p.amountEur;
+      } else {
+        switch (p.category) {
+          case "Salary":
+            buckets[idx]!.Payroll += p.amountEur;
+            break;
+          case "Tax":
+            buckets[idx]!.Tax += p.amountEur;
+            break;
+          case "DirectDebit":
+            buckets[idx]!.DirectDebits += p.amountEur;
+            break;
+          case "CreditCard":
+            buckets[idx]!.CardSettlements += p.amountEur;
+            break;
+          case "ProviderPayment":
+            buckets[idx]!.SupplierPayments += p.amountEur;
+            break;
+          default:
+            buckets[idx]!.OtherOutflow += p.amountEur;
+        }
+      }
+    }
+
+    // Credit-card statements not yet paid (independent of projections).
+    for (const s of creditCardStatements) {
+      if (s.status === "Paid") continue;
+      const idx = bucketIdx(s.dueDate);
+      if (idx >= 0) buckets[idx]!.CardSettlements += s.totalAmountEur;
+    }
+
+    // Active direct debits.
+    for (const dd of directDebits) {
+      if (dd.status !== "Active") continue;
+      const idx = bucketIdx(dd.nextDueDate);
+      if (idx >= 0) buckets[idx]!.DirectDebits += dd.amountEur;
+    }
+
+    // Running balance starting from total cash.
     const startingBalance = cashPositions.reduce((s, p) => s + p.amountEur, 0);
     let running = startingBalance;
     return buckets.map((b) => {
-      running = running + b.inflow - b.outflow;
+      const totalInflow = b.Collections + b.OtherInflow + (/* IC handled both ways */ 0);
+      const totalOutflow =
+        b.SupplierPayments + b.Payroll + b.Tax + b.DirectDebits + b.CardSettlements + b.OtherOutflow;
+      // Intercompany splits both directions; we treat its `Receivable` as inflow and `Payable` as outflow.
+      // For the bar stack we surface a single "Intercompany" net column; for running balance we add to inflow when net positive, outflow when negative.
+      const icNet = b.Intercompany; // positive means net inflow; negative means net outflow (rare in seed).
+      const inflow = totalInflow + Math.max(0, icNet);
+      const outflow = totalOutflow + Math.max(0, -icNet);
+      running = running + inflow - outflow;
       return {
-        weekLabel: b.label.slice(5), // "MM-DD"
+        weekLabel: b.weekStartYmd.slice(5),
         weekStartYmd: b.weekStartYmd,
-        Inflows: Math.round(b.inflow),
-        Outflows: -Math.round(b.outflow),
+        // Stacked inflow series (positive)
+        Collections: Math.round(b.Collections),
+        OtherInflow: Math.round(b.OtherInflow),
+        Intercompany: Math.round(b.Intercompany),
+        // Stacked outflow series (negative for chart display)
+        SupplierPayments: -Math.round(b.SupplierPayments),
+        Payroll: -Math.round(b.Payroll),
+        Tax: -Math.round(b.Tax),
+        DirectDebits: -Math.round(b.DirectDebits),
+        CardSettlements: -Math.round(b.CardSettlements),
+        OtherOutflow: -Math.round(b.OtherOutflow),
+        // Aggregate totals (used by KPIs / exception panel)
+        _totalInflow: Math.round(inflow),
+        _totalOutflow: Math.round(outflow),
         "Running Balance": Math.round(running),
       };
     });
-  }, [today, projections, creditCardStatements, directDebits, arapItems, cashPositions]);
+  }, [today, projections, creditCardStatements, directDebits, arapItems, cashPositions, counterparties]);
+
+  // ── Forecast KPIs (derived from chartData) ─────────────────────────
+  const forecastKpis = useMemo(() => {
+    if (chartData.length === 0) {
+      return { openingCash: 0, totalInflows: 0, totalOutflows: 0, lowestBalance: 0, lowestWeek: "—" };
+    }
+    let totalInflows = 0;
+    let totalOutflows = 0;
+    let lowestBalance = chartData[0]!["Running Balance"];
+    let lowestWeek = chartData[0]!.weekStartYmd;
+    for (const row of chartData) {
+      totalInflows += row._totalInflow;
+      totalOutflows += row._totalOutflow;
+      if (row["Running Balance"] < lowestBalance) {
+        lowestBalance = row["Running Balance"];
+        lowestWeek = row.weekStartYmd;
+      }
+    }
+    const week0 = chartData[0]!;
+    const week0Net = week0._totalInflow - week0._totalOutflow;
+    const openingCash = week0["Running Balance"] - week0Net;
+    return { openingCash, totalInflows, totalOutflows, lowestBalance, lowestWeek };
+  }, [chartData]);
+
+  // ── Forecast accuracy (over prior 4/8/13 weeks of actuals) ─────────
+  const accuracy = useMemo(() => {
+    // Rule: a snapshot is "accurate" when |actual − forecast| / |forecast| <= 10%.
+    // We need only snapshots that have an `actualClosingEur` set (i.e. the week is in the past).
+    const finalised = forecastSnapshots
+      .filter((s) => s.actualClosingEur !== undefined)
+      .slice()
+      .sort((a, b) => b.weekStartYmd.localeCompare(a.weekStartYmd));
+    const accuracyForLastN = (n: number) => {
+      const set = finalised.slice(0, n);
+      if (set.length === 0) return null;
+      let hits = 0;
+      for (const s of set) {
+        const fc = s.forecastClosingEur;
+        const ac = s.actualClosingEur ?? 0;
+        const denom = Math.max(1, Math.abs(fc));
+        if (Math.abs(ac - fc) / denom <= 0.1) hits += 1;
+      }
+      return Math.round((hits / set.length) * 100);
+    };
+    return {
+      last4: accuracyForLastN(4),
+      last8: accuracyForLastN(8),
+      last13: accuracyForLastN(13),
+      finalisedCount: finalised.length,
+    };
+  }, [forecastSnapshots]);
+
+  const runSnapshot = () => {
+    const todayIso = new Date().toISOString();
+    const rows = chartData.map((row) => ({
+      forecastedAt: todayIso,
+      weekStartYmd: row.weekStartYmd,
+      forecastInflowEur: row._totalInflow,
+      forecastOutflowEur: row._totalOutflow,
+      forecastClosingEur: row["Running Balance"],
+    }));
+    recordSnapshot(rows);
+  };
+
+  // ── Exception panel data ───────────────────────────────────────────
+  const exceptions = useMemo(() => {
+    const out: Array<{ id: string; severity: "danger" | "warning" | "info"; title: string; detail: string }> = [];
+    // 1. Cash pinch in next 4 weeks (any of the next 4 weeks below threshold or going negative).
+    if (chartData.length > 0) {
+      const next4 = chartData.slice(0, 4);
+      for (const row of next4) {
+        if (row["Running Balance"] < 0) {
+          out.push({
+            id: `pinch-neg-${row.weekStartYmd}`,
+            severity: "danger",
+            title: "Cash goes negative",
+            detail: `Week of ${row.weekStartYmd} closes at ${fmtEur(row["Running Balance"])}.`,
+          });
+        } else if (minLiquidityFloor > 0 && row["Running Balance"] < minLiquidityFloor) {
+          out.push({
+            id: `pinch-thr-${row.weekStartYmd}`,
+            severity: "warning",
+            title: "Cash below minimum threshold",
+            detail: `Week of ${row.weekStartYmd}: ${fmtEur(row["Running Balance"])} < min ${fmtEur(minLiquidityFloor)}.`,
+          });
+        }
+      }
+    }
+    // 2. Large unconfirmed inflow (Expected/Planned projection ≥ 50k EUR within 30d).
+    const todayMs = Date.now();
+    const in30Ms = todayMs + 30 * 24 * 60 * 60 * 1000;
+    for (const p of projections) {
+      if (p.status !== "Pending" || p.direction !== "Inflow") continue;
+      const dueMs = new Date(`${p.dueDate.slice(0, 10)}T12:00:00Z`).getTime();
+      if (dueMs < todayMs || dueMs > in30Ms) continue;
+      if (p.confidence === "Confirmed") continue;
+      if (p.amountEur >= 50_000) {
+        out.push({
+          id: `unconf-${p.id}`,
+          severity: "warning",
+          title: `Large unconfirmed inflow: ${p.label}`,
+          detail: `${fmtEur(p.amountEur)} due ${p.dueDate} · confidence ${p.confidence}.`,
+        });
+      }
+    }
+    // 3. Single-item outflows over 30k EUR threshold within 30d.
+    const PROJ_THRESHOLD = 30_000;
+    for (const p of projections) {
+      if (p.status !== "Pending" || p.direction !== "Outflow") continue;
+      const dueMs = new Date(`${p.dueDate.slice(0, 10)}T12:00:00Z`).getTime();
+      if (dueMs < todayMs || dueMs > in30Ms) continue;
+      if (p.amountEur >= PROJ_THRESHOLD) {
+        out.push({
+          id: `bigout-${p.id}`,
+          severity: "info",
+          title: `Large single outflow: ${p.label}`,
+          detail: `${fmtEur(p.amountEur)} due ${p.dueDate} · ${p.category}.`,
+        });
+      }
+    }
+    return out.slice(0, 12);
+  }, [chartData, projections, minLiquidityFloor]);
 
   // ── Section 4: upcoming obligations (next 30d, outflows) ───────────
   const obligations: ObligationRow[] = useMemo(() => {
@@ -375,10 +592,61 @@ export function FinanceOverviewPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between gap-4">
-        <UiPageHeader title="Cashflow Planning" subtitle="Entity treasury positions and 90-day cash flow projection" />
-        {asOfLabel && (
-          <span className="pb-1 text-xs text-gray-500">As of <span className="font-medium text-gray-700">{asOfLabel}</span></span>
-        )}
+        <UiPageHeader title="Cashflow Forecast" subtitle="Entity treasury positions and 90-day cash flow projection" />
+        <div className="flex items-end gap-3">
+          {accuracy.finalisedCount > 0 && (
+            <span className="pb-1 text-[11px] text-gray-500">
+              Accuracy
+              {accuracy.last4 !== null && <> · 4w {accuracy.last4}%</>}
+              {accuracy.last8 !== null && <> · 8w {accuracy.last8}%</>}
+              {accuracy.last13 !== null && <> · 13w {accuracy.last13}%</>}
+            </span>
+          )}
+          {asOfLabel && (
+            <span className="pb-1 text-xs text-gray-500">
+              As of <span className="font-medium text-gray-700">{asOfLabel}</span>
+            </span>
+          )}
+          <button
+            type="button"
+            className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+            onClick={runSnapshot}
+            title={`Stored snapshots: ${forecastSnapshots.length}`}
+          >
+            Run snapshot
+          </button>
+        </div>
+      </div>
+
+      {/* Forecast KPI strip */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <UiKpiCard
+          label="Opening Cash (This Week)"
+          value={fmtEur(forecastKpis.openingCash)}
+          icon={<Wallet className="h-5 w-5" />}
+        />
+        <UiKpiCard
+          label="Total Inflows (Next 13w)"
+          value={fmtEur(forecastKpis.totalInflows)}
+          icon={<ArrowDownRight className="h-5 w-5" />}
+          trend={{ value: "Confirmed + Expected", positive: true }}
+        />
+        <UiKpiCard
+          label="Total Outflows (Next 13w)"
+          value={fmtEur(forecastKpis.totalOutflows)}
+          icon={<ArrowUpRight className="h-5 w-5" />}
+          trend={{ value: "AP + Direct Debits + Cards", positive: false }}
+        />
+        <UiKpiCard
+          label="Lowest Projected Cash"
+          value={fmtEur(forecastKpis.lowestBalance)}
+          icon={forecastKpis.lowestBalance < 0 ? <TrendingDown className="h-5 w-5" /> : <Calendar className="h-5 w-5" />}
+          trend={{
+            value: forecastKpis.lowestWeek !== "—" ? `Week ${forecastKpis.lowestWeek}` : "—",
+            positive: forecastKpis.lowestBalance >= 0,
+          }}
+          className={forecastKpis.lowestBalance < 0 ? "border-rose-200 bg-rose-50/50" : ""}
+        />
       </div>
 
       {/* Section 2: cash position cards */}
@@ -388,35 +656,86 @@ export function FinanceOverviewPage() {
         ))}
       </div>
 
-      {/* Section 3: 90-day cashflow timeline */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-100 px-5 py-3.5">
-          <h3 className="text-sm font-semibold text-gray-800">90-day Cashflow Timeline</h3>
-          <p className="mt-0.5 text-xs text-gray-500">Weekly buckets · all amounts in EUR</p>
+      {/* Section 3: 90-day cashflow timeline + exception panel */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm lg:col-span-3">
+          <div className="border-b border-gray-100 px-5 py-3.5">
+            <h3 className="text-sm font-semibold text-gray-800">90-day Cashflow Timeline</h3>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Stacked weekly inflows / outflows by category, running balance line, minimum-liquidity floor
+            </p>
+          </div>
+          <div className="p-5">
+            <ResponsiveContainer width="100%" height={360}>
+              <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="weekLabel" tick={{ fontSize: 11 }} stroke="#9ca3af" />
+                <YAxis tick={{ fontSize: 11 }} stroke="#9ca3af" tickFormatter={(v: number) => fmtEur(v)} width={80} />
+                <Tooltip
+                  formatter={(value: number, name: string) => [fmtEur(Math.abs(value)), name]}
+                  labelFormatter={(label, payload) => {
+                    const ymdStart = (payload?.[0]?.payload as { weekStartYmd?: string } | undefined)?.weekStartYmd;
+                    return ymdStart ? `Week starting ${ymdStart}` : String(label);
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <ReferenceLine y={0} stroke="#9ca3af" />
+                {minLiquidityFloor > 0 && (
+                  <ReferenceLine
+                    y={minLiquidityFloor}
+                    stroke="#f59e0b"
+                    strokeDasharray="4 4"
+                    label={{ value: "Min liquidity", position: "right", fill: "#b45309", fontSize: 11 }}
+                  />
+                )}
+                {/* Inflows (positive) */}
+                <Bar dataKey="Collections" stackId="cf" fill="#10b981" />
+                <Bar dataKey="OtherInflow" stackId="cf" fill="#22c55e" />
+                <Bar dataKey="Intercompany" stackId="cf" fill="#a855f7" />
+                {/* Outflows (negative) */}
+                <Bar dataKey="SupplierPayments" stackId="cf" fill="#ef4444" />
+                <Bar dataKey="Payroll" stackId="cf" fill="#f97316" />
+                <Bar dataKey="Tax" stackId="cf" fill="#dc2626" />
+                <Bar dataKey="DirectDebits" stackId="cf" fill="#fb7185" />
+                <Bar dataKey="CardSettlements" stackId="cf" fill="#f59e0b" />
+                <Bar dataKey="OtherOutflow" stackId="cf" fill="#94a3b8" />
+                <Line type="monotone" dataKey="Running Balance" stroke="#6b7280" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div className="p-5">
-          <ResponsiveContainer width="100%" height={320}>
-            <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="weekLabel" tick={{ fontSize: 11 }} stroke="#9ca3af" />
-              <YAxis tick={{ fontSize: 11 }} stroke="#9ca3af" tickFormatter={(v: number) => fmtEur(v)} width={80} />
-              <Tooltip
-                formatter={(value: number, name: string) => [
-                  name === "Outflows" ? fmtEur(Math.abs(value)) : fmtEur(value),
-                  name,
-                ]}
-                labelFormatter={(label, payload) => {
-                  const ymdStart = (payload?.[0]?.payload as { weekStartYmd?: string } | undefined)?.weekStartYmd;
-                  return ymdStart ? `Week starting ${ymdStart}` : String(label);
-                }}
-              />
-              <Legend />
-              <ReferenceLine y={0} stroke="#9ca3af" />
-              <Bar dataKey="Inflows" stackId="cf" fill="#22c55e" />
-              <Bar dataKey="Outflows" stackId="cf" fill="#ef4444" />
-              <Line type="monotone" dataKey="Running Balance" stroke="#6b7280" strokeWidth={2} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+
+        {/* Exception panel */}
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden lg:col-span-1">
+          <div className="border-b border-gray-100 px-5 py-3.5">
+            <h3 className="text-sm font-semibold text-gray-800">Exceptions</h3>
+            <p className="mt-0.5 text-xs text-gray-500">Pinch points and unusual items</p>
+          </div>
+          {exceptions.length === 0 ? (
+            <div className="px-5 py-8 text-center text-xs text-gray-500">No exceptions detected.</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {exceptions.map((e) => (
+                <li key={e.id} className="px-4 py-3">
+                  <div className="flex items-start gap-2">
+                    <span
+                      className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${
+                        e.severity === "danger"
+                          ? "bg-rose-500"
+                          : e.severity === "warning"
+                          ? "bg-amber-500"
+                          : "bg-blue-500"
+                      }`}
+                    />
+                    <div>
+                      <p className="text-xs font-semibold text-gray-900">{e.title}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-600">{e.detail}</p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
@@ -452,9 +771,11 @@ export function FinanceOverviewPage() {
                     <td className="px-5 py-3 text-sm text-gray-900">{r.description}</td>
                     <td className="px-5 py-3 text-sm tabular-nums text-gray-700 text-right">{r.originalAmount}</td>
                     <td className="px-5 py-3 text-sm font-semibold tabular-nums text-gray-900 text-right">{fmtEur(r.amountEur)}</td>
-                    <td className="px-5 py-3 text-sm text-gray-700">{r.confidence}</td>
+                    <td className="px-5 py-3 text-sm text-gray-700">
+                      {r.confidence === "Confirmed" ? "Confirmed" : r.confidence === "Expected" ? "Committed" : r.confidence === "Planned" ? "Discretionary" : "Overdue"}
+                    </td>
                     <td className="px-5 py-3 text-sm">
-                      <ConfidenceBadge value={r.confidence} />
+                      <ConfidenceBadge value={r.confidence} tier="outflow" />
                     </td>
                   </tr>
                 ))}
@@ -496,7 +817,7 @@ export function FinanceOverviewPage() {
                     <td className="px-5 py-3 text-sm tabular-nums text-gray-700 text-right">{r.originalAmount}</td>
                     <td className="px-5 py-3 text-sm font-semibold tabular-nums text-emerald-700 text-right">{fmtEur(r.amountEur)}</td>
                     <td className="px-5 py-3 text-sm">
-                      <ConfidenceBadge value={r.confidence} />
+                      <ConfidenceBadge value={r.confidence} tier="inflow" />
                     </td>
                   </tr>
                 ))}
@@ -536,7 +857,18 @@ export function FinanceOverviewPage() {
 
 // ─── Tiny presentational helpers ─────────────────────────────────────
 
-function ConfidenceBadge({ value }: { value: "Confirmed" | "Expected" | "Planned" | "Overdue" }) {
+/**
+ * Translates the underlying `FinanceConfidence` enum to the CFO-style tier label
+ * (Confirmed / Probable / Stretch for inflows; Confirmed / Committed / Discretionary for outflows).
+ * Pass `tier="overdue"` to render the dedicated Overdue style.
+ */
+function ConfidenceBadge({
+  value,
+  tier = "inflow",
+}: {
+  value: "Confirmed" | "Expected" | "Planned" | "Overdue";
+  tier?: "inflow" | "outflow" | "overdue";
+}) {
   const styles =
     value === "Confirmed"
       ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
@@ -545,7 +877,11 @@ function ConfidenceBadge({ value }: { value: "Confirmed" | "Expected" | "Planned
       : value === "Planned"
       ? "bg-gray-100 text-gray-600 ring-1 ring-gray-200"
       : "bg-rose-50 text-rose-700 ring-1 ring-rose-200";
-  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles}`}>{value}</span>;
+  // Display label translation: Confirmed stays; Expected/Planned vary by tier.
+  let label: string = value;
+  if (value === "Expected") label = tier === "outflow" ? "Committed" : "Probable";
+  if (value === "Planned") label = tier === "outflow" ? "Discretionary" : "Stretch";
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${styles}`}>{label}</span>;
 }
 
 function SummaryStat({

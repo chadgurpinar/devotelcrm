@@ -1,9 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Briefcase, ChevronLeft, ChevronRight, FileCheck2, Pencil, Plus, Trash2, Users } from "lucide-react";
+import {
+  Banknote,
+  BarChart3,
+  Briefcase,
+  ChevronLeft,
+  ChevronRight,
+  FileCheck2,
+  Layers,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  UserSquare,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { Button } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import type {
+  FinanceContractor,
   FinanceCurrencyCode,
+  FinanceSalaryDefault,
+  FinanceSalaryPersonKind,
   FinanceSalaryPlan,
   FinanceSalaryPlanLine,
   FinanceSalaryPlanStatus,
@@ -135,18 +161,29 @@ function emptyLine(employees: HrEmployee[]): LineDraft {
   };
 }
 
+/** Default currency suggestion for a paying entity. */
+const ENTITY_DEFAULT_CCY: Record<OurEntity, FinanceCurrencyCode> = {
+  UK: "GBP",
+  USA: "USD",
+  TR: "TRY",
+};
+
 function PlanFormModal({
   open,
   monthKey,
   editing,
+  previousPlan,
   onClose,
 }: {
   open: boolean;
   monthKey: string;
   editing: FinanceSalaryPlan | null;
+  previousPlan: FinanceSalaryPlan | null;
   onClose: () => void;
 }) {
   const employees = useAppStore((s) => s.hrEmployees);
+  const contractors = useAppStore((s) => s.financeContractors);
+  const defaults = useAppStore((s) => s.financeSalaryDefaults);
   const addPlan = useAppStore((s) => s.addFinanceSalaryPlan);
   const updatePlan = useAppStore((s) => s.updateFinanceSalaryPlan);
   const addProjection = useAppStore((s) => s.addFinanceProjection);
@@ -184,8 +221,47 @@ function PlanFormModal({
     setStatus("Planned");
     setPaidDate("");
     setNotes("");
-    setLines([emptyLine(employees)]);
-  }, [open, editing, employees]);
+    if (previousPlan && previousPlan.lines.length > 0) {
+      // Copy from previous month — preserves employee, paying entity, currency, and amounts.
+      setLines(
+        previousPlan.lines.map((l, idx) => ({
+          key: `l-prev-${idx}-${l.id}`,
+          employeeId: l.employeeId,
+          entityId: l.entityId,
+          currency: l.currency,
+          plannedNetOriginal: l.plannedNetOriginal,
+          plannedNetEur: l.plannedNetEur,
+          netEurOverridden: false,
+          plannedEmployerCostOriginal: l.plannedEmployerCostOriginal ?? 0,
+          plannedEmployerCostEur: l.plannedEmployerCostEur ?? 0,
+          costEurOverridden: false,
+          notes: l.notes ?? "",
+        })),
+      );
+    } else if (defaults.length > 0) {
+      // Fallback: pre-populate from the salary defaults registry.
+      setLines(
+        defaults.map((d, idx) => ({
+          key: `l-def-${idx}-${d.id}`,
+          employeeId: d.personId,
+          entityId: d.entityId,
+          currency: d.currency,
+          plannedNetOriginal: d.defaultNetOriginal,
+          plannedNetEur: approxEur(d.defaultNetOriginal, d.currency),
+          netEurOverridden: false,
+          plannedEmployerCostOriginal: d.defaultEmployerCostOriginal ?? 0,
+          plannedEmployerCostEur:
+            d.defaultEmployerCostOriginal !== undefined
+              ? approxEur(d.defaultEmployerCostOriginal, d.currency)
+              : 0,
+          costEurOverridden: false,
+          notes: d.notes ?? "",
+        })),
+      );
+    } else {
+      setLines([emptyLine(employees)]);
+    }
+  }, [open, editing, employees, previousPlan, defaults]);
 
   const updateLine = (idx: number, patch: Partial<LineDraft>) =>
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -301,6 +377,10 @@ function PlanFormModal({
         <p className="mt-1 text-xs text-gray-500">
           {editing
             ? "Edits adjust the plan only — existing projections are not modified."
+            : previousPlan
+            ? `Pre-filled from ${formatMonthShort(previousPlan.month)}. Adjust amounts as needed. Saving creates one Salary projection per paying entity, due on the first of the month.`
+            : defaults.length > 0
+            ? `Pre-filled from ${defaults.length} salary default(s). Saving creates one Salary projection per paying entity, due on the first of the month.`
             : "Saving creates one Salary projection per paying entity, due on the first of the month."}
         </p>
 
@@ -365,9 +445,14 @@ function PlanFormModal({
                         onChange={(e) => {
                           const newId = e.target.value;
                           const newEmp = empById.get(newId);
+                          const newEntity = newEmp?.legalEntityId ?? l.entityId;
                           updateLine(idx, {
                             employeeId: newId,
-                            entityId: newEmp?.legalEntityId ?? l.entityId,
+                            entityId: newEntity,
+                            // Auto-suggest currency from paying entity (e.g. UK → GBP).
+                            currency: ENTITY_DEFAULT_CCY[newEntity] ?? l.currency,
+                            netEurOverridden: false,
+                            costEurOverridden: false,
                           });
                         }}
                       >
@@ -381,7 +466,15 @@ function PlanFormModal({
                       <select
                         className={`${inputCls} col-span-2`}
                         value={l.entityId}
-                        onChange={(e) => updateLine(idx, { entityId: e.target.value as OurEntity })}
+                        onChange={(e) => {
+                          const newEntity = e.target.value as OurEntity;
+                          updateLine(idx, {
+                            entityId: newEntity,
+                            currency: ENTITY_DEFAULT_CCY[newEntity] ?? l.currency,
+                            netEurOverridden: false,
+                            costEurOverridden: false,
+                          });
+                        }}
                       >
                         {ALL_ENTITIES.map((e) => (
                           <option key={e} value={e}>
@@ -496,15 +589,23 @@ function PlanFormModal({
 
 // ─── Page ────────────────────────────────────────────────────────────
 
+type SalariesTab = "Plan" | "Defaults" | "Contractors" | "History";
+
 export function FinanceSalariesPage() {
   const plans = useAppStore((s) => s.financeSalaryPlans);
   const employees = useAppStore((s) => s.hrEmployees);
+  const contractors = useAppStore((s) => s.financeContractors);
   const updatePlan = useAppStore((s) => s.updateFinanceSalaryPlan);
 
+  const [tab, setTab] = useState<SalariesTab>("Plan");
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthKey());
   const [modalOpen, setModalOpen] = useState(false);
 
   const plan = useMemo(() => plans.find((p) => p.month === selectedMonth) ?? null, [plans, selectedMonth]);
+  const previousPlan = useMemo(
+    () => plans.find((p) => p.month === shiftMonth(selectedMonth, -1)) ?? null,
+    [plans, selectedMonth],
+  );
 
   const empById = useMemo(() => {
     const m = new Map<string, HrEmployee>();
@@ -531,8 +632,39 @@ export function FinanceSalariesPage() {
 
   return (
     <div className="space-y-5">
-      <UiPageHeader title="Salary Planning" subtitle="Monthly payroll commitments per entity" />
+      <UiPageHeader title="Salary Planning" subtitle="Monthly payroll commitments, defaults, and contractors" />
 
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-gray-100 p-1">
+        {(
+          [
+            { id: "Plan", label: `Plan (${plans.length})`, icon: <Banknote size={12} /> },
+            { id: "History", label: "History", icon: <BarChart3 size={12} /> },
+            { id: "Defaults", label: "Defaults", icon: <Layers size={12} /> },
+            { id: "Contractors", label: `Contractors (${contractors.length})`, icon: <UserSquare size={12} /> },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold ${
+              tab === t.id ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "History" && <HistoryTab />}
+      {tab === "Defaults" && <DefaultsTab />}
+      {tab === "Contractors" && <ContractorsTab />}
+
+      {tab !== "Plan" && null}
+
+      {tab === "Plan" && <>
       {/* Section 1 — Month nav */}
       <div className="flex items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
         <button
@@ -705,8 +837,639 @@ export function FinanceSalariesPage() {
         open={modalOpen}
         monthKey={selectedMonth}
         editing={plan}
+        previousPlan={previousPlan}
         onClose={() => setModalOpen(false)}
       />
+      </>}
+    </div>
+  );
+}
+
+// ─── History tab ─────────────────────────────────────────────────────
+
+function HistoryTab() {
+  const plans = useAppStore((s) => s.financeSalaryPlans);
+  const employees = useAppStore((s) => s.hrEmployees);
+  const contractors = useAppStore((s) => s.financeContractors);
+
+  // Build month → { UK, USA, TR } stacked dataset.
+  const monthData = useMemo(() => {
+    type Row = { month: string; UK: number; USA: number; TR: number };
+    const map = new Map<string, Row>();
+    for (const p of plans) {
+      if (p.status === "Cancelled") continue;
+      const cur = map.get(p.month) ?? { month: p.month, UK: 0, USA: 0, TR: 0 };
+      for (const l of p.lines) {
+        cur[l.entityId] += l.plannedNetEur;
+      }
+      map.set(p.month, cur);
+    }
+    return Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
+  }, [plans]);
+
+  // Per-employee/contractor cumulative totals.
+  const empById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  const cpById = useMemo(() => new Map(contractors.map((c) => [c.id, c])), [contractors]);
+
+  const perPersonTotal = useMemo(() => {
+    type Row = { personId: string; personKind: string; label: string; totalEur: number; months: number };
+    const m = new Map<string, Row>();
+    for (const p of plans) {
+      if (p.status === "Cancelled") continue;
+      const seenInMonth = new Set<string>();
+      for (const l of p.lines) {
+        const key = `${l.personKind ?? "Employee"}:${l.personId ?? l.employeeId}`;
+        const labelBase =
+          (l.personKind ?? "Employee") === "Contractor"
+            ? cpById.get(l.personId ?? "")?.name ?? `Contractor ${l.personId ?? l.employeeId}`
+            : empById.get(l.personId ?? l.employeeId)?.displayName ?? `Employee ${l.personId ?? l.employeeId}`;
+        const cur =
+          m.get(key) ??
+          ({
+            personId: l.personId ?? l.employeeId,
+            personKind: l.personKind ?? "Employee",
+            label: labelBase,
+            totalEur: 0,
+            months: 0,
+          } as Row);
+        cur.totalEur += l.plannedNetEur;
+        if (!seenInMonth.has(key)) {
+          cur.months += 1;
+          seenInMonth.add(key);
+        }
+        m.set(key, cur);
+      }
+    }
+    return Array.from(m.values()).sort((a, b) => b.totalEur - a.totalEur);
+  }, [plans, empById, cpById]);
+
+  if (monthData.length === 0) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white p-12 text-center text-sm text-gray-500 shadow-sm">
+        No historical salary plans yet.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-gray-100 px-5 py-3.5">
+          <h3 className="text-sm font-semibold text-gray-800">Net Salary EUR — by Entity</h3>
+          <p className="mt-0.5 text-xs text-gray-500">Stacked area · across all logged monthly plans</p>
+        </div>
+        <div className="p-5">
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={monthData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#9ca3af" />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                stroke="#9ca3af"
+                tickFormatter={(v: number) => fmtEur(v)}
+                width={80}
+              />
+              <Tooltip formatter={(v: number, name: string) => [fmtEur(v), name]} />
+              <Legend />
+              <Area type="monotone" dataKey="UK" stackId="net" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.4} />
+              <Area type="monotone" dataKey="USA" stackId="net" stroke="#10b981" fill="#10b981" fillOpacity={0.4} />
+              <Area type="monotone" dataKey="TR" stackId="net" stroke="#ef4444" fill="#ef4444" fillOpacity={0.4} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-gray-100 px-5 py-3.5">
+          <h3 className="text-sm font-semibold text-gray-800">Per-person total</h3>
+          <p className="mt-0.5 text-xs text-gray-500">Sum of planned net EUR across all logged months</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="border-b border-gray-100 bg-gray-50/80">
+              <tr>
+                <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Person</th>
+                <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Kind</th>
+                <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Months paid</th>
+                <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Total Net EUR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perPersonTotal.slice(0, 30).map((r) => (
+                <tr key={`${r.personKind}-${r.personId}`} className="border-b border-gray-50">
+                  <td className="px-5 py-2 text-sm text-gray-900">{r.label}</td>
+                  <td className="px-5 py-2 text-xs text-gray-700">{r.personKind}</td>
+                  <td className="px-5 py-2 text-sm text-gray-600 text-right tabular-nums">{r.months}</td>
+                  <td className="px-5 py-2 text-sm font-semibold text-gray-900 text-right tabular-nums">
+                    {fmtEur(r.totalEur)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Defaults tab ────────────────────────────────────────────────────
+
+function personLabel(
+  d: FinanceSalaryDefault,
+  empById: Map<string, HrEmployee>,
+  cpById: Map<string, FinanceContractor>,
+): string {
+  if (d.personKind === "Employee") return empById.get(d.personId)?.displayName ?? `Employee ${d.personId}`;
+  return cpById.get(d.personId)?.name ?? `Contractor ${d.personId}`;
+}
+
+function DefaultsTab() {
+  const defaults = useAppStore((s) => s.financeSalaryDefaults);
+  const employees = useAppStore((s) => s.hrEmployees);
+  const contractors = useAppStore((s) => s.financeContractors);
+  const upsert = useAppStore((s) => s.upsertFinanceSalaryDefault);
+  const remove = useAppStore((s) => s.deleteFinanceSalaryDefault);
+
+  const [editing, setEditing] = useState<FinanceSalaryDefault | "new" | null>(null);
+
+  const empById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees]);
+  const cpById = useMemo(() => new Map(contractors.map((c) => [c.id, c])), [contractors]);
+
+  const sorted = useMemo(
+    () =>
+      defaults.slice().sort((a, b) => {
+        if (a.entityId !== b.entityId) return a.entityId.localeCompare(b.entityId);
+        return personLabel(a, empById, cpById).localeCompare(personLabel(b, empById, cpById));
+      }),
+    [defaults, empById, cpById],
+  );
+
+  return (
+    <>
+      <div className="flex items-end justify-between gap-3">
+        <div className="text-xs text-gray-500">
+          Defaults pre-populate new monthly plans. They are not posted as projections until added to a plan.
+        </div>
+        <Button type="button" onClick={() => setEditing("new")}>
+          <span className="inline-flex items-center gap-1">
+            <Plus size={14} /> Add default
+          </span>
+        </Button>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        {sorted.length === 0 ? (
+          <div className="px-5 py-12 text-center text-sm text-gray-500">No defaults yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="border-b border-gray-100 bg-gray-50/80">
+                <tr>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Entity</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Kind</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Person</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Currency</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Net (default)</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Employer cost</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((d) => (
+                  <tr key={d.id} className="border-b border-gray-50 hover:bg-gray-50/80">
+                    <td className="px-5 py-3 text-sm text-gray-800">
+                      <span className="mr-1.5">{ENTITY_FLAGS[d.entityId]}</span>
+                      {d.entityId}
+                    </td>
+                    <td className="px-5 py-3 text-xs">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          d.personKind === "Employee"
+                            ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
+                            : "bg-violet-50 text-violet-700 ring-violet-200 ring-1"
+                        }`}
+                      >
+                        {d.personKind}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-sm text-gray-900">{personLabel(d, empById, cpById)}</td>
+                    <td className="px-5 py-3 text-sm text-gray-700">{d.currency}</td>
+                    <td className="px-5 py-3 text-sm tabular-nums text-gray-800 text-right">
+                      {fmtOriginal(d.defaultNetOriginal, d.currency)}
+                    </td>
+                    <td className="px-5 py-3 text-sm tabular-nums text-gray-700 text-right">
+                      {d.defaultEmployerCostOriginal !== undefined
+                        ? fmtOriginal(d.defaultEmployerCostOriginal, d.currency)
+                        : "—"}
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <div className="inline-flex gap-1">
+                        <Button size="sm" variant="outline" type="button" onClick={() => setEditing(d)}>
+                          <span className="inline-flex items-center gap-1">
+                            <Pencil size={12} /> Edit
+                          </span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Delete default for ${personLabel(d, empById, cpById)}?`)) remove(d.id);
+                          }}
+                        >
+                          <span className="inline-flex items-center gap-1 text-rose-700">
+                            <Trash2 size={12} /> Delete
+                          </span>
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <DefaultEditorModal
+          editing={editing === "new" ? null : editing}
+          employees={employees}
+          contractors={contractors}
+          onSave={(payload) => {
+            upsert(payload);
+            setEditing(null);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function DefaultEditorModal({
+  editing,
+  employees,
+  contractors,
+  onSave,
+  onClose,
+}: {
+  editing: FinanceSalaryDefault | null;
+  employees: HrEmployee[];
+  contractors: FinanceContractor[];
+  onSave: (payload: Omit<FinanceSalaryDefault, "id" | "updatedAt">) => void;
+  onClose: () => void;
+}) {
+  const [personKind, setPersonKind] = useState<FinanceSalaryPersonKind>(editing?.personKind ?? "Employee");
+  const [personId, setPersonId] = useState(editing?.personId ?? "");
+  const [entityId, setEntityId] = useState<OurEntity>(editing?.entityId ?? "UK");
+  const [currency, setCurrency] = useState<FinanceCurrencyCode>(editing?.currency ?? "GBP");
+  const [defaultNetOriginal, setDefaultNetOriginal] = useState(editing?.defaultNetOriginal ?? 0);
+  const [defaultEmployerCostOriginal, setDefaultEmployerCostOriginal] = useState(
+    editing?.defaultEmployerCostOriginal ?? 0,
+  );
+  const [notes, setNotes] = useState(editing?.notes ?? "");
+
+  const empOptions = employees.map((e) => ({ id: e.id, label: `${e.displayName} (${e.legalEntityId})` }));
+  const cpOptions = contractors
+    .filter((c) => c.active)
+    .map((c) => ({ id: c.id, label: `${c.name} (${c.defaultEntityId})` }));
+  const personOptions = personKind === "Employee" ? empOptions : cpOptions;
+
+  const submit = () => {
+    if (!personId || defaultNetOriginal <= 0) return;
+    onSave({
+      personKind,
+      personId,
+      entityId,
+      currency,
+      defaultNetOriginal: Math.round(defaultNetOriginal * 100) / 100,
+      defaultEmployerCostOriginal:
+        defaultEmployerCostOriginal > 0 ? Math.round(defaultEmployerCostOriginal * 100) / 100 : undefined,
+      notes: notes.trim() || undefined,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-xl rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="text-lg font-bold text-gray-900">{editing ? "Edit default" : "New default"}</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          Defaults are picked up automatically when creating a new month plan with no previous month.
+        </p>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="text-xs font-semibold text-gray-700">
+            Kind
+            <select
+              className={inputCls}
+              value={personKind}
+              onChange={(e) => {
+                const k = e.target.value as FinanceSalaryPersonKind;
+                setPersonKind(k);
+                setPersonId("");
+              }}
+            >
+              <option value="Employee">Employee</option>
+              <option value="Contractor">Contractor</option>
+            </select>
+          </label>
+
+          <label className="text-xs font-semibold text-gray-700">
+            Person
+            <select className={inputCls} value={personId} onChange={(e) => setPersonId(e.target.value)}>
+              <option value="">Select…</option>
+              {personOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-xs font-semibold text-gray-700">
+            Paying entity
+            <select
+              className={inputCls}
+              value={entityId}
+              onChange={(e) => {
+                const ent = e.target.value as OurEntity;
+                setEntityId(ent);
+                setCurrency(ENTITY_DEFAULT_CCY[ent] ?? currency);
+              }}
+            >
+              {ALL_ENTITIES.map((ent) => (
+                <option key={ent} value={ent}>
+                  {ent}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-xs font-semibold text-gray-700">
+            Currency
+            <select
+              className={inputCls}
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value as FinanceCurrencyCode)}
+            >
+              {ALL_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-xs font-semibold text-gray-700">
+            Default net
+            <input
+              type="number"
+              step="0.01"
+              className={`${inputCls} text-right tabular-nums`}
+              value={Number.isFinite(defaultNetOriginal) ? defaultNetOriginal : 0}
+              onChange={(e) => setDefaultNetOriginal(Number(e.target.value))}
+            />
+          </label>
+
+          <label className="text-xs font-semibold text-gray-700">
+            Default employer cost <span className="text-gray-400">(optional)</span>
+            <input
+              type="number"
+              step="0.01"
+              className={`${inputCls} text-right tabular-nums`}
+              value={Number.isFinite(defaultEmployerCostOriginal) ? defaultEmployerCostOriginal : 0}
+              onChange={(e) => setDefaultEmployerCostOriginal(Number(e.target.value))}
+            />
+          </label>
+
+          <label className="col-span-2 text-xs font-semibold text-gray-700">
+            Notes
+            <input className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </label>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
+          <Button variant="ghost" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={submit} disabled={!personId || defaultNetOriginal <= 0}>
+            {editing ? "Save changes" : "Add default"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Contractors tab ─────────────────────────────────────────────────
+
+function ContractorsTab() {
+  const contractors = useAppStore((s) => s.financeContractors);
+  const addContractor = useAppStore((s) => s.addFinanceContractor);
+  const updateContractor = useAppStore((s) => s.updateFinanceContractor);
+  const deleteContractor = useAppStore((s) => s.deleteFinanceContractor);
+  const [editing, setEditing] = useState<FinanceContractor | "new" | null>(null);
+
+  const sorted = useMemo(
+    () =>
+      contractors.slice().sort((a, b) => {
+        if (a.active !== b.active) return a.active ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      }),
+    [contractors],
+  );
+
+  return (
+    <>
+      <div className="flex items-end justify-between gap-3">
+        <div className="text-xs text-gray-500">
+          Lightweight contractor records — referenced by salary lines and defaults.
+        </div>
+        <Button type="button" onClick={() => setEditing("new")}>
+          <span className="inline-flex items-center gap-1">
+            <Plus size={14} /> Add contractor
+          </span>
+        </Button>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        {sorted.length === 0 ? (
+          <div className="px-5 py-12 text-center text-sm text-gray-500">No contractors yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="border-b border-gray-100 bg-gray-50/80">
+                <tr>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Name</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Default entity</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Default ccy</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Email</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Active</th>
+                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((c) => (
+                  <tr key={c.id} className={`border-b border-gray-50 hover:bg-gray-50/80 ${c.active ? "" : "opacity-60"}`}>
+                    <td className="px-5 py-3 text-sm font-medium text-gray-900">{c.name}</td>
+                    <td className="px-5 py-3 text-sm text-gray-700">
+                      <span className="mr-1.5">{ENTITY_FLAGS[c.defaultEntityId]}</span>
+                      {c.defaultEntityId}
+                    </td>
+                    <td className="px-5 py-3 text-sm text-gray-700">{c.defaultCurrency}</td>
+                    <td className="px-5 py-3 text-xs text-gray-600">{c.email ?? "—"}</td>
+                    <td className="px-5 py-3 text-xs">
+                      <label className="inline-flex cursor-pointer items-center gap-1 text-gray-600">
+                        <input
+                          type="checkbox"
+                          checked={c.active}
+                          onChange={() => updateContractor({ ...c, active: !c.active })}
+                        />
+                        {c.active ? "Yes" : "No"}
+                      </label>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <div className="inline-flex gap-1">
+                        <Button size="sm" variant="outline" type="button" onClick={() => setEditing(c)}>
+                          <span className="inline-flex items-center gap-1">
+                            <Pencil size={12} /> Edit
+                          </span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Delete contractor ${c.name}?`)) deleteContractor(c.id);
+                          }}
+                        >
+                          <span className="inline-flex items-center gap-1 text-rose-700">
+                            <Trash2 size={12} /> Delete
+                          </span>
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <ContractorEditorModal
+          editing={editing === "new" ? null : editing}
+          onSave={(payload) => {
+            if (editing && editing !== "new") {
+              updateContractor({ ...editing, ...payload });
+            } else {
+              addContractor(payload);
+            }
+            setEditing(null);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </>
+  );
+}
+
+function ContractorEditorModal({
+  editing,
+  onSave,
+  onClose,
+}: {
+  editing: FinanceContractor | null;
+  onSave: (payload: Omit<FinanceContractor, "id" | "createdAt" | "updatedAt">) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(editing?.name ?? "");
+  const [defaultEntityId, setDefaultEntityId] = useState<OurEntity>(editing?.defaultEntityId ?? "UK");
+  const [defaultCurrency, setDefaultCurrency] = useState<FinanceCurrencyCode>(editing?.defaultCurrency ?? "GBP");
+  const [email, setEmail] = useState(editing?.email ?? "");
+  const [notes, setNotes] = useState(editing?.notes ?? "");
+  const [active, setActive] = useState(editing?.active ?? true);
+
+  const submit = () => {
+    if (!name.trim()) return;
+    onSave({
+      name: name.trim(),
+      defaultEntityId,
+      defaultCurrency,
+      email: email.trim() || undefined,
+      notes: notes.trim() || undefined,
+      active,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="text-lg font-bold text-gray-900">{editing ? "Edit contractor" : "New contractor"}</h3>
+
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="col-span-2 text-xs font-semibold text-gray-700">
+            Name
+            <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+          <label className="text-xs font-semibold text-gray-700">
+            Default entity
+            <select
+              className={inputCls}
+              value={defaultEntityId}
+              onChange={(e) => {
+                const ent = e.target.value as OurEntity;
+                setDefaultEntityId(ent);
+                setDefaultCurrency(ENTITY_DEFAULT_CCY[ent] ?? defaultCurrency);
+              }}
+            >
+              {ALL_ENTITIES.map((ent) => (
+                <option key={ent} value={ent}>
+                  {ent}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-gray-700">
+            Default currency
+            <select
+              className={inputCls}
+              value={defaultCurrency}
+              onChange={(e) => setDefaultCurrency(e.target.value as FinanceCurrencyCode)}
+            >
+              {ALL_CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="col-span-2 text-xs font-semibold text-gray-700">
+            Email <span className="text-gray-400">(optional)</span>
+            <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label className="col-span-2 text-xs font-semibold text-gray-700">
+            Notes <span className="text-gray-400">(optional)</span>
+            <input className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </label>
+          <label className="col-span-2 inline-flex items-center gap-2 text-xs font-medium text-gray-700">
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            Active
+          </label>
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2 border-t border-gray-100 pt-4">
+          <Button variant="ghost" type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={submit} disabled={!name.trim()}>
+            {editing ? "Save changes" : "Add contractor"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

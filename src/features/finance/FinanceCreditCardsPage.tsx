@@ -1,12 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CreditCard, Pencil, Plus, Wallet } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { AlertCircle, CreditCard, Pencil, Plus, Repeat, Store, Wallet } from "lucide-react";
 import { Button } from "../../components/ui";
 import { useAppStore } from "../../store/db";
 import type {
   FinanceCreditCard,
+  FinanceCreditCardExpenseCategory,
   FinanceCreditCardStatement,
   FinanceCreditCardStatus,
+  FinanceCreditCardTransaction,
   FinanceCurrencyCode,
   OurEntity,
 } from "../../store/types";
@@ -37,6 +50,21 @@ const ENTITY_FLAGS: Record<OurEntity, string> = {
   UK: "🇬🇧",
   USA: "🇺🇸",
   TR: "🇹🇷",
+};
+
+const CATEGORY_COLORS: Record<FinanceCreditCardExpenseCategory, string> = {
+  Software: "#6366f1",
+  Advertising: "#f59e0b",
+  Travel: "#3b82f6",
+  Office: "#10b981",
+  Subscription: "#8b5cf6",
+  Utilities: "#06b6d4",
+  Meals: "#f97316",
+  Hardware: "#64748b",
+  Legal: "#1e3a5f",
+  Hosting: "#0ea5e9",
+  Telecom: "#a855f7",
+  Other: "#9ca3af",
 };
 
 const ALL_ENTITIES: readonly OurEntity[] = ["UK", "USA", "TR"] as const;
@@ -437,6 +465,7 @@ function CardEditButton({ card }: { card: FinanceCreditCard }) {
 export function FinanceCreditCardsPage() {
   const cards = useAppStore((s) => s.financeCreditCards);
   const statements = useAppStore((s) => s.financeCreditCardStatements);
+  const transactions = useAppStore((s) => s.financeCreditCardTransactions);
 
   const [addOpen, setAddOpen] = useState(false);
 
@@ -469,6 +498,87 @@ export function FinanceCreditCardsPage() {
       }),
     [cards],
   );
+
+  // ── Baris-style transaction analytics ──────────────────────────
+  const txAnalytics = useMemo(() => {
+    type CatRow = { category: FinanceCreditCardExpenseCategory; eur: number; count: number };
+    type MerchantRow = { merchant: string; eur: number; count: number; recurring: boolean };
+    const catMap = new Map<FinanceCreditCardExpenseCategory, CatRow>();
+    const merchMap = new Map<string, MerchantRow>();
+    let recurringEur = 0;
+    let oneOffEur = 0;
+    let totalEur = 0;
+    for (const t of transactions) {
+      totalEur += t.amountEur;
+      const cur = catMap.get(t.category) ?? { category: t.category, eur: 0, count: 0 };
+      cur.eur += t.amountEur;
+      cur.count += 1;
+      catMap.set(t.category, cur);
+      const m = merchMap.get(t.merchant) ?? { merchant: t.merchant, eur: 0, count: 0, recurring: t.recurring };
+      m.eur += t.amountEur;
+      m.count += 1;
+      m.recurring = m.recurring || t.recurring;
+      merchMap.set(t.merchant, m);
+      if (t.recurring) recurringEur += t.amountEur;
+      else oneOffEur += t.amountEur;
+    }
+    const byCategory = Array.from(catMap.values()).sort((a, b) => b.eur - a.eur);
+    const topMerchants = Array.from(merchMap.values()).sort((a, b) => b.eur - a.eur).slice(0, 10);
+    return { totalEur, byCategory, topMerchants, recurringEur, oneOffEur };
+  }, [transactions]);
+
+  // ── Exceptions: duplicate subscriptions (same merchant on multiple cards), uncategorized owners, large single charges ──
+  const txExceptions = useMemo(() => {
+    type Exc = {
+      id: string;
+      severity: "danger" | "warning" | "info";
+      title: string;
+      detail: string;
+    };
+    const out: Exc[] = [];
+    // Duplicate subscriptions: merchant marked recurring on >1 card.
+    const merchantToCards = new Map<string, Set<string>>();
+    for (const t of transactions) {
+      if (!t.recurring) continue;
+      const set = merchantToCards.get(t.merchant) ?? new Set<string>();
+      set.add(t.cardId);
+      merchantToCards.set(t.merchant, set);
+    }
+    for (const [merchant, cardSet] of merchantToCards) {
+      if (cardSet.size > 1) {
+        out.push({
+          id: `dup-${merchant}`,
+          severity: "warning",
+          title: `Duplicate subscription: ${merchant}`,
+          detail: `Recurring on ${cardSet.size} different cards — review whether one can be consolidated.`,
+        });
+      }
+    }
+    // Missing cardholder.
+    const missingCardholder = transactions.filter((t) => !t.cardholderUserId);
+    if (missingCardholder.length > 0) {
+      out.push({
+        id: "no-cardholder",
+        severity: "info",
+        title: `${missingCardholder.length} transaction(s) without cardholder`,
+        detail: "Assign a cardholder so spend is attributable per employee.",
+      });
+    }
+    // Large single charges (≥ 4,000 EUR).
+    const big = transactions.filter((t) => t.amountEur >= 4_000);
+    for (const t of big.slice(0, 5)) {
+      out.push({
+        id: `big-${t.id}`,
+        severity: "info",
+        title: `Large single charge: ${t.merchant}`,
+        detail: `${fmtEur(t.amountEur)} on ${t.transactionDate} · ${t.category}.`,
+      });
+    }
+    return out;
+  }, [transactions]);
+
+  const recurringPct =
+    txAnalytics.totalEur > 0 ? (txAnalytics.recurringEur / txAnalytics.totalEur) * 100 : 0;
 
   return (
     <div className="space-y-5">
@@ -507,6 +617,143 @@ export function FinanceCreditCardsPage() {
           {sortedCards.map((c) => (
             <CardTile key={c.id} card={c} statements={statements} />
           ))}
+        </div>
+      )}
+
+      {/* ── Baris-style spend analytics ────────────────────────────── */}
+      {transactions.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Spend by category */}
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden lg:col-span-2">
+            <div className="border-b border-gray-100 px-5 py-3.5">
+              <h3 className="text-sm font-semibold text-gray-800">Spend by Category (recent transactions)</h3>
+              <p className="mt-0.5 text-xs text-gray-500">EUR-equivalent · all cards</p>
+            </div>
+            <div className="p-5">
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={txAnalytics.byCategory} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="category" tick={{ fontSize: 11 }} stroke="#9ca3af" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="#9ca3af" tickFormatter={(v: number) => fmtEur(v)} width={70} />
+                  <Tooltip formatter={(v: number) => [fmtEur(v), "EUR"]} />
+                  <Legend />
+                  <Bar dataKey="eur" name="Spend (EUR)">
+                    {txAnalytics.byCategory.map((row) => (
+                      <Cell key={row.category} fill={CATEGORY_COLORS[row.category] ?? "#94a3b8"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Recurring vs one-off */}
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-800">Recurring vs one-off</h3>
+            <p className="mt-0.5 text-xs text-gray-500">Of {fmtEur(txAnalytics.totalEur)} total spend</p>
+            <div className="mt-4 space-y-3">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="inline-flex items-center gap-1 text-gray-700">
+                  <Repeat className="h-3.5 w-3.5 text-indigo-500" /> Recurring
+                </span>
+                <span className="font-semibold tabular-nums text-gray-900">{fmtEur(txAnalytics.recurringEur)}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div className="h-full bg-indigo-500" style={{ width: `${Math.min(100, recurringPct)}%` }} />
+              </div>
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="inline-flex items-center gap-1 text-gray-700">
+                  <CreditCard className="h-3.5 w-3.5 text-amber-500" /> One-off
+                </span>
+                <span className="font-semibold tabular-nums text-gray-900">{fmtEur(txAnalytics.oneOffEur)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top 10 merchants + Exceptions side by side. */}
+      {transactions.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-gray-100 px-5 py-3.5">
+              <h3 className="text-sm font-semibold text-gray-800">
+                <span className="inline-flex items-center gap-1.5">
+                  <Store className="h-4 w-4 text-gray-500" /> Top Merchants
+                </span>
+              </h3>
+              <p className="mt-0.5 text-xs text-gray-500">Concentration → potential discount conversations</p>
+            </div>
+            <table className="w-full text-left">
+              <thead className="border-b border-gray-100 bg-gray-50/80">
+                <tr>
+                  <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Merchant</th>
+                  <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">EUR</th>
+                  <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Count</th>
+                  <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {txAnalytics.topMerchants.map((m, idx) => (
+                  <tr key={m.merchant} className="border-b border-gray-50">
+                    <td className="px-5 py-2 text-sm text-gray-800">
+                      <span className="mr-2 text-[10px] tabular-nums text-gray-400">{idx + 1}</span>
+                      {m.merchant}
+                    </td>
+                    <td className="px-5 py-2 text-sm font-semibold tabular-nums text-gray-900 text-right">{fmtEur(m.eur)}</td>
+                    <td className="px-5 py-2 text-sm tabular-nums text-gray-600 text-right">{m.count}</td>
+                    <td className="px-5 py-2 text-xs">
+                      {m.recurring ? (
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 ring-1 ring-indigo-200">
+                          Recurring
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 ring-1 ring-gray-200">
+                          One-off
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-gray-100 px-5 py-3.5">
+              <h3 className="text-sm font-semibold text-gray-800">
+                <span className="inline-flex items-center gap-1.5">
+                  <AlertCircle className="h-4 w-4 text-gray-500" /> Exceptions
+                </span>
+              </h3>
+              <p className="mt-0.5 text-xs text-gray-500">Duplicate subscriptions, missing owners, large charges</p>
+            </div>
+            {txExceptions.length === 0 ? (
+              <div className="px-5 py-8 text-center text-xs text-gray-500">No exceptions detected.</div>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {txExceptions.map((e) => (
+                  <li key={e.id} className="px-5 py-3">
+                    <div className="flex items-start gap-2">
+                      <span
+                        className={`mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full ${
+                          e.severity === "danger"
+                            ? "bg-rose-500"
+                            : e.severity === "warning"
+                            ? "bg-amber-500"
+                            : "bg-blue-500"
+                        }`}
+                      />
+                      <div>
+                        <p className="text-xs font-semibold text-gray-900">{e.title}</p>
+                        <p className="mt-0.5 text-[11px] text-gray-600">{e.detail}</p>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
 

@@ -5,7 +5,7 @@ import {
   Building2, FileText, StickyNote, Radio, Phone, Network, UserCheck,
   ClipboardList, PieChart, Users, UserCircle, Monitor, GitBranch, DollarSign,
   Receipt, CalendarOff, CreditCard, Settings2, Home, Landmark, Settings,
-  FolderKanban, LayoutList, ClipboardCheck, ArrowLeftRight, Repeat, Banknote,
+  FolderKanban, LayoutList, ClipboardCheck, ArrowLeftRight, Repeat, Banknote, Link2,
 } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { Button } from "../../components/ui";
@@ -155,12 +155,14 @@ export function AppShell() {
     {
       title: "Finance",
       items: [
-        { to: "/finance/overview", label: "Cashflow Planning", icon: <TrendingUp size={16} /> },
+        { to: "/finance/liquidity", label: "Group Liquidity", icon: <Landmark size={16} /> },
+        { to: "/finance/overview", label: "Cashflow Forecast", icon: <TrendingUp size={16} /> },
         { to: "/finance/ar-ap", label: "AR / AP", icon: <ArrowLeftRight size={16} /> },
         { to: "/finance/invoices", label: "Invoices", icon: <FileText size={16} /> },
         { to: "/finance/credit-cards", label: "Credit Cards", icon: <CreditCard size={16} /> },
-        { to: "/finance/direct-debits", label: "Direct Debits", icon: <Repeat size={16} /> },
+        { to: "/finance/direct-debits", label: "Fixed Payments", icon: <Repeat size={16} /> },
         { to: "/finance/salaries", label: "Salaries", icon: <Banknote size={16} /> },
+        { to: "/finance/intercompany", label: "Intercompany", icon: <Link2 size={16} /> },
       ],
     },
     {

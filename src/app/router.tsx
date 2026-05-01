@@ -42,11 +42,10 @@ import { FinanceArApDetailPage } from "../features/finance/FinanceArApDetailPage
 import { FinanceCreditCardsPage } from "../features/finance/FinanceCreditCardsPage";
 import { FinanceCreditCardDetailPage } from "../features/finance/FinanceCreditCardDetailPage";
 import { FinanceDirectDebitsPage } from "../features/finance/FinanceDirectDebitsPage";
+import { FinanceIntercompanyPage } from "../features/finance/FinanceIntercompanyPage";
 import { FinanceInvoicesPage } from "../features/finance/FinanceInvoicesPage";
+import { FinanceLiquidityPage } from "../features/finance/FinanceLiquidityPage";
 import { FinanceSalariesPage } from "../features/finance/FinanceSalariesPage";
-import { FinanceCashflowPlanningPage } from "../features/finance/FinanceCashflowPlanningPage";
-import { FinanceCounterpartyDetailPage } from "../features/finance/FinanceCounterpartyDetailPage";
-import { FinanceInternalExpensesPage } from "../features/finance/FinanceInternalExpensesPage";
 import { FinanceOverviewPage } from "../features/finance/FinanceOverviewPage";
 
 export const router = createBrowserRouter([
@@ -73,6 +72,7 @@ export const router = createBrowserRouter([
       { path: "/reports/timeline", element: <ProjectTimelinePage /> },
       { path: "/management-reports", element: <ManagementReportsPage /> },
       { path: "/finance", element: <FinancePage /> },
+      { path: "/finance/liquidity", element: <FinanceLiquidityPage /> },
       { path: "/finance/overview", element: <FinanceOverviewPage /> },
       { path: "/finance/ar-ap", element: <FinanceArApPage /> },
       { path: "/finance/ar-ap/:counterpartyId", element: <FinanceArApDetailPage /> },
@@ -81,9 +81,7 @@ export const router = createBrowserRouter([
       { path: "/finance/direct-debits", element: <FinanceDirectDebitsPage /> },
       { path: "/finance/invoices", element: <FinanceInvoicesPage /> },
       { path: "/finance/salaries", element: <FinanceSalariesPage /> },
-      { path: "/finance/counterparties/:counterpartyId", element: <FinanceCounterpartyDetailPage /> },
-      { path: "/finance/cashflow-planning", element: <FinanceCashflowPlanningPage /> },
-      { path: "/finance/internal-expenses", element: <FinanceInternalExpensesPage /> },
+      { path: "/finance/intercompany", element: <FinanceIntercompanyPage /> },
       { path: "/settings", element: <SettingsPage /> },
       { path: "/ops/sms-noc", element: <SmsNocPortalPage /> },
       { path: "/ops/voice-noc", element: <VoiceNocPortalPage /> },

@@ -5,7 +5,10 @@ import {
   ArrowUpRight,
   ChevronDown,
   ChevronRight,
+  Clock,
   FileSearch,
+  Layers,
+  Link2,
   Pencil,
   Plus,
   Trash2,
@@ -149,6 +152,11 @@ export function FinanceArApItemFormModal({
   const [status, setStatus] = useState<FinanceARAPStatus>("Open");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
+  const [expectedPaymentDate, setExpectedPaymentDate] = useState<string>("");
+  const [disputed, setDisputed] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const [nettingEligible, setNettingEligible] = useState(false);
+  const [intercompany, setIntercompany] = useState(false);
 
   // Reset on open / when editing target changes.
   useEffect(() => {
@@ -168,6 +176,11 @@ export function FinanceArApItemFormModal({
       setStatus(editing.status);
       setDescription(editing.description);
       setNotes(editing.notes ?? "");
+      setExpectedPaymentDate(editing.expectedPaymentDate ?? "");
+      setDisputed(Boolean(editing.disputed));
+      setBlocked(Boolean(editing.blocked));
+      setNettingEligible(Boolean(editing.nettingEligible));
+      setIntercompany(Boolean(editing.intercompany));
       return;
     }
     setEntityId("UK");
@@ -187,6 +200,11 @@ export function FinanceArApItemFormModal({
     setStatus("Open");
     setDescription("");
     setNotes("");
+    setExpectedPaymentDate("");
+    setDisputed(false);
+    setBlocked(false);
+    setNettingEligible(false);
+    setIntercompany(false);
   }, [open, editing, prefillCounterpartyId, today]);
 
   // Auto-recompute EUR from original × FX unless user has overridden.
@@ -214,6 +232,14 @@ export function FinanceArApItemFormModal({
     if (!description.trim()) return;
     if (amountOriginal <= 0) return;
 
+    const flagsPayload = {
+      expectedPaymentDate: expectedPaymentDate || undefined,
+      disputed: disputed || undefined,
+      blocked: blocked || undefined,
+      nettingEligible: nettingEligible || undefined,
+      intercompany: intercompany || undefined,
+    };
+
     if (editing) {
       updateItem({
         ...editing,
@@ -229,6 +255,7 @@ export function FinanceArApItemFormModal({
         status,
         description: description.trim(),
         notes: notes.trim() || undefined,
+        ...flagsPayload,
       });
     } else {
       addItem({
@@ -244,6 +271,7 @@ export function FinanceArApItemFormModal({
         status,
         description: description.trim(),
         notes: notes.trim() || undefined,
+        ...flagsPayload,
       });
     }
     onClose();
@@ -401,6 +429,55 @@ export function FinanceArApItemFormModal({
             <input type="date" className={inputCls} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
           </label>
 
+          <label className="text-xs font-semibold text-gray-700">
+            Expected payment <span className="text-gray-400">(optional)</span>
+            <input
+              type="date"
+              className={inputCls}
+              value={expectedPaymentDate}
+              onChange={(e) => setExpectedPaymentDate(e.target.value)}
+            />
+          </label>
+
+          <div className="col-span-2 grid grid-cols-2 gap-2 rounded-lg border border-dashed border-gray-200 bg-gray-50/40 p-3">
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={disputed}
+                onChange={(e) => setDisputed(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Disputed
+            </label>
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={blocked}
+                onChange={(e) => setBlocked(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Blocked
+            </label>
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={nettingEligible}
+                onChange={(e) => setNettingEligible(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Netting eligible
+            </label>
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={intercompany}
+                onChange={(e) => setIntercompany(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Intercompany
+            </label>
+          </div>
+
           <label className="col-span-2 text-xs font-semibold text-gray-700">
             Description
             <input className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is this item?" />
@@ -465,19 +542,58 @@ export function FinanceArApPage() {
     let totalPay = 0;
     let overdueRec = 0;
     let overduePay = 0;
+    // Weighted-average days overdue (weighted by EUR), open items only.
+    let weightedDaysSum = 0;
+    let weightedAmountSum = 0;
+    const todayMs = Date.now();
     for (const it of items) {
       const isReceivable = it.direction === "Receivable";
       const isOpen = it.status !== "Paid" && it.status !== "Cancelled";
       if (isOpen) {
         if (isReceivable) totalRec += it.amountEur;
         else totalPay += it.amountEur;
+        if (it.dueDate) {
+          const dueMs = new Date(`${it.dueDate.slice(0, 10)}T12:00:00Z`).getTime();
+          const daysPast = Math.floor((todayMs - dueMs) / (24 * 60 * 60 * 1000));
+          if (daysPast > 0) {
+            weightedDaysSum += daysPast * it.amountEur;
+            weightedAmountSum += it.amountEur;
+          }
+        }
       }
       if (it.status === "Overdue") {
         if (isReceivable) overdueRec += it.amountEur;
         else overduePay += it.amountEur;
       }
     }
-    return { totalRec, totalPay, overdueRec, overduePay };
+    const weightedAvgDaysOverdue = weightedAmountSum > 0 ? Math.round(weightedDaysSum / weightedAmountSum) : 0;
+    return { totalRec, totalPay, overdueRec, overduePay, weightedAvgDaysOverdue };
+  }, [items]);
+
+  // ── Aging buckets (open items only, by direction) ──────────────────
+  const aging = useMemo(() => {
+    const blank = () => ({ current: 0, b1_30: 0, b31_60: 0, b61_90: 0, b90: 0, total: 0 });
+    const rec = blank();
+    const pay = blank();
+    const todayMs = Date.now();
+    for (const it of items) {
+      const isOpen = it.status !== "Paid" && it.status !== "Cancelled";
+      if (!isOpen) continue;
+      const target = it.direction === "Receivable" ? rec : pay;
+      target.total += it.amountEur;
+      if (!it.dueDate) {
+        target.current += it.amountEur;
+        continue;
+      }
+      const dueMs = new Date(`${it.dueDate.slice(0, 10)}T12:00:00Z`).getTime();
+      const daysPast = Math.floor((todayMs - dueMs) / (24 * 60 * 60 * 1000));
+      if (daysPast <= 0) target.current += it.amountEur;
+      else if (daysPast <= 30) target.b1_30 += it.amountEur;
+      else if (daysPast <= 60) target.b31_60 += it.amountEur;
+      else if (daysPast <= 90) target.b61_90 += it.amountEur;
+      else target.b90 += it.amountEur;
+    }
+    return { rec, pay };
   }, [items]);
 
   // ── Filtered items ─────────────────────────────────────────────────
@@ -526,6 +642,34 @@ export function FinanceArApPage() {
       .sort((a, b) => b.openTotalEur - a.openTotalEur);
   }, [filtered, cpById]);
 
+  // ── Top 10 net debtor / net creditor (from full unfiltered set) ────
+  const netByCounterparty = useMemo(() => {
+    const m = new Map<string, { id: string; name: string; type: FinanceCounterpartyType; netEur: number }>();
+    for (const it of items) {
+      if (it.status === "Paid" || it.status === "Cancelled") continue;
+      const cp = cpById.get(it.counterpartyId);
+      const cur = m.get(it.counterpartyId) ?? {
+        id: it.counterpartyId,
+        name: cp?.name ?? "Unknown",
+        type: cp?.type ?? "Other",
+        netEur: 0,
+      };
+      cur.netEur += it.direction === "Receivable" ? it.amountEur : -it.amountEur;
+      m.set(it.counterpartyId, cur);
+    }
+    return Array.from(m.values());
+  }, [items, cpById]);
+
+  const topNetDebtors = useMemo(
+    () => netByCounterparty.filter((c) => c.netEur > 0).sort((a, b) => b.netEur - a.netEur).slice(0, 10),
+    [netByCounterparty],
+  );
+
+  const topNetCreditors = useMemo(
+    () => netByCounterparty.filter((c) => c.netEur < 0).sort((a, b) => a.netEur - b.netEur).slice(0, 10),
+    [netByCounterparty],
+  );
+
   const toggleExpanded = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -540,7 +684,7 @@ export function FinanceArApPage() {
       <UiPageHeader title="AR / AP" subtitle="Receivables and payables across all entities" />
 
       {/* Section 1 — KPI strip */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <UiKpiCard label="Total Receivables (EUR)" value={fmtEur(kpis.totalRec)} icon={<ArrowDownRight className="h-5 w-5" />} />
         <UiKpiCard label="Total Payables (EUR)" value={fmtEur(kpis.totalPay)} icon={<ArrowUpRight className="h-5 w-5" />} />
         <UiKpiCard
@@ -554,6 +698,12 @@ export function FinanceArApPage() {
           value={fmtEur(kpis.overduePay)}
           icon={<ArrowUpRight className="h-5 w-5" />}
           className={kpis.overduePay > 0 ? "border-rose-200 bg-rose-50/50" : ""}
+        />
+        <UiKpiCard
+          label="Weighted Avg Days Overdue"
+          value={kpis.weightedAvgDaysOverdue > 0 ? `${kpis.weightedAvgDaysOverdue}d` : "—"}
+          icon={<Clock className="h-5 w-5" />}
+          className={kpis.weightedAvgDaysOverdue >= 30 ? "border-rose-200 bg-rose-50/50" : kpis.weightedAvgDaysOverdue >= 15 ? "border-amber-200 bg-amber-50/50" : ""}
         />
       </div>
 
@@ -621,6 +771,118 @@ export function FinanceArApPage() {
         </Button>
       </div>
 
+      {/* Section 2b — Aging buckets */}
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-gray-100 px-5 py-3.5">
+          <h3 className="text-sm font-semibold text-gray-800">Aging Buckets</h3>
+          <p className="mt-0.5 text-xs text-gray-500">Open items only · EUR · derived from due date</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="border-b border-gray-100 bg-gray-50/80">
+              <tr>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Direction</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Current</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">1 – 30 d</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">31 – 60 d</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">61 – 90 d</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">90 + d</th>
+                <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-gray-50">
+                <td className="px-5 py-3 text-sm font-medium text-emerald-700">Receivables</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-gray-800 text-right">{fmtEur(aging.rec.current)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-gray-800 text-right">{fmtEur(aging.rec.b1_30)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-amber-700 text-right">{fmtEur(aging.rec.b31_60)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-amber-700 text-right">{fmtEur(aging.rec.b61_90)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-rose-700 text-right">{fmtEur(aging.rec.b90)}</td>
+                <td className="px-5 py-3 text-sm font-semibold tabular-nums text-gray-900 text-right">{fmtEur(aging.rec.total)}</td>
+              </tr>
+              <tr>
+                <td className="px-5 py-3 text-sm font-medium text-rose-700">Payables</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-gray-800 text-right">{fmtEur(aging.pay.current)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-gray-800 text-right">{fmtEur(aging.pay.b1_30)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-amber-700 text-right">{fmtEur(aging.pay.b31_60)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-amber-700 text-right">{fmtEur(aging.pay.b61_90)}</td>
+                <td className="px-5 py-3 text-sm tabular-nums text-rose-700 text-right">{fmtEur(aging.pay.b90)}</td>
+                <td className="px-5 py-3 text-sm font-semibold tabular-nums text-gray-900 text-right">{fmtEur(aging.pay.total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Section 2c — Top 10 net debtor / net creditor */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="border-b border-gray-100 px-5 py-3.5">
+            <h3 className="text-sm font-semibold text-gray-800">Top Net Debtors</h3>
+            <p className="mt-0.5 text-xs text-gray-500">Counterparties owing us the most (EUR, net)</p>
+          </div>
+          <div className="overflow-x-auto">
+            {topNetDebtors.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-gray-500">No net debtors</div>
+            ) : (
+              <table className="w-full text-left">
+                <tbody>
+                  {topNetDebtors.map((c, idx) => (
+                    <tr
+                      key={c.id}
+                      className="border-b border-gray-50 hover:bg-gray-50/80 cursor-pointer"
+                      onClick={() => navigate(`/finance/ar-ap/${c.id}`)}
+                    >
+                      <td className="px-5 py-2.5 w-8 text-[11px] tabular-nums text-gray-400">{idx + 1}</td>
+                      <td className="px-5 py-2.5 text-sm font-medium text-gray-900">
+                        {c.name}
+                        <span className="ml-2 text-[10px] text-gray-400 uppercase">{c.type}</span>
+                      </td>
+                      <td className="px-5 py-2.5 text-sm font-semibold tabular-nums text-emerald-700 text-right">
+                        {fmtEur(c.netEur)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="border-b border-gray-100 px-5 py-3.5">
+            <h3 className="text-sm font-semibold text-gray-800">Top Net Creditors</h3>
+            <p className="mt-0.5 text-xs text-gray-500">Counterparties we owe the most (EUR, net)</p>
+          </div>
+          <div className="overflow-x-auto">
+            {topNetCreditors.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-gray-500">No net creditors</div>
+            ) : (
+              <table className="w-full text-left">
+                <tbody>
+                  {topNetCreditors.map((c, idx) => (
+                    <tr
+                      key={c.id}
+                      className="border-b border-gray-50 hover:bg-gray-50/80 cursor-pointer"
+                      onClick={() => navigate(`/finance/ar-ap/${c.id}`)}
+                    >
+                      <td className="px-5 py-2.5 w-8 text-[11px] tabular-nums text-gray-400">{idx + 1}</td>
+                      <td className="px-5 py-2.5 text-sm font-medium text-gray-900">
+                        {c.name}
+                        <span className="ml-2 text-[10px] text-gray-400 uppercase">{c.type}</span>
+                      </td>
+                      <td className="px-5 py-2.5 text-sm font-semibold tabular-nums text-rose-700 text-right">
+                        {fmtEur(Math.abs(c.netEur))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Section 3 — Grouped table */}
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="border-b border-gray-100 px-5 py-3.5">
@@ -674,6 +936,16 @@ export function FinanceArApPage() {
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-gray-900">{name}</span>
                             {cp && <CounterpartyTypeBadge value={cp.type} />}
+                            {g.openReceivablesEur > 0 && g.openPayablesEur > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200">
+                                <Layers className="h-2.5 w-2.5" /> Both
+                              </span>
+                            )}
+                            {cp?.type === "Internal" && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200">
+                                <Link2 className="h-2.5 w-2.5" /> Intercompany
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="px-5 py-3 text-right text-sm font-medium tabular-nums text-emerald-700">
@@ -721,7 +993,31 @@ export function FinanceArApPage() {
                                         <td className="px-3 py-2 text-xs text-gray-700">{it.entityId}</td>
                                         <td className="px-3 py-2"><DirectionBadge value={it.direction} /></td>
                                         <td className="px-3 py-2 text-xs text-gray-700">{it.sourceType}</td>
-                                        <td className="px-3 py-2 text-xs text-gray-900">{it.description}</td>
+                                        <td className="px-3 py-2 text-xs text-gray-900">
+                                          <div className="flex items-center gap-1">
+                                            <span>{it.description}</span>
+                                            {it.disputed && (
+                                              <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700 ring-1 ring-rose-200">
+                                                Disputed
+                                              </span>
+                                            )}
+                                            {it.blocked && (
+                                              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 ring-1 ring-amber-200">
+                                                Blocked
+                                              </span>
+                                            )}
+                                            {it.nettingEligible && (
+                                              <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-violet-700 ring-1 ring-violet-200">
+                                                Net
+                                              </span>
+                                            )}
+                                            {it.intercompany && (
+                                              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 ring-1 ring-amber-200">
+                                                I/C
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
                                         <td className="px-3 py-2 text-xs text-gray-700">{it.currency}</td>
                                         <td className="px-3 py-2 text-xs tabular-nums text-gray-700 text-right">
                                           {fmtOriginal(it.amountOriginal, it.currency)}

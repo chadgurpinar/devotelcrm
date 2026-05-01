@@ -1462,173 +1462,7 @@ export interface TrafficAlertEvent {
   createdAt: string;
 }
 
-// ----------------------------
-// Finance (AR/AP + Cashflow)
-// ----------------------------
-
-export type FinCounterpartyType = "Customer" | "Provider" | "Other";
-
-export interface FinCounterparty {
-  id: string;
-  type: FinCounterpartyType;
-  name: string;
-  companyId?: string;
-  primaryContactId?: string;
-  defaultCurrency: HrCurrencyCode;
-  taxId?: string;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type FinDirection = "Receivable" | "Payable";
-export type FinSourceType = "Usage" | "Invoice" | "Payment" | "Projection" | "Manual";
-export type FinReferenceType = "TrafficSummary" | "Invoice" | "Payment" | "Projection" | "Manual";
-export type FinTxStatus = "Planned" | "Open" | "PartiallyPaid" | "Paid" | "Overdue" | "Cancelled";
-
-export interface FinArApTransaction {
-  id: string;
-  entityId: OurEntity;
-  counterpartyId: string | null;
-  direction: FinDirection;
-  sourceType: FinSourceType;
-  referenceType: FinReferenceType;
-  referenceId: string | null;
-  currency: HrCurrencyCode;
-  /** Always positive; direction encodes AR/AP. */
-  amount: number;
-  /** Total applied payments against this transaction. */
-  paidAmount: number;
-  issueDate: string;
-  dueDate?: string;
-  status: FinTxStatus;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type FinInvoiceType = "CustomerInvoice" | "SupplierInvoice";
-export type FinInvoiceStatus = "Draft" | "Issued" | "PartiallyPaid" | "Paid" | "Overdue" | "Cancelled";
-
-export interface FinInvoice {
-  id: string;
-  entityId: OurEntity;
-  counterpartyId: string;
-  type: FinInvoiceType;
-  invoiceNumber: string;
-  invoiceDate: string;
-  dueDate: string;
-  currency: HrCurrencyCode;
-  totalAmount: number;
-  status: FinInvoiceStatus;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type FinInvoiceServiceType = "SMS" | "Voice" | "Setup" | "Other";
-
-export interface FinInvoiceLine {
-  id: string;
-  invoiceId: string;
-  description: string;
-  serviceType: FinInvoiceServiceType;
-  periodFrom?: string;
-  periodTo?: string;
-  amount: number;
-}
-
-export type FinPaymentDirection = "Incoming" | "Outgoing";
-export type FinPaymentMethod = "BankTransfer" | "Card" | "Cash" | "Other";
-
-export interface FinPayment {
-  id: string;
-  entityId: OurEntity;
-  counterpartyId: string;
-  direction: FinPaymentDirection;
-  paymentDate: string;
-  amount: number;
-  currency: HrCurrencyCode;
-  method: FinPaymentMethod;
-  reference?: string;
-  notes?: string;
-  createdAt: string;
-}
-
-export interface FinPaymentApplication {
-  id: string;
-  paymentId: string;
-  appliedToInvoiceId?: string;
-  appliedToTransactionId?: string;
-  appliedAmount: number;
-  appliedAt: string;
-}
-
-export type FinProjectionCategory = "Customer" | "Provider" | "Salary" | "Rent" | "Tax" | "Card" | "Loan" | "Other";
-export type FinProjectionStatus = "Planned" | "Confirmed" | "Cancelled";
-
-export interface FinProjection {
-  id: string;
-  entityId: OurEntity;
-  counterpartyId?: string;
-  direction: FinDirection;
-  label: string;
-  dueDate: string;
-  amount: number;
-  currency: HrCurrencyCode;
-  category: FinProjectionCategory;
-  status: FinProjectionStatus;
-  confidence?: number;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export type FinInternalExpenseCategory = "Salary" | "Rent" | "Tax" | "Card" | "Loan" | "Software" | "Other";
-export type FinExpenseRecurrence = "Monthly" | "OneOff";
-
-export interface FinInternalExpense {
-  id: string;
-  entityId: OurEntity;
-  label: string;
-  category: FinInternalExpenseCategory;
-  recurrence: FinExpenseRecurrence;
-  amount: number;
-  currency: HrCurrencyCode;
-  dayOfMonth?: number;
-  fixedDate?: string;
-  active: boolean;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface FinEntityCashBalance {
-  entityId: OurEntity;
-  asOfDate: string;
-  openingBalance: number;
-  currency: HrCurrencyCode;
-}
-
-export type FinUsageTrack = "SMS" | "Voice";
-export type FinUsagePositionStatus = "Provisional" | "Confirmed";
-
-export interface FinUsageArApPosition {
-  id: string;
-  counterpartyId: string;
-  entityId: OurEntity;
-  track: FinUsageTrack;
-  direction: FinDirection;
-  periodFrom: string;
-  periodTo: string;
-  volume: number;
-  amount: number;
-  currency: HrCurrencyCode;
-  status: FinUsagePositionStatus;
-  fetchedAt: string;
-}
-
-// ─── Finance (Phase 1 — additive, parallel to legacy Fin* types) ────
+// ─── Finance (Phase 1 — Finance* layer) ─────────────────────────────
 
 export type FinanceCurrencyCode = "EUR" | "USD" | "GBP" | "TRY" | "CHF" | "AED";
 
@@ -1645,9 +1479,64 @@ export interface FinanceCashPosition {
   amountEur: number;
   asOf: string;
   source: "Manual" | "BankFeed";
+  /** Optional link to a `FinanceBankAccount`. */
+  bankAccountId?: string;
   notes?: string;
   updatedAt: string;
   updatedByUserId: string;
+}
+
+export type FinanceBankAccountStatus = "Active" | "Frozen" | "Closed";
+
+export interface FinanceBankAccount {
+  id: string;
+  entityId: OurEntity;
+  bankName: string;
+  accountName: string;
+  /** Last-4 or masked account number. Storing masked for display only. */
+  accountNumberMasked?: string;
+  iban?: string;
+  swift?: string;
+  currency: FinanceCurrencyCode;
+  jurisdiction?: string;
+  ownerUserId?: string;
+  /** True if balance held in this account is restricted (escrow / collateral / legal hold). */
+  restricted: boolean;
+  /** True if this account's balance should be included in cashflow forecast. */
+  includedInForecast: boolean;
+  /** Last connection sync (when `source` on positions is "BankFeed"). */
+  lastSyncAt?: string;
+  status: FinanceBankAccountStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinanceBankConnectionKind = "Manual" | "BankFeed" | "API";
+export type FinanceBankConnectionStatus = "Connected" | "Stale" | "Error" | "NotConfigured";
+
+/**
+ * Logical "connection" record per bank account — drives the Cash Visibility KPI
+ * and the Liquidity bank-account table's freshness column.
+ */
+export interface FinanceBankConnection {
+  id: string;
+  bankAccountId: string;
+  kind: FinanceBankConnectionKind;
+  status: FinanceBankConnectionStatus;
+  lastSyncAt?: string;
+  errorMessage?: string;
+  notes?: string;
+  updatedAt: string;
+}
+
+/** Per-entity minimum operating cash threshold (EUR) — used by Forecast and Liquidity. */
+export interface FinanceLiquidityThreshold {
+  id: string;
+  entityId: OurEntity;
+  minOperatingCashEur: number;
+  notes?: string;
+  updatedAt: string;
 }
 
 export type FinanceCounterpartyType = "Customer" | "Provider" | "Internal" | "Other";
@@ -1679,6 +1568,18 @@ export interface FinanceARAPItem {
   paidAmountEur?: number;
   issueDate: string;
   dueDate?: string;
+  /** Operational expected-payment date — used by Cashflow Forecast and counterparty drawers (separate from `dueDate`). */
+  expectedPaymentDate?: string;
+  /** Internal user (HrEmployee.id or User.id) responsible for chasing / approving this item. */
+  assigneeUserId?: string;
+  /** True when invoice is under dispute (pause collection / payment). */
+  disputed?: boolean;
+  /** True when payment is blocked (compliance / approvals). */
+  blocked?: boolean;
+  /** True when this item can be offset against an opposite-direction item with the same counterparty. */
+  nettingEligible?: boolean;
+  /** True when this item represents an intercompany flow (counterparty is another `OurEntity`). */
+  intercompany?: boolean;
   status: FinanceARAPStatus;
   description: string;
   referenceId?: string;
@@ -1790,7 +1691,31 @@ export type FinanceCreditCardExpenseCategory =
   | "Utilities"
   | "Meals"
   | "Hardware"
+  | "Legal"
+  | "Hosting"
+  | "Telecom"
   | "Other";
+
+export interface FinanceCreditCardTransaction {
+  id: string;
+  cardId: string;
+  /** Optional link to the statement that absorbed this transaction. */
+  statementId?: string;
+  transactionDate: string;
+  merchant: string;
+  category: FinanceCreditCardExpenseCategory;
+  amountOriginal: number;
+  amountEur: number;
+  currency: FinanceCurrencyCode;
+  /** Cardholder / employee user-id (HR or User scope). */
+  cardholderUserId?: string;
+  /** Free-form project tag (e.g. "MWC 2026", "API platform v2"). */
+  projectTag?: string;
+  /** True when this is a known recurring charge (subscription / contract). */
+  recurring: boolean;
+  notes?: string;
+  createdAt: string;
+}
 
 export interface FinanceCreditCardStatementCategory {
   category: FinanceCreditCardExpenseCategory;
@@ -1866,10 +1791,47 @@ export interface FinanceDirectDebit {
 
 export type FinanceSalaryPlanStatus = "Planned" | "Paid" | "Cancelled";
 
+export type FinanceSalaryPersonKind = "Employee" | "Contractor";
+
+/** Per-person default salary, used to pre-populate new monthly plans. */
+export interface FinanceSalaryDefault {
+  id: string;
+  personKind: FinanceSalaryPersonKind;
+  /** HrEmployee.id (when Employee) or FinanceContractor.id (when Contractor). */
+  personId: string;
+  entityId: OurEntity;
+  currency: FinanceCurrencyCode;
+  defaultNetOriginal: number;
+  defaultEmployerCostOriginal?: number;
+  notes?: string;
+  updatedAt: string;
+}
+
+/** Lightweight contractor record — separate from HR employees. */
+export interface FinanceContractor {
+  id: string;
+  name: string;
+  defaultEntityId: OurEntity;
+  defaultCurrency: FinanceCurrencyCode;
+  email?: string;
+  notes?: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface FinanceSalaryPlanLine {
   id: string;
   salaryPlanId: string;
+  /**
+   * Legacy field. New code should use `personKind` + `personId`.
+   * Kept for backward compatibility with rows seeded before contractors.
+   */
   employeeId: string;
+  /** When set, indicates whether `employeeId` is an HR employee or a finance contractor. */
+  personKind?: FinanceSalaryPersonKind;
+  /** Mirrored from `employeeId`; new lines populate this explicitly. */
+  personId?: string;
   entityId: OurEntity;
   currency: FinanceCurrencyCode;
   plannedNetOriginal: number;
@@ -1891,6 +1853,28 @@ export interface FinanceSalaryPlan {
   createdAt: string;
   updatedAt: string;
   createdByUserId: string;
+}
+
+/**
+ * Snapshot of a forecasted weekly bucket — produced manually when the user
+ * clicks "Run snapshot" on the Cashflow Forecast page. Used to compute
+ * forecast-accuracy and actual-vs-forecast variance later.
+ */
+export interface FinanceForecastSnapshot {
+  id: string;
+  /** ISO date the snapshot was taken. */
+  forecastedAt: string;
+  /** The week the snapshot is forecasting (Monday or any anchor — must be stable). */
+  weekStartYmd: string;
+  /** EUR-equivalent forecasted inflow for the week. */
+  forecastInflowEur: number;
+  /** EUR-equivalent forecasted outflow for the week. */
+  forecastOutflowEur: number;
+  /** EUR-equivalent forecasted closing balance after the week. */
+  forecastClosingEur: number;
+  /** EUR-equivalent actual closing balance — populated retrospectively when the week is over. */
+  actualClosingEur?: number;
+  notes?: string;
 }
 
 export interface DbState {
@@ -1952,15 +1936,6 @@ export interface DbState {
   trafficBaselines: TrafficBaseline[];
   trafficAlertRules: TrafficAlertRule[];
   trafficAlertEvents: TrafficAlertEvent[];
-  finCounterparties: FinCounterparty[];
-  finArApTransactions: FinArApTransaction[];
-  finInvoices: FinInvoice[];
-  finInvoiceLines: FinInvoiceLine[];
-  finPayments: FinPayment[];
-  finPaymentApplications: FinPaymentApplication[];
-  finProjections: FinProjection[];
-  finInternalExpenses: FinInternalExpense[];
-  finEntityCashBalances: FinEntityCashBalance[];
   financeCounterparties: FinanceCounterparty[];
   financeCashPositions: FinanceCashPosition[];
   financeARAPItems: FinanceARAPItem[];
@@ -1972,6 +1947,13 @@ export interface DbState {
   financeCreditCardStatements: FinanceCreditCardStatement[];
   financeDirectDebits: FinanceDirectDebit[];
   financeSalaryPlans: FinanceSalaryPlan[];
+  financeBankAccounts: FinanceBankAccount[];
+  financeLiquidityThresholds: FinanceLiquidityThreshold[];
+  financeCreditCardTransactions: FinanceCreditCardTransaction[];
+  financeSalaryDefaults: FinanceSalaryDefault[];
+  financeContractors: FinanceContractor[];
+  financeForecastSnapshots: FinanceForecastSnapshot[];
+  financeBankConnections: FinanceBankConnection[];
   outbox: string[];
 }
 

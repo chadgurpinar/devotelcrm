@@ -568,13 +568,50 @@ export function FinanceArApDetailPage() {
   const summary = useMemo(() => {
     let recOpen = 0;
     let payOpen = 0;
+    let nettableRec = 0;
+    let nettablePay = 0;
+    let oldestOpenIssueDate: string | null = null;
     for (const it of cpItems) {
       const isOpen = it.status !== "Paid" && it.status !== "Cancelled";
       if (!isOpen) continue;
       if (it.direction === "Receivable") recOpen += it.amountEur;
       else payOpen += it.amountEur;
+      if (it.nettingEligible) {
+        if (it.direction === "Receivable") nettableRec += it.amountEur;
+        else nettablePay += it.amountEur;
+      }
+      if (!oldestOpenIssueDate || it.issueDate < oldestOpenIssueDate) {
+        oldestOpenIssueDate = it.issueDate;
+      }
     }
-    return { recOpen, payOpen, net: recOpen - payOpen };
+    const proposedNetSettlementEur = Math.min(nettableRec, nettablePay);
+    return {
+      recOpen,
+      payOpen,
+      net: recOpen - payOpen,
+      oldestOpenIssueDate,
+      nettableRec,
+      nettablePay,
+      proposedNetSettlementEur,
+    };
+  }, [cpItems]);
+
+  // Per-entity grouping of open ARAP items.
+  const itemsByEntity = useMemo(() => {
+    const m = new Map<
+      string,
+      { entityId: string; recOpen: number; payOpen: number; count: number }
+    >();
+    for (const it of cpItems) {
+      const isOpen = it.status !== "Paid" && it.status !== "Cancelled";
+      if (!isOpen) continue;
+      const cur = m.get(it.entityId) ?? { entityId: it.entityId, recOpen: 0, payOpen: 0, count: 0 };
+      cur.count += 1;
+      if (it.direction === "Receivable") cur.recOpen += it.amountEur;
+      else cur.payOpen += it.amountEur;
+      m.set(it.entityId, cur);
+    }
+    return Array.from(m.values()).sort((a, b) => a.entityId.localeCompare(b.entityId));
   }, [cpItems]);
 
   if (!counterparty) {
@@ -627,7 +664,12 @@ export function FinanceArApDetailPage() {
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
-        <UiPageHeader title={counterparty.name} subtitle={counterparty.type} />
+        <UiPageHeader
+          title={counterparty.name}
+          subtitle={`${counterparty.type}${counterparty.type === "Internal" ? " · Intercompany" : ""}${
+            summary.recOpen > 0 && summary.payOpen > 0 ? " · Both AR + AP" : ""
+          }`}
+        />
         {counterparty.companyId && (
           <Link
             to={`/companies/${counterparty.companyId}`}
@@ -653,6 +695,81 @@ export function FinanceArApDetailPage() {
           <p className={`mt-1 text-2xl font-bold tabular-nums ${summary.net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
             {fmtEur(summary.net)}
           </p>
+        </div>
+      </div>
+
+      {/* Section 1b — Per-entity grouping, oldest, proposed net settlement */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden lg:col-span-2">
+          <div className="border-b border-gray-100 px-5 py-3.5">
+            <h3 className="text-sm font-semibold text-gray-800">By Entity</h3>
+            <p className="mt-0.5 text-xs text-gray-500">Open exposure split by paying / receiving entity</p>
+          </div>
+          {itemsByEntity.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-gray-500">No open items.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="border-b border-gray-100 bg-gray-50/80">
+                  <tr>
+                    <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Entity</th>
+                    <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Open AR</th>
+                    <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Open AP</th>
+                    <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Net</th>
+                    <th className="px-5 py-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-right">Items</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemsByEntity.map((row) => {
+                    const net = row.recOpen - row.payOpen;
+                    return (
+                      <tr key={row.entityId} className="border-b border-gray-50">
+                        <td className="px-5 py-2 text-sm font-medium text-gray-900">{row.entityId}</td>
+                        <td className="px-5 py-2 text-sm tabular-nums text-emerald-700 text-right">{fmtEur(row.recOpen)}</td>
+                        <td className="px-5 py-2 text-sm tabular-nums text-rose-700 text-right">{fmtEur(row.payOpen)}</td>
+                        <td className={`px-5 py-2 text-sm font-semibold tabular-nums ${net >= 0 ? "text-emerald-700" : "text-rose-700"} text-right`}>
+                          {fmtEur(net)}
+                        </td>
+                        <td className="px-5 py-2 text-sm text-gray-600 text-right tabular-nums">{row.count}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-800">Settlement</h3>
+          <div className="mt-3 space-y-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Oldest open issue</span>
+              <span className="font-mono text-xs text-gray-700">{summary.oldestOpenIssueDate ?? "—"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Nettable AR</span>
+              <span className="tabular-nums text-emerald-700">{fmtEur(summary.nettableRec)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Nettable AP</span>
+              <span className="tabular-nums text-rose-700">{fmtEur(summary.nettablePay)}</span>
+            </div>
+            <div className="border-t border-gray-100 pt-2 flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-violet-700">Proposed net settlement</span>
+              <span className="text-lg font-bold tabular-nums text-violet-700">
+                {fmtEur(summary.proposedNetSettlementEur)}
+              </span>
+            </div>
+            {summary.proposedNetSettlementEur === 0 && (summary.nettableRec > 0 || summary.nettablePay > 0) && (
+              <p className="text-[11px] text-amber-700">
+                Some items are netting-eligible on one side only. Mark items on the opposite side as netting-eligible to enable a net settlement.
+              </p>
+            )}
+            {summary.proposedNetSettlementEur === 0 && summary.nettableRec === 0 && summary.nettablePay === 0 && (
+              <p className="text-[11px] text-gray-500">No netting-eligible items recorded for this counterparty.</p>
+            )}
+          </div>
         </div>
       </div>
 
@@ -726,7 +843,31 @@ export function FinanceArApDetailPage() {
                         <td className="px-3 py-2 text-xs text-gray-700">{it.entityId}</td>
                         <td className="px-3 py-2"><DirectionBadge value={it.direction} /></td>
                         <td className="px-3 py-2 text-xs text-gray-700">{it.sourceType}</td>
-                        <td className="px-3 py-2 text-xs text-gray-900">{it.description}</td>
+                        <td className="px-3 py-2 text-xs text-gray-900">
+                          <div className="flex items-center gap-1">
+                            <span>{it.description}</span>
+                            {it.disputed && (
+                              <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-700 ring-1 ring-rose-200">
+                                Disputed
+                              </span>
+                            )}
+                            {it.blocked && (
+                              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 ring-1 ring-amber-200">
+                                Blocked
+                              </span>
+                            )}
+                            {it.nettingEligible && (
+                              <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-violet-700 ring-1 ring-violet-200">
+                                Net
+                              </span>
+                            )}
+                            {it.intercompany && (
+                              <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700 ring-1 ring-amber-200">
+                                I/C
+                              </span>
+                            )}
+                          </div>
+                        </td>
                         <td className="px-3 py-2 text-xs text-gray-700">{it.currency}</td>
                         <td className="px-3 py-2 text-xs tabular-nums text-gray-700 text-right">{fmtOriginal(it.amountOriginal, it.currency)}</td>
                         <td className="px-3 py-2 text-xs font-semibold tabular-nums text-gray-900 text-right">{fmtEur(it.amountEur)}</td>

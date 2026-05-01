@@ -23,7 +23,6 @@ import { seedOps } from "./seedOps";
 import { assertSeedDb, logSeedDiagnosticsOnce } from "./validators";
 import { seedWholesaleTraffic } from "./seedWholesaleTraffic";
 import { seedTrafficIntelV3 } from "./seedTrafficIntelV3";
-import { seedFinance } from "./seedFinance";
 import { seedFinancePhase1 } from "./seedFinancePhase1";
 
 let determinismProbeInProgress = false;
@@ -515,12 +514,6 @@ export function generateSeedDb(
     activeUserId,
   });
 
-  const finance = seedFinance({
-    rng: rootRng.fork("finance"),
-    baseNowIso,
-    companies: companiesWithContacts,
-  });
-
   const financePhase1 = seedFinancePhase1({
     baseNowIso,
     companies: companiesWithContacts,
@@ -795,7 +788,6 @@ export function generateSeedDb(
     })(),
     wholesaleTrafficRecords: seedWholesaleTraffic(trafficRng, baseNowIso),
     ...seedTrafficIntelV3(baseNowIso),
-    ...finance,
     ...financePhase1,
     outbox: [],
   };

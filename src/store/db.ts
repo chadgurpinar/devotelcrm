@@ -58,14 +58,6 @@ import {
   TrafficAlertEvent,
   TrafficAlertRule,
   TrafficBaseline,
-  FinArApTransaction,
-  FinCounterparty,
-  FinInternalExpense,
-  FinInvoice,
-  FinInvoiceLine,
-  FinPayment,
-  FinPaymentApplication,
-  FinProjection,
   FinanceARAPItem,
   FinanceARAPStatus,
   FinanceCashPosition,
@@ -76,6 +68,13 @@ import {
   FinanceInvoice,
   FinancePayment,
   FinanceProjection,
+  FinanceBankAccount,
+  FinanceBankConnection,
+  FinanceContractor,
+  FinanceCreditCardTransaction,
+  FinanceForecastSnapshot,
+  FinanceLiquidityThreshold,
+  FinanceSalaryDefault,
   FinanceSalaryPlan,
   WeeklyReportAiSummary,
   WeeklyReportManagerComment,
@@ -128,25 +127,7 @@ interface DbActions {
   addTrafficAlertRule: (payload: Omit<TrafficAlertRule, "id" | "createdAt">) => string;
   deleteTrafficAlertRule: (id: string) => void;
   runTrafficAlertEvaluation: () => void;
-  createFinCounterparty: (payload: Omit<FinCounterparty, "id" | "createdAt" | "updatedAt">) => string;
-  updateFinCounterparty: (counterparty: FinCounterparty) => void;
-  deleteFinCounterparty: (id: string) => void;
-  markFinTransactionPaid: (id: string, paidAmount?: number) => void;
-  createFinInvoice: (
-    header: Omit<FinInvoice, "id" | "createdAt" | "updatedAt">,
-    lines: Array<Omit<FinInvoiceLine, "id" | "invoiceId">>,
-  ) => string;
-  addFinPayment: (
-    payment: Omit<FinPayment, "id" | "createdAt">,
-    applications: Array<Omit<FinPaymentApplication, "id" | "paymentId" | "appliedAt">>,
-  ) => string;
-  addFinProjection: (payload: Omit<FinProjection, "id" | "createdAt" | "updatedAt">) => string;
-  upsertFinInternalExpense: (
-    payload: Omit<FinInternalExpense, "id" | "createdAt" | "updatedAt"> & { id?: string },
-  ) => string;
-  deleteFinInternalExpense: (id: string) => void;
-  setFinEntityCashBalance: (entityId: OurEntity, openingBalance: number, asOfDate?: string) => void;
-  // Finance (Phase 1) — additive parallel layer
+  // Finance (Phase 1)
   upsertFinanceCashPosition: (data: Omit<FinanceCashPosition, "id" | "updatedAt">) => string;
   addFinanceCounterparty: (data: Omit<FinanceCounterparty, "id" | "createdAt" | "updatedAt">) => string;
   updateFinanceCounterparty: (item: FinanceCounterparty) => void;
@@ -173,6 +154,36 @@ interface DbActions {
   addFinanceSalaryPlan: (data: Omit<FinanceSalaryPlan, "id" | "createdAt">) => string;
   updateFinanceSalaryPlan: (item: FinanceSalaryPlan) => void;
   deleteFinanceSalaryPlan: (id: string) => void;
+  addFinanceBankAccount: (data: Omit<FinanceBankAccount, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceBankAccount: (item: FinanceBankAccount) => void;
+  deleteFinanceBankAccount: (id: string) => void;
+  upsertFinanceLiquidityThreshold: (
+    data: Omit<FinanceLiquidityThreshold, "id" | "updatedAt">,
+  ) => string;
+  addFinanceCreditCardTransaction: (
+    data: Omit<FinanceCreditCardTransaction, "id" | "createdAt">,
+  ) => string;
+  updateFinanceCreditCardTransaction: (item: FinanceCreditCardTransaction) => void;
+  deleteFinanceCreditCardTransaction: (id: string) => void;
+  upsertFinanceSalaryDefault: (
+    data: Omit<FinanceSalaryDefault, "id" | "updatedAt">,
+  ) => string;
+  deleteFinanceSalaryDefault: (id: string) => void;
+  addFinanceContractor: (data: Omit<FinanceContractor, "id" | "createdAt" | "updatedAt">) => string;
+  updateFinanceContractor: (item: FinanceContractor) => void;
+  deleteFinanceContractor: (id: string) => void;
+  /**
+   * Persist a batch of weekly forecast rows as snapshots.
+   * Replaces (entity-scope = global) any existing snapshot for the same
+   * `forecastedAt + weekStartYmd` so the user can re-run cleanly.
+   */
+  recordFinanceForecastSnapshot: (
+    rows: Array<Omit<FinanceForecastSnapshot, "id">>,
+  ) => number;
+  upsertFinanceBankConnection: (
+    data: Omit<FinanceBankConnection, "id" | "updatedAt">,
+  ) => string;
+  deleteFinanceBankConnection: (id: string) => void;
   createCompany: (payload: Omit<Company, "id">) => string;
   updateCompany: (company: Company) => void;
   createContact: (payload: Omit<Contact, "id">) => string;
@@ -1360,199 +1371,6 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           trafficAlertEvents: [...state.trafficAlertEvents, ...newEvents],
         };
       }),
-    createFinCounterparty: (payload) => {
-      const id = uid("fcp");
-      const now = new Date().toISOString();
-      set((state) => ({
-        ...state,
-        finCounterparties: [...state.finCounterparties, { ...payload, id, createdAt: now, updatedAt: now }],
-      }));
-      return id;
-    },
-    updateFinCounterparty: (cp) =>
-      set((state) => {
-        const now = new Date().toISOString();
-        return {
-          ...state,
-          finCounterparties: state.finCounterparties.map((c) => (c.id === cp.id ? { ...cp, updatedAt: now } : c)),
-        };
-      }),
-    deleteFinCounterparty: (id) =>
-      set((state) => ({
-        ...state,
-        finCounterparties: state.finCounterparties.filter((c) => c.id !== id),
-      })),
-    markFinTransactionPaid: (id, paidAmount) =>
-      set((state) => {
-        const now = new Date().toISOString();
-        const nextTx = state.finArApTransactions.map((t) => {
-          if (t.id !== id) return t;
-          const nextPaid = paidAmount !== undefined ? Math.max(0, Math.min(t.amount, paidAmount)) : t.amount;
-          const nextStatus: FinArApTransaction["status"] =
-            nextPaid <= 0 ? "Open" : nextPaid >= t.amount ? "Paid" : "PartiallyPaid";
-          return { ...t, paidAmount: nextPaid, status: nextStatus, updatedAt: now };
-        });
-        return { ...state, finArApTransactions: nextTx };
-      }),
-    createFinInvoice: (header, lines) => {
-      const id = uid("fin-inv");
-      const now = new Date().toISOString();
-      const txId = uid("fin-tx");
-      set((state) => {
-        const inv: FinInvoice = { ...header, id, createdAt: now, updatedAt: now };
-        const newLines: FinInvoiceLine[] = lines.map((l) => ({ ...l, id: uid("fin-inv-line"), invoiceId: id }));
-        const tx: FinArApTransaction = {
-          id: txId,
-          entityId: inv.entityId,
-          counterpartyId: inv.counterpartyId,
-          direction: inv.type === "CustomerInvoice" ? "Receivable" : "Payable",
-          sourceType: "Invoice",
-          referenceType: "Invoice",
-          referenceId: inv.id,
-          currency: inv.currency,
-          amount: inv.totalAmount,
-          paidAmount: 0,
-          issueDate: inv.invoiceDate,
-          dueDate: inv.dueDate,
-          status: inv.status === "Paid" ? "Paid" : inv.status === "Overdue" ? "Overdue" : "Open",
-          description: inv.type === "CustomerInvoice" ? "Customer invoice" : "Supplier invoice",
-          createdAt: now,
-          updatedAt: now,
-        };
-        return {
-          ...state,
-          finInvoices: [...state.finInvoices, inv],
-          finInvoiceLines: [...state.finInvoiceLines, ...newLines],
-          finArApTransactions: [...state.finArApTransactions, tx],
-        };
-      });
-      return id;
-    },
-    addFinPayment: (payment, applications) => {
-      const id = uid("fin-pay");
-      const now = new Date().toISOString();
-      set((state) => {
-        const pay: FinPayment = { ...payment, id, createdAt: now };
-        const apps: FinPaymentApplication[] = applications.map((a) => ({
-          ...a,
-          id: uid("fin-pay-app"),
-          paymentId: id,
-          appliedAt: now,
-        }));
-        const txAppliedDelta = new Map<string, number>();
-        for (const a of apps) {
-          if (a.appliedToTransactionId) {
-            txAppliedDelta.set(a.appliedToTransactionId, (txAppliedDelta.get(a.appliedToTransactionId) ?? 0) + a.appliedAmount);
-          }
-          if (a.appliedToInvoiceId) {
-            const tx = state.finArApTransactions.find(
-              (t) => t.referenceType === "Invoice" && t.referenceId === a.appliedToInvoiceId,
-            );
-            if (tx) {
-              txAppliedDelta.set(tx.id, (txAppliedDelta.get(tx.id) ?? 0) + a.appliedAmount);
-            }
-          }
-        }
-        const nextTx = state.finArApTransactions.map((t) => {
-          const delta = txAppliedDelta.get(t.id);
-          if (!delta) return t;
-          const nextPaid = Math.max(0, Math.min(t.amount, t.paidAmount + delta));
-          const nextStatus: FinArApTransaction["status"] =
-            nextPaid <= 0 ? "Open" : nextPaid >= t.amount ? "Paid" : "PartiallyPaid";
-          return { ...t, paidAmount: nextPaid, status: nextStatus, updatedAt: now };
-        });
-        const invIdsToTouch = new Set<string>();
-        for (const a of apps) {
-          if (a.appliedToInvoiceId) invIdsToTouch.add(a.appliedToInvoiceId);
-          if (a.appliedToTransactionId) {
-            const tx = state.finArApTransactions.find((t) => t.id === a.appliedToTransactionId);
-            if (tx?.referenceType === "Invoice" && tx.referenceId) invIdsToTouch.add(tx.referenceId);
-          }
-        }
-        const nextInvoices = state.finInvoices.map((inv) => {
-          if (!invIdsToTouch.has(inv.id)) return inv;
-          const tx = nextTx.find((t) => t.referenceType === "Invoice" && t.referenceId === inv.id);
-          if (!tx) return inv;
-          const nextStatus: FinInvoice["status"] =
-            tx.status === "Paid" ? "Paid" : tx.status === "PartiallyPaid" ? "PartiallyPaid" : inv.status;
-          return { ...inv, status: nextStatus, updatedAt: now };
-        });
-        return {
-          ...state,
-          finPayments: [...state.finPayments, pay],
-          finPaymentApplications: [...state.finPaymentApplications, ...apps],
-          finArApTransactions: nextTx,
-          finInvoices: nextInvoices,
-        };
-      });
-      return id;
-    },
-    addFinProjection: (payload) => {
-      const id = uid("fin-proj");
-      const now = new Date().toISOString();
-      const txId = uid("fin-tx");
-      set((state) => {
-        const proj: FinProjection = { ...payload, id, createdAt: now, updatedAt: now };
-        const tx: FinArApTransaction = {
-          id: txId,
-          entityId: proj.entityId,
-          counterpartyId: proj.counterpartyId ?? null,
-          direction: proj.direction,
-          sourceType: "Projection",
-          referenceType: "Projection",
-          referenceId: proj.id,
-          currency: proj.currency,
-          amount: proj.amount,
-          paidAmount: 0,
-          issueDate: now.slice(0, 10),
-          dueDate: proj.dueDate,
-          status: "Planned",
-          description: proj.label,
-          createdAt: now,
-          updatedAt: now,
-        };
-        return {
-          ...state,
-          finProjections: [...state.finProjections, proj],
-          finArApTransactions: [...state.finArApTransactions, tx],
-        };
-      });
-      return id;
-    },
-    upsertFinInternalExpense: (payload) => {
-      const now = new Date().toISOString();
-      const id = payload.id ?? uid("fin-exp");
-      set((state) => {
-        const existingIndex = state.finInternalExpenses.findIndex((e) => e.id === id);
-        if (existingIndex >= 0) {
-          const next = state.finInternalExpenses.slice();
-          const prev = next[existingIndex]!;
-          next[existingIndex] = { ...prev, ...payload, id, createdAt: prev.createdAt, updatedAt: now };
-          return { ...state, finInternalExpenses: next };
-        }
-        const created: FinInternalExpense = { ...payload, id, createdAt: now, updatedAt: now };
-        return { ...state, finInternalExpenses: [...state.finInternalExpenses, created] };
-      });
-      return id;
-    },
-    deleteFinInternalExpense: (id) =>
-      set((state) => ({
-        ...state,
-        finInternalExpenses: state.finInternalExpenses.filter((e) => e.id !== id),
-      })),
-    setFinEntityCashBalance: (entityId, openingBalance, asOfDate) =>
-      set((state) => {
-        const day = asOfDate ?? new Date().toISOString().slice(0, 10);
-        const idx = state.finEntityCashBalances.findIndex((b) => b.entityId === entityId);
-        const currency = state.hrLegalEntities.find((le) => le.id === entityId)?.currency ?? "EUR";
-        const next = state.finEntityCashBalances.slice();
-        if (idx >= 0) {
-          next[idx] = { ...next[idx]!, openingBalance, asOfDate: day };
-        } else {
-          next.push({ entityId, openingBalance, asOfDate: day, currency });
-        }
-        return { ...state, finEntityCashBalances: next };
-      }),
     // ─── Finance (Phase 1) ───────────────────────────────────────
     upsertFinanceCashPosition: (data) => {
       const now = new Date().toISOString();
@@ -1594,10 +1412,18 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
     addFinanceARAPItem: (data) => {
       const id = uid("farap");
       const now = new Date().toISOString();
-      set((state) => ({
-        ...state,
-        financeARAPItems: [...state.financeARAPItems, { ...data, id, createdAt: now, updatedAt: now }],
-      }));
+      set((state) => {
+        // Auto-flag intercompany when the counterparty is an Internal entity.
+        const cp = state.financeCounterparties.find((c) => c.id === data.counterpartyId);
+        const intercompany = data.intercompany ?? (cp?.type === "Internal" ? true : undefined);
+        return {
+          ...state,
+          financeARAPItems: [
+            ...state.financeARAPItems,
+            { ...data, intercompany, id, createdAt: now, updatedAt: now },
+          ],
+        };
+      });
       return id;
     },
     updateFinanceARAPItem: (item) =>
@@ -1817,6 +1643,161 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
       })),
     deleteFinanceSalaryPlan: (id) =>
       set((state) => ({ ...state, financeSalaryPlans: state.financeSalaryPlans.filter((p) => p.id !== id) })),
+    addFinanceBankAccount: (data) => {
+      const id = uid("fba");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeBankAccounts: [...state.financeBankAccounts, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceBankAccount: (item) =>
+      set((state) => ({
+        ...state,
+        financeBankAccounts: state.financeBankAccounts.map((b) =>
+          b.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : b,
+        ),
+      })),
+    deleteFinanceBankAccount: (id) =>
+      set((state) => ({ ...state, financeBankAccounts: state.financeBankAccounts.filter((b) => b.id !== id) })),
+    upsertFinanceLiquidityThreshold: (data) => {
+      const now = new Date().toISOString();
+      const existing = get().financeLiquidityThresholds.find((t) => t.entityId === data.entityId);
+      if (existing) {
+        set((state) => ({
+          ...state,
+          financeLiquidityThresholds: state.financeLiquidityThresholds.map((t) =>
+            t.id === existing.id ? { ...t, ...data, updatedAt: now } : t,
+          ),
+        }));
+        return existing.id;
+      }
+      const id = uid("flt");
+      set((state) => ({
+        ...state,
+        financeLiquidityThresholds: [...state.financeLiquidityThresholds, { ...data, id, updatedAt: now }],
+      }));
+      return id;
+    },
+    addFinanceCreditCardTransaction: (data) => {
+      const id = uid("fcctx");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeCreditCardTransactions: [
+          ...state.financeCreditCardTransactions,
+          { ...data, id, createdAt: now },
+        ],
+      }));
+      return id;
+    },
+    updateFinanceCreditCardTransaction: (item) =>
+      set((state) => ({
+        ...state,
+        financeCreditCardTransactions: state.financeCreditCardTransactions.map((t) =>
+          t.id === item.id ? item : t,
+        ),
+      })),
+    deleteFinanceCreditCardTransaction: (id) =>
+      set((state) => ({
+        ...state,
+        financeCreditCardTransactions: state.financeCreditCardTransactions.filter((t) => t.id !== id),
+      })),
+    upsertFinanceSalaryDefault: (data) => {
+      const now = new Date().toISOString();
+      const existing = get().financeSalaryDefaults.find(
+        (d) => d.personKind === data.personKind && d.personId === data.personId && d.entityId === data.entityId,
+      );
+      if (existing) {
+        set((state) => ({
+          ...state,
+          financeSalaryDefaults: state.financeSalaryDefaults.map((d) =>
+            d.id === existing.id ? { ...d, ...data, updatedAt: now } : d,
+          ),
+        }));
+        return existing.id;
+      }
+      const id = uid("fsd");
+      set((state) => ({
+        ...state,
+        financeSalaryDefaults: [
+          ...state.financeSalaryDefaults,
+          { ...data, id, updatedAt: now },
+        ],
+      }));
+      return id;
+    },
+    deleteFinanceSalaryDefault: (id) =>
+      set((state) => ({
+        ...state,
+        financeSalaryDefaults: state.financeSalaryDefaults.filter((d) => d.id !== id),
+      })),
+    addFinanceContractor: (data) => {
+      const id = uid("fctr");
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        financeContractors: [...state.financeContractors, { ...data, id, createdAt: now, updatedAt: now }],
+      }));
+      return id;
+    },
+    updateFinanceContractor: (item) =>
+      set((state) => ({
+        ...state,
+        financeContractors: state.financeContractors.map((c) =>
+          c.id === item.id ? { ...item, updatedAt: new Date().toISOString() } : c,
+        ),
+      })),
+    deleteFinanceContractor: (id) =>
+      set((state) => ({
+        ...state,
+        financeContractors: state.financeContractors.filter((c) => c.id !== id),
+      })),
+    upsertFinanceBankConnection: (data) => {
+      const now = new Date().toISOString();
+      const existing = get().financeBankConnections.find((c) => c.bankAccountId === data.bankAccountId);
+      if (existing) {
+        set((state) => ({
+          ...state,
+          financeBankConnections: state.financeBankConnections.map((c) =>
+            c.id === existing.id ? { ...c, ...data, updatedAt: now } : c,
+          ),
+        }));
+        return existing.id;
+      }
+      const id = uid("fbc");
+      set((state) => ({
+        ...state,
+        financeBankConnections: [...state.financeBankConnections, { ...data, id, updatedAt: now }],
+      }));
+      return id;
+    },
+    deleteFinanceBankConnection: (id) =>
+      set((state) => ({
+        ...state,
+        financeBankConnections: state.financeBankConnections.filter((c) => c.id !== id),
+      })),
+    recordFinanceForecastSnapshot: (rows) => {
+      let count = 0;
+      set((state) => {
+        const existing = state.financeForecastSnapshots.slice();
+        for (const r of rows) {
+          // Replace by (forecastedAt + weekStartYmd) so re-runs overwrite.
+          const idx = existing.findIndex(
+            (s) => s.forecastedAt === r.forecastedAt && s.weekStartYmd === r.weekStartYmd,
+          );
+          if (idx >= 0) {
+            existing[idx] = { ...existing[idx]!, ...r };
+          } else {
+            existing.push({ ...r, id: uid("ffs") });
+          }
+          count += 1;
+        }
+        return { ...state, financeForecastSnapshots: existing };
+      });
+      return count;
+    },
     createCompany: (payload) => {
       const id = uid("c");
       const createdAt = payload.createdAt ?? new Date().toISOString();
@@ -5020,7 +5001,7 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 34,
+    version: 41,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -6377,33 +6358,6 @@ export const useAppStore = create<AppStore>()(
         trafficAlertEvents: Array.isArray((state as Record<string, unknown>).trafficAlertEvents)
           ? ((state as Record<string, unknown>).trafficAlertEvents as TrafficAlertEvent[])
           : fallback.trafficAlertEvents,
-        finCounterparties: Array.isArray((state as Record<string, unknown>).finCounterparties)
-          ? ((state as Record<string, unknown>).finCounterparties as import("./types").FinCounterparty[])
-          : fallback.finCounterparties,
-        finArApTransactions: Array.isArray((state as Record<string, unknown>).finArApTransactions)
-          ? ((state as Record<string, unknown>).finArApTransactions as import("./types").FinArApTransaction[])
-          : fallback.finArApTransactions,
-        finInvoices: Array.isArray((state as Record<string, unknown>).finInvoices)
-          ? ((state as Record<string, unknown>).finInvoices as import("./types").FinInvoice[])
-          : fallback.finInvoices,
-        finInvoiceLines: Array.isArray((state as Record<string, unknown>).finInvoiceLines)
-          ? ((state as Record<string, unknown>).finInvoiceLines as import("./types").FinInvoiceLine[])
-          : fallback.finInvoiceLines,
-        finPayments: Array.isArray((state as Record<string, unknown>).finPayments)
-          ? ((state as Record<string, unknown>).finPayments as import("./types").FinPayment[])
-          : fallback.finPayments,
-        finPaymentApplications: Array.isArray((state as Record<string, unknown>).finPaymentApplications)
-          ? ((state as Record<string, unknown>).finPaymentApplications as import("./types").FinPaymentApplication[])
-          : fallback.finPaymentApplications,
-        finProjections: Array.isArray((state as Record<string, unknown>).finProjections)
-          ? ((state as Record<string, unknown>).finProjections as import("./types").FinProjection[])
-          : fallback.finProjections,
-        finInternalExpenses: Array.isArray((state as Record<string, unknown>).finInternalExpenses)
-          ? ((state as Record<string, unknown>).finInternalExpenses as import("./types").FinInternalExpense[])
-          : fallback.finInternalExpenses,
-        finEntityCashBalances: Array.isArray((state as Record<string, unknown>).finEntityCashBalances)
-          ? ((state as Record<string, unknown>).finEntityCashBalances as import("./types").FinEntityCashBalance[])
-          : fallback.finEntityCashBalances,
         financeCounterparties: Array.isArray((state as Record<string, unknown>).financeCounterparties)
           ? ((state as Record<string, unknown>).financeCounterparties as import("./types").FinanceCounterparty[])
           : fallback.financeCounterparties,
@@ -6434,6 +6388,31 @@ export const useAppStore = create<AppStore>()(
         financeSalaryPlans: Array.isArray((state as Record<string, unknown>).financeSalaryPlans)
           ? ((state as Record<string, unknown>).financeSalaryPlans as import("./types").FinanceSalaryPlan[])
           : fallback.financeSalaryPlans,
+        financeBankAccounts: Array.isArray((state as Record<string, unknown>).financeBankAccounts)
+          ? ((state as Record<string, unknown>).financeBankAccounts as import("./types").FinanceBankAccount[])
+          : fallback.financeBankAccounts,
+        financeLiquidityThresholds: Array.isArray((state as Record<string, unknown>).financeLiquidityThresholds)
+          ? ((state as Record<string, unknown>).financeLiquidityThresholds as import("./types").FinanceLiquidityThreshold[])
+          : fallback.financeLiquidityThresholds,
+        financeCreditCardTransactions: Array.isArray(
+          (state as Record<string, unknown>).financeCreditCardTransactions,
+        )
+          ? ((state as Record<string, unknown>).financeCreditCardTransactions as import("./types").FinanceCreditCardTransaction[])
+          : fallback.financeCreditCardTransactions,
+        financeSalaryDefaults: Array.isArray((state as Record<string, unknown>).financeSalaryDefaults)
+          ? ((state as Record<string, unknown>).financeSalaryDefaults as import("./types").FinanceSalaryDefault[])
+          : fallback.financeSalaryDefaults,
+        financeContractors: Array.isArray((state as Record<string, unknown>).financeContractors)
+          ? ((state as Record<string, unknown>).financeContractors as import("./types").FinanceContractor[])
+          : fallback.financeContractors,
+        financeForecastSnapshots: Array.isArray(
+          (state as Record<string, unknown>).financeForecastSnapshots,
+        )
+          ? ((state as Record<string, unknown>).financeForecastSnapshots as import("./types").FinanceForecastSnapshot[])
+          : fallback.financeForecastSnapshots,
+        financeBankConnections: Array.isArray((state as Record<string, unknown>).financeBankConnections)
+          ? ((state as Record<string, unknown>).financeBankConnections as import("./types").FinanceBankConnection[])
+          : fallback.financeBankConnections,
       } as unknown as AppStore;
     },
   }),
