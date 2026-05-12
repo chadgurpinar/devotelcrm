@@ -5,7 +5,7 @@ import {
   Building2, FileText, StickyNote, Radio, Phone, Network, UserCheck,
   ClipboardList, PieChart, Users, UserCircle, Monitor, GitBranch, DollarSign,
   Receipt, CalendarOff, CreditCard, Settings2, Home, Landmark, Settings,
-  FolderKanban, LayoutList, ClipboardCheck, ArrowLeftRight, Repeat, Banknote, Link2,
+  FolderKanban, LayoutList, ClipboardCheck, ArrowLeftRight, Repeat, Banknote, Link2, Briefcase,
 } from "lucide-react";
 import { useAppStore } from "../../store/db";
 import { Button } from "../../components/ui";
@@ -163,6 +163,18 @@ export function AppShell() {
         { to: "/finance/direct-debits", label: "Fixed Payments", icon: <Repeat size={16} /> },
         { to: "/finance/salaries", label: "Salaries", icon: <Banknote size={16} /> },
         { to: "/finance/intercompany", label: "Intercompany", icon: <Link2 size={16} /> },
+      ],
+    },
+    {
+      title: "HR Module 2",
+      items: [
+        { to: "/hr2", label: "Overview", icon: <Briefcase size={16} /> },
+        { to: "/hr2/people", label: "People", icon: <Users size={16} /> },
+        { to: "/hr2/compensation", label: "Compensation", icon: <DollarSign size={16} /> },
+        { to: "/hr2/payroll", label: "Payroll", icon: <Receipt size={16} /> },
+        { to: "/hr2/finance", label: "Finance instructions", icon: <Landmark size={16} /> },
+        { to: "/hr2/leave", label: "Leave", icon: <CalendarOff size={16} /> },
+        { to: "/hr2/assets", label: "Assets", icon: <Monitor size={16} /> },
       ],
     },
     {

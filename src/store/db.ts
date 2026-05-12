@@ -31,6 +31,30 @@ import {
   HrSoftwareLicense,
   HrSoftwareProduct,
   HrSoftwareSeat,
+  Hr2CompAuditAction,
+  Hr2CompAuditEntry,
+  Hr2CompChangeRequest,
+  Hr2CompChangeStatus,
+  Hr2CompComponent,
+  Hr2CompComponentFrequency,
+  Hr2CompComponentKind,
+  Hr2CompPackage,
+  Hr2CompPackageStatus,
+  Hr2EmployeeExtension,
+  Hr2ExceptionStatus,
+  Hr2InstructionBatchStatus,
+  Hr2InstructionLineStatus,
+  Hr2PaymentInstructionBatch,
+  Hr2PaymentInstructionLine,
+  Hr2PayrollComponentBreakdown,
+  Hr2PayrollCycle,
+  Hr2PayrollCycleLine,
+  Hr2PayrollCycleStatus,
+  Hr2PayrollException,
+  Hr2PayrollFrequency,
+  Hr2PayrollLineStatus,
+  Hr2SettlementRule,
+  HrCurrencyCode,
   InterconnectionProcess,
   InterconnectionStage,
   InterconnectionTrack,
@@ -391,6 +415,92 @@ interface DbActions {
   removeTaskAttachment: (attachmentId: string) => void;
   processReminders: () => void;
   convertNoteToTask: (noteId: string, assigneeUserId: string) => void;
+  upsertHr2EmployeeExtension: (
+    payload: Omit<Hr2EmployeeExtension, "id" | "createdAt" | "updatedAt">,
+  ) => string;
+  createHr2Package: (payload: {
+    employeeId: string;
+    employingEntityId: OurEntity;
+    fundingEntityId?: OurEntity;
+    packageCurrency: HrCurrencyCode;
+    payrollFrequency: Hr2PayrollFrequency;
+    effectiveFrom: string;
+    settlementRules: Array<Omit<Hr2SettlementRule, "id">>;
+    components: Array<Omit<Hr2CompComponent, "id" | "packageId" | "createdAt">>;
+    notes?: string;
+    userId: string;
+  }) => string;
+  updateHr2PackageDraft: (
+    packageId: string,
+    patch: Partial<Pick<Hr2CompPackage, "packageCurrency" | "payrollFrequency" | "effectiveFrom" | "settlementRules" | "notes" | "employingEntityId" | "fundingEntityId">>,
+  ) => void;
+  submitHr2Package: (packageId: string, userId: string) => void;
+  approveHr2Package: (packageId: string, userId: string) => void;
+  activateHr2Package: (packageId: string, userId: string) => void;
+  terminateHr2Package: (packageId: string, userId: string, reason: string) => void;
+  createHr2ChangeRequest: (
+    payload:
+      | {
+          kind: "SalaryChange";
+          packageId: string;
+          effectiveFrom: string;
+          reason?: string;
+          proposedBaseSalary: number;
+          proposedCurrency: HrCurrencyCode;
+          userId: string;
+        }
+      | {
+          kind: "VariableBonus";
+          packageId: string;
+          effectiveFrom: string;
+          reason?: string;
+          bonusLabel: string;
+          bonusAmount: number;
+          bonusCurrency: HrCurrencyCode;
+          bonusFrequency: Hr2CompComponentFrequency;
+          taxable: boolean;
+          userId: string;
+        }
+      | {
+          kind: "SettlementChange";
+          packageId: string;
+          effectiveFrom: string;
+          reason?: string;
+          proposedSettlementRules: Array<Omit<Hr2SettlementRule, "id">>;
+          userId: string;
+        }
+      | {
+          kind: "Termination";
+          packageId: string;
+          effectiveFrom: string;
+          reason?: string;
+          terminationReason: string;
+          lastPayrollDate?: string;
+          finalSettlementCurrency?: HrCurrencyCode;
+          finalSettlementAmount?: number;
+          userId: string;
+        },
+  ) => string;
+  submitHr2ChangeRequest: (requestId: string, userId: string) => void;
+  approveHr2ChangeRequest: (requestId: string, userId: string, note?: string) => void;
+  rejectHr2ChangeRequest: (requestId: string, userId: string, note?: string) => void;
+  withdrawHr2ChangeRequest: (requestId: string, userId: string) => void;
+  openHr2PayrollCycle: (payload: {
+    period: string;
+    legalEntityId: OurEntity;
+    payrollCurrency: HrCurrencyCode;
+    fxRateRefDate?: string;
+    userId: string;
+    notes?: string;
+  }) => string;
+  recomputeHr2PayrollCycle: (cycleId: string, userId: string) => void;
+  resolveHr2PayrollException: (exceptionId: string, userId: string, note?: string) => void;
+  approveHr2PayrollCycle: (cycleId: string, userId: string) => { ok: boolean; message?: string };
+  closeHr2PayrollCycle: (cycleId: string, userId: string) => void;
+  markHr2PaymentBatchSent: (batchId: string, userId: string) => void;
+  markHr2PaymentBatchVerified: (batchId: string, userId: string) => void;
+  verifyHr2PaymentInstructionLine: (lineId: string, userId: string) => void;
+  unblockHr2PaymentInstructionLine: (lineId: string, userId: string, note?: string) => void;
 }
 
 export type AppStore = DbState & DbActions;
@@ -4995,13 +5105,1020 @@ function createStoreSlice(set: (fn: (state: AppStore) => AppStore) => void, get:
           ],
         };
       }),
+
+    upsertHr2EmployeeExtension: (payload) => {
+      const now = new Date().toISOString();
+      let resultId = "";
+      set((state) => {
+        const existing = state.hr2EmployeeExtensions.find((row) => row.employeeId === payload.employeeId);
+        if (existing) {
+          resultId = existing.id;
+          return {
+            ...state,
+            hr2EmployeeExtensions: state.hr2EmployeeExtensions.map((row) =>
+              row.id === existing.id ? { ...row, ...payload, updatedAt: now } : row,
+            ),
+          };
+        }
+        const id = uid("hr2x");
+        resultId = id;
+        return {
+          ...state,
+          hr2EmployeeExtensions: [
+            ...state.hr2EmployeeExtensions,
+            { id, ...payload, createdAt: now, updatedAt: now },
+          ],
+        };
+      });
+      return resultId;
+    },
+
+    createHr2Package: (payload) => {
+      const now = new Date().toISOString();
+      const packageId = uid("hr2p");
+      const employee = get().hrEmployees.find((e) => e.id === payload.employeeId);
+      const fullName = employee ? `${employee.firstName} ${employee.lastName}` : payload.employeeId;
+      const existingPackages = get().hr2CompensationPackages.filter((p) => p.employeeId === payload.employeeId);
+      const versionLabel = `v${existingPackages.length + 1}`;
+      const settlementRules: Hr2SettlementRule[] = payload.settlementRules.map((rule) => ({
+        ...rule,
+        id: uid("hr2sr"),
+      }));
+      const components: Hr2CompComponent[] = payload.components.map((c) => ({
+        ...c,
+        id: uid("hr2cc"),
+        packageId,
+        createdAt: now,
+      }));
+      set((state) => ({
+        ...state,
+        hr2CompensationPackages: [
+          ...state.hr2CompensationPackages,
+          {
+            id: packageId,
+            employeeId: payload.employeeId,
+            versionLabel,
+            status: "Draft" as Hr2CompPackageStatus,
+            packageCurrency: payload.packageCurrency,
+            payrollFrequency: payload.payrollFrequency,
+            effectiveFrom: payload.effectiveFrom,
+            employingEntityId: payload.employingEntityId,
+            fundingEntityId: payload.fundingEntityId,
+            settlementRules,
+            notes: payload.notes,
+            createdBy: payload.userId,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        hr2CompPackageComponents: [...state.hr2CompPackageComponents, ...components],
+        hr2CompAuditLog: [
+          ...state.hr2CompAuditLog,
+          {
+            id: uid("hr2a"),
+            employeeId: payload.employeeId,
+            packageId,
+            action: "PackageCreated" as Hr2CompAuditAction,
+            summary: `Compensation package ${versionLabel} drafted for ${fullName}.`,
+            performedBy: payload.userId,
+            performedAt: now,
+          },
+        ],
+      }));
+      return packageId;
+    },
+
+    updateHr2PackageDraft: (packageId, patch) => {
+      const now = new Date().toISOString();
+      set((state) => ({
+        ...state,
+        hr2CompensationPackages: state.hr2CompensationPackages.map((pkg) => {
+          if (pkg.id !== packageId) return pkg;
+          if (pkg.status !== "Draft") return pkg;
+          const nextSettlementRules = patch.settlementRules
+            ? patch.settlementRules.map((rule) => (rule.id ? rule : { ...rule, id: uid("hr2sr") }))
+            : pkg.settlementRules;
+          return {
+            ...pkg,
+            ...patch,
+            settlementRules: nextSettlementRules,
+            updatedAt: now,
+          };
+        }),
+      }));
+    },
+
+    submitHr2Package: (packageId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const pkg = state.hr2CompensationPackages.find((p) => p.id === packageId);
+        if (!pkg || pkg.status !== "Draft") return state;
+        return {
+          ...state,
+          hr2CompensationPackages: state.hr2CompensationPackages.map((p) =>
+            p.id === packageId
+              ? { ...p, status: "Submitted", submittedAt: now, submittedBy: userId, updatedAt: now }
+              : p,
+          ),
+          hr2CompAuditLog: [
+            ...state.hr2CompAuditLog,
+            {
+              id: uid("hr2a"),
+              employeeId: pkg.employeeId,
+              packageId,
+              action: "PackageSubmitted",
+              summary: `Package ${pkg.versionLabel} submitted for review.`,
+              performedBy: userId,
+              performedAt: now,
+            },
+          ],
+        };
+      });
+    },
+
+    approveHr2Package: (packageId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const pkg = state.hr2CompensationPackages.find((p) => p.id === packageId);
+        if (!pkg || (pkg.status !== "Submitted" && pkg.status !== "UnderReview")) return state;
+        return {
+          ...state,
+          hr2CompensationPackages: state.hr2CompensationPackages.map((p) =>
+            p.id === packageId
+              ? { ...p, status: "Approved", approvedAt: now, approvedBy: userId, updatedAt: now }
+              : p,
+          ),
+          hr2CompAuditLog: [
+            ...state.hr2CompAuditLog,
+            {
+              id: uid("hr2a"),
+              employeeId: pkg.employeeId,
+              packageId,
+              action: "PackageApproved",
+              summary: `Package ${pkg.versionLabel} approved.`,
+              performedBy: userId,
+              performedAt: now,
+            },
+          ],
+        };
+      });
+    },
+
+    activateHr2Package: (packageId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const pkg = state.hr2CompensationPackages.find((p) => p.id === packageId);
+        if (!pkg || (pkg.status !== "Approved" && pkg.status !== "Draft")) return state;
+        const supersededIds = new Set<string>();
+        const updatedPackages = state.hr2CompensationPackages.map((p) => {
+          if (p.id === packageId) {
+            return {
+              ...p,
+              status: "Active" as Hr2CompPackageStatus,
+              activatedAt: now,
+              activatedBy: userId,
+              updatedAt: now,
+            };
+          }
+          if (p.employeeId === pkg.employeeId && p.status === "Active") {
+            supersededIds.add(p.id);
+            return {
+              ...p,
+              status: "Historical" as Hr2CompPackageStatus,
+              effectiveTo: pkg.effectiveFrom,
+              supersededByPackageId: packageId,
+              updatedAt: now,
+            };
+          }
+          return p;
+        });
+        const updatedExtensions = state.hr2EmployeeExtensions.map((ext) =>
+          ext.employeeId === pkg.employeeId
+            ? { ...ext, activePackageId: packageId, updatedAt: now }
+            : ext,
+        );
+        return {
+          ...state,
+          hr2CompensationPackages: updatedPackages,
+          hr2EmployeeExtensions: updatedExtensions,
+          hr2CompAuditLog: [
+            ...state.hr2CompAuditLog,
+            {
+              id: uid("hr2a"),
+              employeeId: pkg.employeeId,
+              packageId,
+              action: "PackageActivated",
+              summary:
+                supersededIds.size > 0
+                  ? `Package ${pkg.versionLabel} activated, superseding ${supersededIds.size} prior version(s).`
+                  : `Package ${pkg.versionLabel} activated.`,
+              performedBy: userId,
+              performedAt: now,
+            },
+          ],
+        };
+      });
+    },
+
+    terminateHr2Package: (packageId, userId, reason) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const pkg = state.hr2CompensationPackages.find((p) => p.id === packageId);
+        if (!pkg) return state;
+        if (pkg.status === "Terminated" || pkg.status === "Historical") return state;
+        return {
+          ...state,
+          hr2CompensationPackages: state.hr2CompensationPackages.map((p) =>
+            p.id === packageId
+              ? {
+                  ...p,
+                  status: "Terminated",
+                  terminatedAt: now,
+                  terminatedBy: userId,
+                  terminationReason: reason,
+                  effectiveTo: now,
+                  updatedAt: now,
+                }
+              : p,
+          ),
+          hr2EmployeeExtensions: state.hr2EmployeeExtensions.map((ext) =>
+            ext.employeeId === pkg.employeeId && ext.activePackageId === packageId
+              ? { ...ext, activePackageId: undefined, updatedAt: now }
+              : ext,
+          ),
+          hr2CompAuditLog: [
+            ...state.hr2CompAuditLog,
+            {
+              id: uid("hr2a"),
+              employeeId: pkg.employeeId,
+              packageId,
+              action: "PackageTerminated",
+              summary: `Package ${pkg.versionLabel} terminated: ${reason}.`,
+              performedBy: userId,
+              performedAt: now,
+            },
+          ],
+        };
+      });
+    },
+
+    createHr2ChangeRequest: (payload) => {
+      const now = new Date().toISOString();
+      const id = uid("hr2cr");
+      const pkg = get().hr2CompensationPackages.find((p) => p.id === payload.packageId);
+      if (!pkg) return id;
+      const base = {
+        id,
+        packageId: payload.packageId,
+        employeeId: pkg.employeeId,
+        status: "Draft" as Hr2CompChangeStatus,
+        effectiveFrom: payload.effectiveFrom,
+        reason: payload.reason,
+        createdBy: payload.userId,
+        createdAt: now,
+        updatedAt: now,
+      };
+      let request: Hr2CompChangeRequest;
+      let summary: string;
+      if (payload.kind === "SalaryChange") {
+        const baseSalaryComponent = get().hr2CompPackageComponents.find(
+          (c) => c.packageId === pkg.id && c.kind === "BaseSalary",
+        );
+        request = {
+          ...base,
+          kind: "SalaryChange",
+          proposedBaseSalary: payload.proposedBaseSalary,
+          proposedCurrency: payload.proposedCurrency,
+          previousBaseSalary: baseSalaryComponent?.amount ?? 0,
+          previousCurrency: baseSalaryComponent?.currency ?? pkg.packageCurrency,
+        };
+        summary = `Salary change requested: ${payload.proposedBaseSalary.toLocaleString()} ${payload.proposedCurrency}.`;
+      } else if (payload.kind === "VariableBonus") {
+        request = {
+          ...base,
+          kind: "VariableBonus",
+          bonusLabel: payload.bonusLabel,
+          bonusAmount: payload.bonusAmount,
+          bonusCurrency: payload.bonusCurrency,
+          bonusFrequency: payload.bonusFrequency,
+          taxable: payload.taxable,
+        };
+        summary = `Variable bonus added: ${payload.bonusLabel} (${payload.bonusAmount.toLocaleString()} ${payload.bonusCurrency}).`;
+      } else if (payload.kind === "SettlementChange") {
+        request = {
+          ...base,
+          kind: "SettlementChange",
+          proposedSettlementRules: payload.proposedSettlementRules.map((rule) => ({
+            ...rule,
+            id: uid("hr2sr"),
+          })),
+          previousSettlementRules: pkg.settlementRules,
+        };
+        summary = "Settlement rules update requested.";
+      } else {
+        request = {
+          ...base,
+          kind: "Termination",
+          terminationReason: payload.terminationReason,
+          lastPayrollDate: payload.lastPayrollDate,
+          finalSettlementCurrency: payload.finalSettlementCurrency,
+          finalSettlementAmount: payload.finalSettlementAmount,
+        };
+        summary = `Package termination requested: ${payload.terminationReason}.`;
+      }
+      set((state) => ({
+        ...state,
+        hr2CompChangeRequests: [...state.hr2CompChangeRequests, request],
+        hr2CompAuditLog: [
+          ...state.hr2CompAuditLog,
+          {
+            id: uid("hr2a"),
+            employeeId: pkg.employeeId,
+            packageId: pkg.id,
+            changeRequestId: id,
+            action: "ChangeRequestCreated",
+            summary,
+            performedBy: payload.userId,
+            performedAt: now,
+          },
+        ],
+      }));
+      return id;
+    },
+
+    submitHr2ChangeRequest: (requestId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const req = state.hr2CompChangeRequests.find((r) => r.id === requestId);
+        if (!req || req.status !== "Draft") return state;
+        return {
+          ...state,
+          hr2CompChangeRequests: state.hr2CompChangeRequests.map((r) =>
+            r.id === requestId
+              ? { ...r, status: "Submitted", submittedAt: now, updatedAt: now }
+              : r,
+          ),
+          hr2CompAuditLog: [
+            ...state.hr2CompAuditLog,
+            {
+              id: uid("hr2a"),
+              employeeId: req.employeeId,
+              packageId: req.packageId,
+              changeRequestId: req.id,
+              action: "ChangeRequestSubmitted",
+              summary: `${req.kind} change request submitted for review.`,
+              performedBy: userId,
+              performedAt: now,
+            },
+          ],
+        };
+      });
+    },
+
+    approveHr2ChangeRequest: (requestId, userId, note) => {
+      const now = new Date().toISOString();
+      const req = get().hr2CompChangeRequests.find((r) => r.id === requestId);
+      if (!req || (req.status !== "Submitted" && req.status !== "UnderReview")) return;
+      const pkg = get().hr2CompensationPackages.find((p) => p.id === req.packageId);
+      if (!pkg) return;
+      const components = get().hr2CompPackageComponents.filter((c) => c.packageId === pkg.id);
+      const employee = get().hrEmployees.find((e) => e.id === pkg.employeeId);
+      const employeeName = employee ? `${employee.firstName} ${employee.lastName}` : pkg.employeeId;
+      const newPackageId = uid("hr2p");
+      const newVersionLabel = `v${
+        get().hr2CompensationPackages.filter((p) => p.employeeId === pkg.employeeId).length + 1
+      }`;
+      const newSettlementRules: Hr2SettlementRule[] = pkg.settlementRules.map((rule) => ({
+        ...rule,
+        id: uid("hr2sr"),
+      }));
+      let newComponents: Hr2CompComponent[] = components.map((c) => ({
+        ...c,
+        id: uid("hr2cc"),
+        packageId: newPackageId,
+        createdAt: now,
+      }));
+      let nextPackageStatus: Hr2CompPackageStatus = "Active";
+      let nextEffectiveTo: string | undefined;
+      let auditSummary = `Change request approved and applied to ${employeeName}.`;
+      if (req.kind === "SalaryChange") {
+        newComponents = newComponents.map((c) =>
+          c.kind === "BaseSalary"
+            ? { ...c, amount: req.proposedBaseSalary, currency: req.proposedCurrency }
+            : c,
+        );
+        auditSummary = `Salary change approved: ${req.proposedBaseSalary.toLocaleString()} ${req.proposedCurrency} for ${employeeName}.`;
+      } else if (req.kind === "VariableBonus") {
+        newComponents = [
+          ...newComponents,
+          {
+            id: uid("hr2cc"),
+            packageId: newPackageId,
+            kind: "VariableBonus" as Hr2CompComponentKind,
+            label: req.bonusLabel,
+            amount: req.bonusAmount,
+            currency: req.bonusCurrency,
+            frequency: req.bonusFrequency,
+            taxable: req.taxable,
+            createdAt: now,
+          },
+        ];
+        auditSummary = `Variable bonus approved for ${employeeName}: ${req.bonusLabel}.`;
+      } else if (req.kind === "SettlementChange") {
+        newSettlementRules.splice(0, newSettlementRules.length, ...req.proposedSettlementRules.map((rule) => ({
+          ...rule,
+          id: uid("hr2sr"),
+        })));
+        auditSummary = `Settlement rules update approved for ${employeeName}.`;
+      } else {
+        nextPackageStatus = "Terminated";
+        nextEffectiveTo = req.effectiveFrom;
+        auditSummary = `Termination approved for ${employeeName}: ${req.terminationReason}.`;
+      }
+      const newPackage: Hr2CompPackage =
+        req.kind === "Termination"
+          ? {
+              ...pkg,
+              id: newPackageId,
+              versionLabel: newVersionLabel,
+              status: "Terminated",
+              effectiveFrom: req.effectiveFrom,
+              effectiveTo: nextEffectiveTo,
+              supersedesPackageId: pkg.id,
+              terminationReason: req.terminationReason,
+              terminatedAt: now,
+              terminatedBy: userId,
+              createdBy: userId,
+              createdAt: now,
+              activatedAt: undefined,
+              activatedBy: undefined,
+              approvedAt: now,
+              approvedBy: userId,
+              settlementRules: newSettlementRules,
+              updatedAt: now,
+            }
+          : {
+              ...pkg,
+              id: newPackageId,
+              versionLabel: newVersionLabel,
+              status: nextPackageStatus,
+              effectiveFrom: req.effectiveFrom,
+              effectiveTo: undefined,
+              supersedesPackageId: pkg.id,
+              createdBy: userId,
+              createdAt: now,
+              submittedAt: now,
+              submittedBy: userId,
+              approvedAt: now,
+              approvedBy: userId,
+              activatedAt: now,
+              activatedBy: userId,
+              terminatedAt: undefined,
+              terminatedBy: undefined,
+              terminationReason: undefined,
+              settlementRules: newSettlementRules,
+              updatedAt: now,
+            };
+      set((state) => ({
+        ...state,
+        hr2CompensationPackages: [
+          ...state.hr2CompensationPackages.map((p) =>
+            p.id === pkg.id
+              ? {
+                  ...p,
+                  status: "Historical" as Hr2CompPackageStatus,
+                  effectiveTo: req.effectiveFrom,
+                  supersededByPackageId: newPackageId,
+                  updatedAt: now,
+                }
+              : p,
+          ),
+          newPackage,
+        ],
+        hr2CompPackageComponents: [...state.hr2CompPackageComponents, ...newComponents],
+        hr2CompChangeRequests: state.hr2CompChangeRequests.map((r) =>
+          r.id === requestId
+            ? {
+                ...r,
+                status: "Approved",
+                reviewedAt: now,
+                reviewedBy: userId,
+                decisionNote: note,
+                resultingPackageId: newPackageId,
+                updatedAt: now,
+              }
+            : r,
+        ),
+        hr2EmployeeExtensions: state.hr2EmployeeExtensions.map((ext) =>
+          ext.employeeId === pkg.employeeId
+            ? {
+                ...ext,
+                activePackageId: req.kind === "Termination" ? undefined : newPackageId,
+                updatedAt: now,
+              }
+            : ext,
+        ),
+        hr2CompAuditLog: [
+          ...state.hr2CompAuditLog,
+          {
+            id: uid("hr2a"),
+            employeeId: pkg.employeeId,
+            packageId: newPackageId,
+            changeRequestId: req.id,
+            action: "ChangeRequestApproved",
+            summary: auditSummary,
+            performedBy: userId,
+            performedAt: now,
+          },
+        ],
+      }));
+    },
+
+    rejectHr2ChangeRequest: (requestId, userId, note) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const req = state.hr2CompChangeRequests.find((r) => r.id === requestId);
+        if (!req || (req.status !== "Submitted" && req.status !== "UnderReview")) return state;
+        return {
+          ...state,
+          hr2CompChangeRequests: state.hr2CompChangeRequests.map((r) =>
+            r.id === requestId
+              ? { ...r, status: "Rejected", reviewedAt: now, reviewedBy: userId, decisionNote: note, updatedAt: now }
+              : r,
+          ),
+          hr2CompAuditLog: [
+            ...state.hr2CompAuditLog,
+            {
+              id: uid("hr2a"),
+              employeeId: req.employeeId,
+              packageId: req.packageId,
+              changeRequestId: req.id,
+              action: "ChangeRequestRejected",
+              summary: `${req.kind} change request rejected${note ? `: ${note}` : "."}`,
+              performedBy: userId,
+              performedAt: now,
+            },
+          ],
+        };
+      });
+    },
+
+    withdrawHr2ChangeRequest: (requestId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const req = state.hr2CompChangeRequests.find((r) => r.id === requestId);
+        if (!req || req.status === "Approved" || req.status === "Rejected" || req.status === "Withdrawn") return state;
+        return {
+          ...state,
+          hr2CompChangeRequests: state.hr2CompChangeRequests.map((r) =>
+            r.id === requestId ? { ...r, status: "Withdrawn", updatedAt: now } : r,
+          ),
+          hr2CompAuditLog: [
+            ...state.hr2CompAuditLog,
+            {
+              id: uid("hr2a"),
+              employeeId: req.employeeId,
+              packageId: req.packageId,
+              changeRequestId: req.id,
+              action: "ChangeRequestWithdrawn",
+              summary: `${req.kind} change request withdrawn.`,
+              performedBy: userId,
+              performedAt: now,
+            },
+          ],
+        };
+      });
+    },
+
+    openHr2PayrollCycle: (payload) => {
+      const now = new Date().toISOString();
+      const id = uid("hr2cy");
+      set((state) => ({
+        ...state,
+        hr2PayrollCycles: [
+          ...state.hr2PayrollCycles,
+          {
+            id,
+            period: payload.period,
+            legalEntityId: payload.legalEntityId,
+            payrollCurrency: payload.payrollCurrency,
+            status: "Draft",
+            openedAt: now,
+            openedBy: payload.userId,
+            fxRateRefDate: payload.fxRateRefDate ?? now.slice(0, 10),
+            notes: payload.notes,
+            updatedAt: now,
+          },
+        ],
+      }));
+      return id;
+    },
+
+    recomputeHr2PayrollCycle: (cycleId, userId) => {
+      const state = get();
+      const cycle = state.hr2PayrollCycles.find((c) => c.id === cycleId);
+      if (!cycle) return;
+      if (cycle.status === "Approved" || cycle.status === "PaidOut" || cycle.status === "Closed") return;
+      const now = new Date().toISOString();
+      const extensions = state.hr2EmployeeExtensions.filter(
+        (ext) => ext.employingEntityId === cycle.legalEntityId && ext.activePackageId,
+      );
+      const lines: Hr2PayrollCycleLine[] = [];
+      const exceptions: Hr2PayrollException[] = [];
+      extensions.forEach((ext) => {
+        const pkg = state.hr2CompensationPackages.find((p) => p.id === ext.activePackageId);
+        if (!pkg || pkg.status !== "Active") return;
+        const employee = state.hrEmployees.find((e) => e.id === ext.employeeId);
+        if (!employee) return;
+        const components = state.hr2CompPackageComponents.filter((c) => c.packageId === pkg.id);
+        let grossPkg = 0;
+        let deductionsPkg = 0;
+        let employerCostPkg = 0;
+        const breakdown: Hr2PayrollComponentBreakdown[] = [];
+        components.forEach((component) => {
+          const isAnnual = component.frequency === "Annual";
+          const isOneOff = component.frequency === "OneOff";
+          const monthlyAmount = isAnnual
+            ? component.amount / 12
+            : component.frequency === "Quarterly"
+              ? component.amount / 3
+              : isOneOff
+                ? component.amount
+                : component.amount;
+          if (component.kind === "BaseSalary" || component.kind === "Allowance" || component.kind === "VariableBonus") {
+            grossPkg += monthlyAmount;
+          } else if (component.kind === "Deduction") {
+            deductionsPkg += Math.abs(monthlyAmount);
+          } else if (component.kind === "EmployerCost") {
+            employerCostPkg += monthlyAmount;
+          }
+          breakdown.push({
+            componentId: component.id,
+            kind: component.kind,
+            label: component.label,
+            amountPackageCurrency: monthlyAmount,
+            amountPayrollCurrency: 0,
+          });
+        });
+        const netPkg = grossPkg - deductionsPkg;
+        const employerCostFinalPkg = employerCostPkg > 0 ? employerCostPkg : Math.round(grossPkg * 1.18);
+        const rateAt = cycle.fxRateRefDate ?? now;
+        const converted =
+          pkg.packageCurrency === cycle.payrollCurrency
+            ? 1
+            : (() => {
+                const result = convertCurrency(1, pkg.packageCurrency, cycle.payrollCurrency, state.hrFxRates, rateAt);
+                return result && Number.isFinite(result) ? result : 1;
+              })();
+        const fxRate = converted;
+        const breakdownWithFx = breakdown.map((entry) => ({
+          ...entry,
+          amountPayrollCurrency: Math.round(entry.amountPackageCurrency * fxRate * 100) / 100,
+        }));
+        const lineId = uid("hr2pl");
+        const lineExceptions: Hr2PayrollException[] = [];
+        if (!ext.hasBankDetails) {
+          lineExceptions.push({
+            id: uid("hr2ex"),
+            cycleId,
+            cycleLineId: lineId,
+            employeeId: ext.employeeId,
+            category: "MissingBank",
+            severity: "Blocker",
+            status: "Open",
+            message: `Bank details missing for ${employee.firstName} ${employee.lastName}. Cannot prepare payment instruction.`,
+            detectedAt: now,
+          });
+        }
+        const pendingChange = state.hr2CompChangeRequests.find(
+          (r) => r.packageId === pkg.id && (r.status === "Submitted" || r.status === "UnderReview"),
+        );
+        if (pendingChange) {
+          lineExceptions.push({
+            id: uid("hr2ex"),
+            cycleId,
+            cycleLineId: lineId,
+            employeeId: ext.employeeId,
+            category: "PendingCompChange",
+            severity: "Warning",
+            status: "Open",
+            message: `${pendingChange.kind} change request pending review. Payroll uses current active package.`,
+            detectedAt: now,
+          });
+        }
+        if (pkg.packageCurrency !== cycle.payrollCurrency) {
+          lineExceptions.push({
+            id: uid("hr2ex"),
+            cycleId,
+            cycleLineId: lineId,
+            employeeId: ext.employeeId,
+            category: "FxReviewNeeded",
+            severity: "Warning",
+            status: "Open",
+            message: `Package currency ${pkg.packageCurrency} differs from payroll currency ${cycle.payrollCurrency}. Review FX rate ${fxRate.toFixed(4)} before approval.`,
+            detectedAt: now,
+          });
+        }
+        if (employee.legalEntityId !== ext.employingEntityId) {
+          lineExceptions.push({
+            id: uid("hr2ex"),
+            cycleId,
+            cycleLineId: lineId,
+            employeeId: ext.employeeId,
+            category: "EntityMismatch",
+            severity: "Blocker",
+            status: "Open",
+            message: `Employee legal entity (${employee.legalEntityId}) does not match HR2 employing entity (${ext.employingEntityId}).`,
+            detectedAt: now,
+          });
+        }
+        const hasBlocker = lineExceptions.some((ex) => ex.severity === "Blocker");
+        const hasWarning = lineExceptions.some((ex) => ex.severity === "Warning");
+        const status: Hr2PayrollLineStatus = hasBlocker ? "Blocked" : hasWarning ? "Warning" : "OK";
+        lines.push({
+          id: lineId,
+          cycleId,
+          employeeId: ext.employeeId,
+          employeeFullName: `${employee.firstName} ${employee.lastName}`,
+          packageId: pkg.id,
+          packageVersionLabel: pkg.versionLabel,
+          status,
+          packageCurrency: pkg.packageCurrency,
+          grossPackageCurrency: Math.round(grossPkg * 100) / 100,
+          netPackageCurrency: Math.round(netPkg * 100) / 100,
+          employerCostPackageCurrency: Math.round(employerCostFinalPkg * 100) / 100,
+          payrollCurrency: cycle.payrollCurrency,
+          fxRate,
+          grossPayrollCurrency: Math.round(grossPkg * fxRate * 100) / 100,
+          netPayrollCurrency: Math.round(netPkg * fxRate * 100) / 100,
+          employerCostPayrollCurrency: Math.round(employerCostFinalPkg * fxRate * 100) / 100,
+          employingEntityId: ext.employingEntityId,
+          fundingEntityId: ext.fundingEntityId,
+          payoutMethod: ext.payoutMethod,
+          bankAccountLast4: ext.bankAccountLast4,
+          componentBreakdown: breakdownWithFx,
+          derivedAt: now,
+        });
+        exceptions.push(...lineExceptions);
+      });
+      set((current) => ({
+        ...current,
+        hr2PayrollCycles: current.hr2PayrollCycles.map((c) =>
+          c.id === cycleId
+            ? {
+                ...c,
+                status: lines.length === 0 ? "Draft" : exceptions.some((ex) => ex.severity === "Blocker") ? "Computing" : "ReadyForReview",
+                computedAt: now,
+                updatedAt: now,
+              }
+            : c,
+        ),
+        hr2PayrollCycleLines: [
+          ...current.hr2PayrollCycleLines.filter((line) => line.cycleId !== cycleId),
+          ...lines,
+        ],
+        hr2PayrollExceptions: [
+          ...current.hr2PayrollExceptions.filter((ex) => ex.cycleId !== cycleId),
+          ...exceptions,
+        ],
+      }));
+      void userId;
+    },
+
+    resolveHr2PayrollException: (exceptionId, userId, note) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const ex = state.hr2PayrollExceptions.find((e) => e.id === exceptionId);
+        if (!ex || ex.status === "Resolved") return state;
+        const updatedExceptions = state.hr2PayrollExceptions.map((e) =>
+          e.id === exceptionId
+            ? { ...e, status: "Resolved" as Hr2ExceptionStatus, resolvedAt: now, resolvedBy: userId, resolutionNote: note }
+            : e,
+        );
+        const lineExceptions = updatedExceptions.filter((e) => e.cycleLineId === ex.cycleLineId);
+        const hasOpenBlocker = lineExceptions.some((e) => e.status === "Open" && e.severity === "Blocker");
+        const hasOpenWarning = lineExceptions.some((e) => e.status === "Open" && e.severity === "Warning");
+        const newStatus: Hr2PayrollLineStatus = hasOpenBlocker ? "Blocked" : hasOpenWarning ? "Warning" : "OK";
+        return {
+          ...state,
+          hr2PayrollExceptions: updatedExceptions,
+          hr2PayrollCycleLines: state.hr2PayrollCycleLines.map((line) =>
+            line.id === ex.cycleLineId ? { ...line, status: newStatus } : line,
+          ),
+        };
+      });
+    },
+
+    approveHr2PayrollCycle: (cycleId, userId) => {
+      const state = get();
+      const cycle = state.hr2PayrollCycles.find((c) => c.id === cycleId);
+      if (!cycle) return { ok: false, message: "Cycle not found." };
+      if (cycle.status === "Approved" || cycle.status === "PaidOut" || cycle.status === "Closed") {
+        return { ok: false, message: "Cycle already approved." };
+      }
+      const openBlockers = state.hr2PayrollExceptions.filter(
+        (ex) => ex.cycleId === cycleId && ex.status === "Open" && ex.severity === "Blocker",
+      );
+      if (openBlockers.length > 0) {
+        return {
+          ok: false,
+          message: `Cannot approve: ${openBlockers.length} blocker exception(s) still open.`,
+        };
+      }
+      const cycleLines = state.hr2PayrollCycleLines.filter((line) => line.cycleId === cycleId);
+      if (cycleLines.length === 0) {
+        return { ok: false, message: "Cycle has no lines. Recompute first." };
+      }
+      const now = new Date().toISOString();
+      type GroupKey = string;
+      const grouped = new Map<GroupKey, Hr2PayrollCycleLine[]>();
+      cycleLines.forEach((line) => {
+        const key = `${line.employingEntityId}|${line.fundingEntityId ?? line.employingEntityId}|${line.payrollCurrency}`;
+        const arr = grouped.get(key) ?? [];
+        arr.push(line);
+        grouped.set(key, arr);
+      });
+      const newBatches: Hr2PaymentInstructionBatch[] = [];
+      const newLines: Hr2PaymentInstructionLine[] = [];
+      grouped.forEach((linesInGroup, key) => {
+        const [employingEntityId, fundingEntityIdRaw, payoutCurrency] = key.split("|") as [
+          OurEntity,
+          OurEntity,
+          HrCurrencyCode,
+        ];
+        const fundingEntityId =
+          fundingEntityIdRaw === employingEntityId ? undefined : fundingEntityIdRaw;
+        const batchId = uid("hr2pb");
+        let totalAmount = 0;
+        let blockedAmount = 0;
+        let blockedLineCount = 0;
+        linesInGroup.forEach((line) => {
+          const lineExceptions = state.hr2PayrollExceptions.filter(
+            (ex) => ex.cycleLineId === line.id && ex.status === "Open" && ex.severity === "Blocker",
+          );
+          const isBlocked = lineExceptions.length > 0;
+          if (isBlocked) {
+            blockedAmount += line.netPayrollCurrency;
+            blockedLineCount += 1;
+          }
+          totalAmount += line.netPayrollCurrency;
+          const blockedReason = isBlocked ? lineExceptions[0]?.message : undefined;
+          newLines.push({
+            id: uid("hr2pil"),
+            batchId,
+            cycleId,
+            cycleLineId: line.id,
+            employeeId: line.employeeId,
+            employeeFullName: line.employeeFullName,
+            employingEntityId,
+            fundingEntityId,
+            payoutCurrency,
+            amount: line.netPayrollCurrency,
+            payoutMethod: line.payoutMethod,
+            bankAccountLast4: line.bankAccountLast4,
+            status: isBlocked ? "Blocked" : "Ready",
+            blockedReason,
+            blockingExceptionIds: lineExceptions.map((ex) => ex.id),
+            updatedAt: now,
+          });
+        });
+        const batchStatus: Hr2InstructionBatchStatus =
+          blockedLineCount === 0 ? "Ready" : "PartiallyBlocked";
+        newBatches.push({
+          id: batchId,
+          cycleId,
+          employingEntityId,
+          fundingEntityId,
+          payoutCurrency,
+          status: batchStatus,
+          totalAmount: Math.round(totalAmount * 100) / 100,
+          blockedAmount: Math.round(blockedAmount * 100) / 100,
+          lineCount: linesInGroup.length,
+          blockedLineCount,
+          emittedAt: now,
+          emittedBy: userId,
+          updatedAt: now,
+        });
+      });
+      set((current) => ({
+        ...current,
+        hr2PayrollCycles: current.hr2PayrollCycles.map((c) =>
+          c.id === cycleId
+            ? { ...c, status: "Approved" as Hr2PayrollCycleStatus, approvedAt: now, approvedBy: userId, updatedAt: now }
+            : c,
+        ),
+        hr2PaymentInstructionBatches: [...current.hr2PaymentInstructionBatches, ...newBatches],
+        hr2PaymentInstructionLines: [...current.hr2PaymentInstructionLines, ...newLines],
+      }));
+      return { ok: true, message: `Approved. ${newBatches.length} batch(es), ${newLines.length} instruction line(s) emitted.` };
+    },
+
+    closeHr2PayrollCycle: (cycleId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const cycle = state.hr2PayrollCycles.find((c) => c.id === cycleId);
+        if (!cycle || cycle.status === "Closed") return state;
+        return {
+          ...state,
+          hr2PayrollCycles: state.hr2PayrollCycles.map((c) =>
+            c.id === cycleId
+              ? { ...c, status: "Closed", closedAt: now, updatedAt: now }
+              : c,
+          ),
+        };
+      });
+      void userId;
+    },
+
+    markHr2PaymentBatchSent: (batchId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const batch = state.hr2PaymentInstructionBatches.find((b) => b.id === batchId);
+        if (!batch || batch.status === "Sent" || batch.status === "Verified" || batch.status === "Closed") return state;
+        return {
+          ...state,
+          hr2PaymentInstructionBatches: state.hr2PaymentInstructionBatches.map((b) =>
+            b.id === batchId
+              ? { ...b, status: "Sent" as Hr2InstructionBatchStatus, sentAt: now, sentBy: userId, updatedAt: now }
+              : b,
+          ),
+          hr2PaymentInstructionLines: state.hr2PaymentInstructionLines.map((line) =>
+            line.batchId === batchId && line.status === "Ready"
+              ? { ...line, status: "Sent" as Hr2InstructionLineStatus, sentAt: now, updatedAt: now }
+              : line,
+          ),
+        };
+      });
+    },
+
+    markHr2PaymentBatchVerified: (batchId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const batch = state.hr2PaymentInstructionBatches.find((b) => b.id === batchId);
+        if (!batch || batch.status !== "Sent") return state;
+        return {
+          ...state,
+          hr2PaymentInstructionBatches: state.hr2PaymentInstructionBatches.map((b) =>
+            b.id === batchId
+              ? { ...b, status: "Verified" as Hr2InstructionBatchStatus, verifiedAt: now, verifiedBy: userId, updatedAt: now }
+              : b,
+          ),
+          hr2PaymentInstructionLines: state.hr2PaymentInstructionLines.map((line) =>
+            line.batchId === batchId && line.status === "Sent"
+              ? { ...line, status: "Verified" as Hr2InstructionLineStatus, verifiedAt: now, updatedAt: now }
+              : line,
+          ),
+        };
+      });
+    },
+
+    verifyHr2PaymentInstructionLine: (lineId, userId) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const line = state.hr2PaymentInstructionLines.find((l) => l.id === lineId);
+        if (!line || line.status !== "Sent") return state;
+        return {
+          ...state,
+          hr2PaymentInstructionLines: state.hr2PaymentInstructionLines.map((l) =>
+            l.id === lineId
+              ? { ...l, status: "Verified" as Hr2InstructionLineStatus, verifiedAt: now, updatedAt: now }
+              : l,
+          ),
+        };
+      });
+      void userId;
+    },
+
+    unblockHr2PaymentInstructionLine: (lineId, userId, note) => {
+      const now = new Date().toISOString();
+      set((state) => {
+        const line = state.hr2PaymentInstructionLines.find((l) => l.id === lineId);
+        if (!line || line.status !== "Blocked") return state;
+        return {
+          ...state,
+          hr2PaymentInstructionLines: state.hr2PaymentInstructionLines.map((l) =>
+            l.id === lineId
+              ? {
+                  ...l,
+                  status: "Ready" as Hr2InstructionLineStatus,
+                  blockedReason: undefined,
+                  blockingExceptionIds: [],
+                  notes: note ?? l.notes,
+                  updatedAt: now,
+                }
+              : l,
+          ),
+        };
+      });
+      void userId;
+    },
   };
 }
 
 export const useAppStore = create<AppStore>()(
   persist(createStoreSlice, {
     name: STORAGE_KEY,
-    version: 41,
+    version: 42,
     migrate: (persistedState, storedVersion) => {
       const state = persistedState as
         | (Partial<AppStore> & {
@@ -6323,6 +7440,36 @@ export const useAppStore = create<AppStore>()(
         hrProvisionRequests,
         hrExpenses,
         hrAuditLogs,
+        hr2EmployeeExtensions: Array.isArray((state as Record<string, unknown>).hr2EmployeeExtensions)
+          ? ((state as Record<string, unknown>).hr2EmployeeExtensions as DbState["hr2EmployeeExtensions"])
+          : fallback.hr2EmployeeExtensions,
+        hr2CompensationPackages: Array.isArray((state as Record<string, unknown>).hr2CompensationPackages)
+          ? ((state as Record<string, unknown>).hr2CompensationPackages as DbState["hr2CompensationPackages"])
+          : fallback.hr2CompensationPackages,
+        hr2CompPackageComponents: Array.isArray((state as Record<string, unknown>).hr2CompPackageComponents)
+          ? ((state as Record<string, unknown>).hr2CompPackageComponents as DbState["hr2CompPackageComponents"])
+          : fallback.hr2CompPackageComponents,
+        hr2CompChangeRequests: Array.isArray((state as Record<string, unknown>).hr2CompChangeRequests)
+          ? ((state as Record<string, unknown>).hr2CompChangeRequests as DbState["hr2CompChangeRequests"])
+          : fallback.hr2CompChangeRequests,
+        hr2CompAuditLog: Array.isArray((state as Record<string, unknown>).hr2CompAuditLog)
+          ? ((state as Record<string, unknown>).hr2CompAuditLog as DbState["hr2CompAuditLog"])
+          : fallback.hr2CompAuditLog,
+        hr2PayrollCycles: Array.isArray((state as Record<string, unknown>).hr2PayrollCycles)
+          ? ((state as Record<string, unknown>).hr2PayrollCycles as DbState["hr2PayrollCycles"])
+          : fallback.hr2PayrollCycles,
+        hr2PayrollCycleLines: Array.isArray((state as Record<string, unknown>).hr2PayrollCycleLines)
+          ? ((state as Record<string, unknown>).hr2PayrollCycleLines as DbState["hr2PayrollCycleLines"])
+          : fallback.hr2PayrollCycleLines,
+        hr2PayrollExceptions: Array.isArray((state as Record<string, unknown>).hr2PayrollExceptions)
+          ? ((state as Record<string, unknown>).hr2PayrollExceptions as DbState["hr2PayrollExceptions"])
+          : fallback.hr2PayrollExceptions,
+        hr2PaymentInstructionBatches: Array.isArray((state as Record<string, unknown>).hr2PaymentInstructionBatches)
+          ? ((state as Record<string, unknown>).hr2PaymentInstructionBatches as DbState["hr2PaymentInstructionBatches"])
+          : fallback.hr2PaymentInstructionBatches,
+        hr2PaymentInstructionLines: Array.isArray((state as Record<string, unknown>).hr2PaymentInstructionLines)
+          ? ((state as Record<string, unknown>).hr2PaymentInstructionLines as DbState["hr2PaymentInstructionLines"])
+          : fallback.hr2PaymentInstructionLines,
         opsRequests: Array.isArray(state.opsRequests) ? opsRequests : fallback.opsRequests,
         opsCases: Array.isArray(state.opsCases) ? opsCases : fallback.opsCases,
         opsMonitoringSignals: Array.isArray(state.opsMonitoringSignals)

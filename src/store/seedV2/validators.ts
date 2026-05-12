@@ -90,6 +90,16 @@ function buildCounts(db: DbState): Record<keyof DbState, number> {
     hrProvisionRequests: db.hrProvisionRequests.length,
     hrExpenses: db.hrExpenses.length,
     hrAuditLogs: db.hrAuditLogs.length,
+    hr2EmployeeExtensions: db.hr2EmployeeExtensions.length,
+    hr2CompensationPackages: db.hr2CompensationPackages.length,
+    hr2CompPackageComponents: db.hr2CompPackageComponents.length,
+    hr2CompChangeRequests: db.hr2CompChangeRequests.length,
+    hr2CompAuditLog: db.hr2CompAuditLog.length,
+    hr2PayrollCycles: db.hr2PayrollCycles.length,
+    hr2PayrollCycleLines: db.hr2PayrollCycleLines.length,
+    hr2PayrollExceptions: db.hr2PayrollExceptions.length,
+    hr2PaymentInstructionBatches: db.hr2PaymentInstructionBatches.length,
+    hr2PaymentInstructionLines: db.hr2PaymentInstructionLines.length,
     opsRequests: db.opsRequests.length,
     opsCases: db.opsCases.length,
     opsMonitoringSignals: db.opsMonitoringSignals.length,
@@ -525,6 +535,88 @@ function validateFkIntegrity(db: DbState, errors: string[]) {
   db.opsShifts.forEach((row) => {
     row.userIds.forEach((userId) => {
       if (!userIds.has(userId)) pushFkError(errors, "OpsShift.userIds", userId);
+    });
+  });
+
+  const hr2PackageIds = new Set(db.hr2CompensationPackages.map((row) => row.id));
+  const hr2CycleIds = new Set(db.hr2PayrollCycles.map((row) => row.id));
+  const hr2CycleLineIds = new Set(db.hr2PayrollCycleLines.map((row) => row.id));
+  const hr2BatchIds = new Set(db.hr2PaymentInstructionBatches.map((row) => row.id));
+  const hr2ExceptionIds = new Set(db.hr2PayrollExceptions.map((row) => row.id));
+  const hr2ChangeRequestIds = new Set(db.hr2CompChangeRequests.map((row) => row.id));
+
+  db.hr2EmployeeExtensions.forEach((row) => {
+    if (!hrEmployeeIds.has(row.employeeId)) {
+      pushFkError(errors, "Hr2EmployeeExtension.employeeId", row.employeeId);
+    }
+    if (row.activePackageId && !hr2PackageIds.has(row.activePackageId)) {
+      pushFkError(errors, "Hr2EmployeeExtension.activePackageId", row.activePackageId);
+    }
+  });
+  db.hr2CompensationPackages.forEach((row) => {
+    if (!hrEmployeeIds.has(row.employeeId)) {
+      pushFkError(errors, "Hr2CompPackage.employeeId", row.employeeId);
+    }
+    if (row.supersedesPackageId && !hr2PackageIds.has(row.supersedesPackageId)) {
+      pushFkError(errors, "Hr2CompPackage.supersedesPackageId", row.supersedesPackageId);
+    }
+    if (row.supersededByPackageId && !hr2PackageIds.has(row.supersededByPackageId)) {
+      pushFkError(errors, "Hr2CompPackage.supersededByPackageId", row.supersededByPackageId);
+    }
+  });
+  db.hr2CompPackageComponents.forEach((row) => {
+    if (!hr2PackageIds.has(row.packageId)) {
+      pushFkError(errors, "Hr2CompComponent.packageId", row.packageId);
+    }
+  });
+  db.hr2CompChangeRequests.forEach((row) => {
+    if (!hr2PackageIds.has(row.packageId)) {
+      pushFkError(errors, "Hr2CompChangeRequest.packageId", row.packageId);
+    }
+    if (!hrEmployeeIds.has(row.employeeId)) {
+      pushFkError(errors, "Hr2CompChangeRequest.employeeId", row.employeeId);
+    }
+  });
+  db.hr2CompAuditLog.forEach((row) => {
+    if (!hrEmployeeIds.has(row.employeeId)) {
+      pushFkError(errors, "Hr2CompAuditEntry.employeeId", row.employeeId);
+    }
+    if (row.packageId && !hr2PackageIds.has(row.packageId)) {
+      pushFkError(errors, "Hr2CompAuditEntry.packageId", row.packageId);
+    }
+    if (row.changeRequestId && !hr2ChangeRequestIds.has(row.changeRequestId)) {
+      pushFkError(errors, "Hr2CompAuditEntry.changeRequestId", row.changeRequestId);
+    }
+  });
+  db.hr2PayrollCycleLines.forEach((row) => {
+    if (!hr2CycleIds.has(row.cycleId)) pushFkError(errors, "Hr2PayrollCycleLine.cycleId", row.cycleId);
+    if (!hr2PackageIds.has(row.packageId)) pushFkError(errors, "Hr2PayrollCycleLine.packageId", row.packageId);
+    if (!hrEmployeeIds.has(row.employeeId)) {
+      pushFkError(errors, "Hr2PayrollCycleLine.employeeId", row.employeeId);
+    }
+  });
+  db.hr2PayrollExceptions.forEach((row) => {
+    if (!hr2CycleIds.has(row.cycleId)) pushFkError(errors, "Hr2PayrollException.cycleId", row.cycleId);
+    if (!hr2CycleLineIds.has(row.cycleLineId)) {
+      pushFkError(errors, "Hr2PayrollException.cycleLineId", row.cycleLineId);
+    }
+  });
+  db.hr2PaymentInstructionBatches.forEach((row) => {
+    if (!hr2CycleIds.has(row.cycleId)) pushFkError(errors, "Hr2PaymentInstructionBatch.cycleId", row.cycleId);
+  });
+  db.hr2PaymentInstructionLines.forEach((row) => {
+    if (!hr2BatchIds.has(row.batchId)) pushFkError(errors, "Hr2PaymentInstructionLine.batchId", row.batchId);
+    if (!hr2CycleIds.has(row.cycleId)) pushFkError(errors, "Hr2PaymentInstructionLine.cycleId", row.cycleId);
+    if (!hr2CycleLineIds.has(row.cycleLineId)) {
+      pushFkError(errors, "Hr2PaymentInstructionLine.cycleLineId", row.cycleLineId);
+    }
+    if (!hrEmployeeIds.has(row.employeeId)) {
+      pushFkError(errors, "Hr2PaymentInstructionLine.employeeId", row.employeeId);
+    }
+    row.blockingExceptionIds.forEach((exceptionId) => {
+      if (!hr2ExceptionIds.has(exceptionId)) {
+        pushFkError(errors, "Hr2PaymentInstructionLine.blockingExceptionIds", exceptionId);
+      }
     });
   });
 }

@@ -1877,6 +1877,333 @@ export interface FinanceForecastSnapshot {
   notes?: string;
 }
 
+// ─── HR Module 2 (additive, isolated from existing Hr* layer) ────────────
+//
+// HR2 introduces a canonical compensation package model, governed change
+// requests, payroll cycles with explicit readiness, and post-approval finance
+// payment instructions. All new slices are namespaced `hr2*` so the existing
+// HR module is untouched.
+
+export type Hr2PayrollFrequency = "Monthly" | "BiWeekly" | "Weekly";
+
+export type Hr2PayoutMethod = "BankTransfer" | "Check" | "WireInternal";
+
+export type Hr2CompComponentKind =
+  | "BaseSalary"
+  | "Allowance"
+  | "Deduction"
+  | "EmployerCost"
+  | "VariableBonus";
+
+export type Hr2CompComponentFrequency = "Monthly" | "Quarterly" | "Annual" | "OneOff";
+
+export type Hr2CompPackageStatus =
+  | "Draft"
+  | "Submitted"
+  | "UnderReview"
+  | "Approved"
+  | "Active"
+  | "Historical"
+  | "Terminated";
+
+export type Hr2CompChangeKind =
+  | "SalaryChange"
+  | "VariableBonus"
+  | "SettlementChange"
+  | "Termination";
+
+export type Hr2CompChangeStatus =
+  | "Draft"
+  | "Submitted"
+  | "UnderReview"
+  | "Approved"
+  | "Rejected"
+  | "Withdrawn";
+
+export type Hr2CompAuditAction =
+  | "PackageCreated"
+  | "PackageDraftSaved"
+  | "PackageSubmitted"
+  | "PackageApproved"
+  | "PackageActivated"
+  | "PackageTerminated"
+  | "ChangeRequestCreated"
+  | "ChangeRequestSubmitted"
+  | "ChangeRequestApproved"
+  | "ChangeRequestRejected"
+  | "ChangeRequestWithdrawn";
+
+export type Hr2PayrollCycleStatus =
+  | "Draft"
+  | "Computing"
+  | "ReadyForReview"
+  | "Approved"
+  | "PaidOut"
+  | "Closed";
+
+export type Hr2PayrollLineStatus = "OK" | "Warning" | "Blocked";
+
+export type Hr2ExceptionCategory =
+  | "MissingBank"
+  | "PendingCompChange"
+  | "FxReviewNeeded"
+  | "EntityMismatch"
+  | "DocumentsMissing"
+  | "ComplianceHold"
+  | "DataIncomplete";
+
+export type Hr2ExceptionSeverity = "Blocker" | "Warning";
+
+export type Hr2ExceptionStatus = "Open" | "Resolved";
+
+export type Hr2InstructionLineStatus = "Ready" | "Blocked" | "Sent" | "Verified";
+
+export type Hr2InstructionBatchStatus =
+  | "Ready"
+  | "PartiallyBlocked"
+  | "Sent"
+  | "Verified"
+  | "Closed";
+
+export interface Hr2SettlementRule {
+  id: string;
+  legalEntityId: OurEntity;
+  percentage: number;
+  note?: string;
+}
+
+export interface Hr2EmployeeExtension {
+  id: string;
+  employeeId: string;
+  employingEntityId: OurEntity;
+  fundingEntityId?: OurEntity;
+  payrollFrequency: Hr2PayrollFrequency;
+  payoutMethod: Hr2PayoutMethod;
+  bankAccountLast4?: string;
+  hasBankDetails: boolean;
+  activePackageId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Hr2CompComponent {
+  id: string;
+  packageId: string;
+  kind: Hr2CompComponentKind;
+  label: string;
+  amount: number;
+  currency: HrCurrencyCode;
+  frequency: Hr2CompComponentFrequency;
+  taxable: boolean;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface Hr2CompPackage {
+  id: string;
+  employeeId: string;
+  versionLabel: string;
+  status: Hr2CompPackageStatus;
+  packageCurrency: HrCurrencyCode;
+  payrollFrequency: Hr2PayrollFrequency;
+  effectiveFrom: string;
+  effectiveTo?: string;
+  employingEntityId: OurEntity;
+  fundingEntityId?: OurEntity;
+  settlementRules: Hr2SettlementRule[];
+  notes?: string;
+  supersedesPackageId?: string;
+  supersededByPackageId?: string;
+  createdBy: string;
+  createdAt: string;
+  submittedAt?: string;
+  submittedBy?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  activatedAt?: string;
+  activatedBy?: string;
+  terminatedAt?: string;
+  terminatedBy?: string;
+  terminationReason?: string;
+  updatedAt: string;
+}
+
+interface Hr2CompChangeRequestBase {
+  id: string;
+  packageId: string;
+  employeeId: string;
+  status: Hr2CompChangeStatus;
+  effectiveFrom: string;
+  reason?: string;
+  createdBy: string;
+  createdAt: string;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  decisionNote?: string;
+  resultingPackageId?: string;
+  updatedAt: string;
+}
+
+export interface Hr2SalaryChangeRequest extends Hr2CompChangeRequestBase {
+  kind: "SalaryChange";
+  proposedBaseSalary: number;
+  proposedCurrency: HrCurrencyCode;
+  previousBaseSalary: number;
+  previousCurrency: HrCurrencyCode;
+}
+
+export interface Hr2VariableBonusRequest extends Hr2CompChangeRequestBase {
+  kind: "VariableBonus";
+  bonusLabel: string;
+  bonusAmount: number;
+  bonusCurrency: HrCurrencyCode;
+  bonusFrequency: Hr2CompComponentFrequency;
+  taxable: boolean;
+}
+
+export interface Hr2SettlementChangeRequest extends Hr2CompChangeRequestBase {
+  kind: "SettlementChange";
+  proposedSettlementRules: Hr2SettlementRule[];
+  previousSettlementRules: Hr2SettlementRule[];
+}
+
+export interface Hr2TerminationRequest extends Hr2CompChangeRequestBase {
+  kind: "Termination";
+  terminationReason: string;
+  lastPayrollDate?: string;
+  finalSettlementCurrency?: HrCurrencyCode;
+  finalSettlementAmount?: number;
+}
+
+export type Hr2CompChangeRequest =
+  | Hr2SalaryChangeRequest
+  | Hr2VariableBonusRequest
+  | Hr2SettlementChangeRequest
+  | Hr2TerminationRequest;
+
+export interface Hr2CompAuditEntry {
+  id: string;
+  employeeId: string;
+  packageId?: string;
+  changeRequestId?: string;
+  action: Hr2CompAuditAction;
+  summary: string;
+  performedBy: string;
+  performedAt: string;
+  detailsJson?: string;
+}
+
+export interface Hr2PayrollCycle {
+  id: string;
+  period: string;
+  legalEntityId: OurEntity;
+  payrollCurrency: HrCurrencyCode;
+  status: Hr2PayrollCycleStatus;
+  openedAt: string;
+  openedBy: string;
+  computedAt?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  paidOutAt?: string;
+  closedAt?: string;
+  fxRateRefDate?: string;
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface Hr2PayrollComponentBreakdown {
+  componentId: string;
+  kind: Hr2CompComponentKind;
+  label: string;
+  amountPackageCurrency: number;
+  amountPayrollCurrency: number;
+}
+
+export interface Hr2PayrollCycleLine {
+  id: string;
+  cycleId: string;
+  employeeId: string;
+  employeeFullName: string;
+  packageId: string;
+  packageVersionLabel: string;
+  status: Hr2PayrollLineStatus;
+  packageCurrency: HrCurrencyCode;
+  grossPackageCurrency: number;
+  netPackageCurrency: number;
+  employerCostPackageCurrency: number;
+  payrollCurrency: HrCurrencyCode;
+  fxRate: number;
+  grossPayrollCurrency: number;
+  netPayrollCurrency: number;
+  employerCostPayrollCurrency: number;
+  employingEntityId: OurEntity;
+  fundingEntityId?: OurEntity;
+  payoutMethod: Hr2PayoutMethod;
+  bankAccountLast4?: string;
+  componentBreakdown: Hr2PayrollComponentBreakdown[];
+  derivedAt: string;
+}
+
+export interface Hr2PayrollException {
+  id: string;
+  cycleId: string;
+  cycleLineId: string;
+  employeeId: string;
+  category: Hr2ExceptionCategory;
+  severity: Hr2ExceptionSeverity;
+  status: Hr2ExceptionStatus;
+  message: string;
+  detectedAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolutionNote?: string;
+}
+
+export interface Hr2PaymentInstructionBatch {
+  id: string;
+  cycleId: string;
+  employingEntityId: OurEntity;
+  fundingEntityId?: OurEntity;
+  payoutCurrency: HrCurrencyCode;
+  status: Hr2InstructionBatchStatus;
+  totalAmount: number;
+  blockedAmount: number;
+  lineCount: number;
+  blockedLineCount: number;
+  emittedAt: string;
+  emittedBy: string;
+  sentAt?: string;
+  sentBy?: string;
+  verifiedAt?: string;
+  verifiedBy?: string;
+  closedAt?: string;
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface Hr2PaymentInstructionLine {
+  id: string;
+  batchId: string;
+  cycleId: string;
+  cycleLineId: string;
+  employeeId: string;
+  employeeFullName: string;
+  employingEntityId: OurEntity;
+  fundingEntityId?: OurEntity;
+  payoutCurrency: HrCurrencyCode;
+  amount: number;
+  payoutMethod: Hr2PayoutMethod;
+  bankAccountLast4?: string;
+  status: Hr2InstructionLineStatus;
+  blockedReason?: string;
+  blockingExceptionIds: string[];
+  sentAt?: string;
+  verifiedAt?: string;
+  notes?: string;
+  updatedAt: string;
+}
+
 export interface DbState {
   version: number;
   activeUserId: string;
@@ -1915,6 +2242,16 @@ export interface DbState {
   hrCompChangeLogs: HrCompChangeLog[];
   hrPublicHolidays: HrPublicHoliday[];
   hrDigitalSignatures: HrDigitalSignature[];
+  hr2EmployeeExtensions: Hr2EmployeeExtension[];
+  hr2CompensationPackages: Hr2CompPackage[];
+  hr2CompPackageComponents: Hr2CompComponent[];
+  hr2CompChangeRequests: Hr2CompChangeRequest[];
+  hr2CompAuditLog: Hr2CompAuditEntry[];
+  hr2PayrollCycles: Hr2PayrollCycle[];
+  hr2PayrollCycleLines: Hr2PayrollCycleLine[];
+  hr2PayrollExceptions: Hr2PayrollException[];
+  hr2PaymentInstructionBatches: Hr2PaymentInstructionBatch[];
+  hr2PaymentInstructionLines: Hr2PaymentInstructionLine[];
   opsRequests: OpsRequest[];
   opsCases: OpsCase[];
   opsMonitoringSignals: OpsMonitoringSignal[];

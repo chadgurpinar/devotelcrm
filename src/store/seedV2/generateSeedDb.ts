@@ -19,6 +19,7 @@ import { seedInterconnection } from "./seedInterconnection";
 import { seedContracts } from "./seedContracts";
 import { seedProjects } from "./seedProjects";
 import { seedHr } from "./seedHr";
+import { seedHr2 } from "./seedHr2";
 import { seedOps } from "./seedOps";
 import { assertSeedDb, logSeedDiagnosticsOnce } from "./validators";
 import { seedWholesaleTraffic } from "./seedWholesaleTraffic";
@@ -504,6 +505,13 @@ export function generateSeedDb(
     activeUserId,
   });
 
+  const hr2 = seedHr2({
+    hrEmployees: hr.hrEmployees,
+    hrLegalEntities: hr.hrLegalEntities,
+    baseNowIso,
+    activeUserId,
+  });
+
   const ops = seedOps({
     rng: opsRng,
     idFactory,
@@ -607,6 +615,16 @@ export function generateSeedDb(
     hrProvisionRequests: hr.hrProvisionRequests,
     hrExpenses: hr.hrExpenses,
     hrAuditLogs: hr.hrAuditLogs,
+    hr2EmployeeExtensions: hr2.hr2EmployeeExtensions,
+    hr2CompensationPackages: hr2.hr2CompensationPackages,
+    hr2CompPackageComponents: hr2.hr2CompPackageComponents,
+    hr2CompChangeRequests: hr2.hr2CompChangeRequests,
+    hr2CompAuditLog: hr2.hr2CompAuditLog,
+    hr2PayrollCycles: hr2.hr2PayrollCycles,
+    hr2PayrollCycleLines: hr2.hr2PayrollCycleLines,
+    hr2PayrollExceptions: hr2.hr2PayrollExceptions,
+    hr2PaymentInstructionBatches: hr2.hr2PaymentInstructionBatches,
+    hr2PaymentInstructionLines: hr2.hr2PaymentInstructionLines,
     opsRequests: ops.opsRequests,
     opsCases: ops.opsCases,
     opsMonitoringSignals: ops.opsMonitoringSignals,
